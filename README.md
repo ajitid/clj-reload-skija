@@ -56,12 +56,26 @@ sudo ./linux-install.sh
 
 ## Running the Application
 
-```bash
-# Download dependencies (first time only)
-clj -P -A:dev
+First, download dependencies:
 
-# Start REPL
-clj -A:dev
+```bash
+clj -P -A:dev
+```
+
+Then start the REPL with your platform alias:
+
+```bash
+# macOS Apple Silicon (M1/M2/M3/M4)
+clj -A:dev:macos-arm64
+
+# macOS Intel
+clj -A:dev:macos-x64
+
+# Windows
+clj -A:dev:windows
+
+# Linux
+clj -A:dev:linux
 ```
 
 In the REPL:
