@@ -1,5 +1,10 @@
 (ns app.core
-  "Main application - JWM window with Skija rendering.
+  "Main application - Love2D style game loop with JWM/Skija.
+
+   Game loop callbacks (hot-reloadable):
+   - load   - called once at startup
+   - update - called every frame with delta time (dt)
+   - draw   - called every frame for rendering
 
    The rendering reads from:
    - app.state (defonce) - sizes persist across reloads
@@ -12,24 +17,35 @@
            [io.github.humbleui.types Rect]
            [java.util.function Consumer]))
 
+;; ============================================================
+;; Helpers
+;; ============================================================
+
 (defn cfg
   "Get config value with runtime var lookup (survives hot-reload).
    Uses resolve as recommended by clj-reload."
   [var-sym]
   (some-> (resolve var-sym) deref))
 
+(defn config-loaded?
+  "Check if app.config namespace is loaded and ready."
+  []
+  (some? (resolve 'app.config/circle-color)))
+
+;; ============================================================
+;; Drawing helpers
+;; ============================================================
+
 (defn draw-circle-with-shadow
-  "Draw a pink circle with drop shadow at the given position."
+  "Draw a circle with drop shadow at the given position."
   [^Canvas canvas x y]
   (let [radius @state/circle-radius
-        ;; Create drop shadow filter - reads from config (reloadable)
         shadow-filter (ImageFilter/makeDropShadow
                        (float (cfg 'app.config/shadow-dx))
                        (float (cfg 'app.config/shadow-dy))
                        (float (cfg 'app.config/shadow-sigma))
                        (float (cfg 'app.config/shadow-sigma))
                        (unchecked-int (cfg 'app.config/shadow-color)))
-        ;; Create paint for the circle
         paint (doto (Paint.)
                 (.setColor (unchecked-int (cfg 'app.config/circle-color)))
                 (.setMode PaintMode/FILL)
@@ -40,16 +56,14 @@
     (.close shadow-filter)))
 
 (defn draw-rect-with-blur
-  "Draw a green rectangle with blur effect at the given position."
+  "Draw a rectangle with blur effect at the given position."
   [^Canvas canvas x y]
   (let [width @state/rect-width
         height @state/rect-height
-        ;; Create blur filter - reads from config (reloadable)
         blur-filter (ImageFilter/makeBlur
                      (float (cfg 'app.config/blur-sigma-x))
                      (float (cfg 'app.config/blur-sigma-y))
                      FilterTileMode/CLAMP)
-        ;; Create paint for the rectangle
         paint (doto (Paint.)
                 (.setColor (unchecked-int (cfg 'app.config/rect-color)))
                 (.setMode PaintMode/FILL)
@@ -59,54 +73,78 @@
     (.close paint)
     (.close blur-filter)))
 
-(defn config-loaded?
-  "Check if app.config namespace is loaded and ready."
-  []
-  (some? (resolve 'app.config/circle-color)))
+;; ============================================================
+;; Love2D-style callbacks (hot-reloadable!)
+;; ============================================================
 
-(defn paint
-  "Main paint function called on each frame."
+(defn load
+  "Called once when the game starts.
+   Initialize your game state here."
+  []
+  (println "Game loaded!"))
+
+(defn update
+  "Called every frame with delta time in seconds.
+   Update your game state here."
+  [dt]
+  ;; Example: you could animate things based on dt
+  ;; (swap! state/circle-radius + (* 10 dt))
+  nil)
+
+(defn draw
+  "Called every frame for rendering.
+   Draw your game here."
   [^Canvas canvas width height]
   ;; Clear background to white
   (.clear canvas (unchecked-int 0xFFFFFFFF))
 
   ;; Only render when config is loaded
   (when (config-loaded?)
-    ;; Draw the pink circle with drop shadow (left side)
+    ;; Draw the circle with drop shadow (left side)
     (draw-circle-with-shadow canvas 200 200)
 
-    ;; Draw the green rectangle with blur (right side)
+    ;; Draw the rectangle with blur (right side)
     (draw-rect-with-blur canvas 350 150)))
+
+;; ============================================================
+;; Game loop infrastructure
+;; ============================================================
 
 (defn create-event-listener
   "Create an event listener for the window."
   [^Window window layer]
-  (reify Consumer
-    (accept [_ event]
-      (condp instance? event
-        EventWindowCloseRequest
-        (do
-          (reset! state/running? false)
-          (.close window)
-          (App/terminate))
+  (let [last-time (atom (System/nanoTime))]
+    (reify Consumer
+      (accept [_ event]
+        (condp instance? event
+          EventWindowCloseRequest
+          (do
+            (reset! state/running? false)
+            (.close window)
+            (App/terminate))
 
-        EventFrameSkija
-        (let [^EventFrameSkija frame-event event
-              surface (.getSurface frame-event)
-              canvas (.getCanvas surface)
-              w (.getWidth surface)
-              h (.getHeight surface)]
-          ;; Use #'paint for var lookup so hot-reload works
-          (#'paint canvas w h)
-          (.requestFrame window))
+          EventFrameSkija
+          (let [^EventFrameSkija frame-event event
+                surface (.getSurface frame-event)
+                canvas (.getCanvas surface)
+                w (.getWidth surface)
+                h (.getHeight surface)
+                ;; Calculate delta time
+                now (System/nanoTime)
+                dt (/ (- now @last-time) 1e9)]
+            (reset! last-time now)
+            ;; Love2D-style game loop
+            (#'update dt)
+            (#'draw canvas w h)
+            (.requestFrame window))
 
-        EventFrame
-        (.requestFrame window)
+          EventFrame
+          (.requestFrame window)
 
-        nil))))
+          nil)))))
 
 (defn start-app
-  "Start the application - creates window and begins rendering."
+  "Start the application - creates window and begins game loop."
   []
   (when-not @state/running?
     (reset! state/running? true)
@@ -115,6 +153,8 @@
        (let [window (App/makeWindow)
              layer (LayerGLSkija.)]
          (reset! state/window window)
+         ;; Call load once at startup
+         (#'load)
          (doto window
            (.setTitle "Skija Demo - Hot Reload with clj-reload")
            (.setLayer layer)

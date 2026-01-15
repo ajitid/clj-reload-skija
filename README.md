@@ -112,14 +112,84 @@ Then in the connected REPL:
 
 The window will immediately reflect your changes.
 
+## Game Loop (Love2D-style)
+
+The app uses a Love2D-inspired game loop with three hot-reloadable callbacks:
+
+```clojure
+(defn load []
+  "Called once at startup. Initialize your game state here.")
+
+(defn update [dt]
+  "Called every frame with delta time (seconds). Update game logic here.")
+
+(defn draw [canvas width height]
+  "Called every frame for rendering. Draw your game here.")
+```
+
+All three functions are hot-reloadable - edit them and call `(reload)` to see changes instantly.
+
+> why does love2d has different update and draw fn? does unity, godot, libgdx has it too?
+
+⏺ Great question! The separation exists for important reasons:
+
+Why separate update and draw?
+
+1. Fixed vs variable timestep - Update can run at fixed rate (e.g., 60 times/sec) for deterministic physics, while draw runs at screen refresh rate (30/60/144 fps)
+2. Frame skipping - If game runs slow, you can run update multiple times to catch up, but only draw once
+3. Interpolation - Draw can interpolate between physics states for smooth visuals even at lower update rates
+
+Other engines:
+
+| Engine       | Update                                     | Draw                          |
+| ------------ | ------------------------------------------ | ----------------------------- |
+| Unity        | Update(), FixedUpdate()                    | Automatic (or OnRenderObject) |
+| Godot        | \_process(delta), \_physics_process(delta) | \_draw() or automatic         |
+| LibGDX       | render() (you split it yourself)           | Same method                   |
+| Unreal       | Tick(DeltaTime)                            | Separate rendering system     |
+| MonoGame/XNA | Update(GameTime)                           | Draw(GameTime)                |
+
+Most engines have this pattern. LibGDX is notable for combining them - you typically write:
+
+```
+public void render() {
+    update(Gdx.graphics.getDeltaTime());
+    draw();
+}
+```
+
+Love2D just makes it explicit, which is beginner-friendly.
+
+### Example: Animation
+
+```clojure
+(defn update [dt]
+  ;; Grow circle by 10 pixels per second
+  (swap! state/circle-radius + (* 10 dt)))
+```
+
 ## How It Works
 
-| Namespace    | Uses      | Behavior on Reload                              |
-|--------------|-----------|------------------------------------------------|
-| `app.state`  | `defonce` | Persists - circle radius, rect size stay same  |
-| `app.config` | `def`     | Reloads - shadow/blur amounts update           |
+| Namespace    | Uses      | Behavior on Reload                            |
+| ------------ | --------- | --------------------------------------------- |
+| `app.state`  | `defonce` | Persists - circle radius, rect size stay same |
+| `app.config` | `def`     | Reloads - shadow/blur amounts update          |
 
 This demonstrates [clj-reload](https://github.com/tonsky/clj-reload)'s `defonce` vs `def` distinction for managing state during hot-reloading.
+
+### Cross-namespace References
+
+When referencing values from a reloaded namespace, use `resolve` for runtime lookup:
+
+```clojure
+;; Bad - alias becomes stale after reload
+config/shadow-dx
+
+;; Good - runtime lookup survives reload
+@(resolve 'app.config/shadow-dx)
+```
+
+This follows [clj-reload's recommendation](https://github.com/tonsky/clj-reload) for avoiding stale references.
 
 ## References
 
