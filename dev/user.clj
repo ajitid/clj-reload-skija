@@ -25,7 +25,7 @@
 ;; Initialize clj-reload
 (reload/init
  {:dirs ["src" "dev"]
-  :no-reload '#{user}})  ;; Don't reload the user namespace itself
+  :no-reload '#{user app.core}})  ;; Don't reload user or app.core (keeps window running)
 
 (defn reload
   "Reload all changed namespaces.

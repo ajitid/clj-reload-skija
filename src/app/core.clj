@@ -12,20 +12,26 @@
            [io.github.humbleui.types Rect]
            [java.util.function Consumer]))
 
+(defn cfg
+  "Get config value with runtime var lookup (survives hot-reload)."
+  [var-sym]
+  (when-let [v (find-var var-sym)]
+    @v))
+
 (defn draw-circle-with-shadow
   "Draw a pink circle with drop shadow at the given position."
   [^Canvas canvas x y]
   (let [radius @state/circle-radius
         ;; Create drop shadow filter - reads from config (reloadable)
         shadow-filter (ImageFilter/makeDropShadow
-                       (float config/shadow-dx)
-                       (float config/shadow-dy)
-                       (float config/shadow-sigma)
-                       (float config/shadow-sigma)
-                       (unchecked-int config/shadow-color))
+                       (float (or (cfg 'app.config/shadow-dx) 0))
+                       (float (or (cfg 'app.config/shadow-dy) 0))
+                       (float (or (cfg 'app.config/shadow-sigma) 0))
+                       (float (or (cfg 'app.config/shadow-sigma) 0))
+                       (unchecked-int (or (cfg 'app.config/shadow-color) 0x80000000)))
         ;; Create paint for the circle
         paint (doto (Paint.)
-                (.setColor (unchecked-int config/circle-color))
+                (.setColor (unchecked-int (or (cfg 'app.config/circle-color) 0xFFFF69B4)))
                 (.setMode PaintMode/FILL)
                 (.setAntiAlias true)
                 (.setImageFilter shadow-filter))]
@@ -40,12 +46,12 @@
         height @state/rect-height
         ;; Create blur filter - reads from config (reloadable)
         blur-filter (ImageFilter/makeBlur
-                     (float config/blur-sigma-x)
-                     (float config/blur-sigma-y)
+                     (float (or (cfg 'app.config/blur-sigma-x) 5))
+                     (float (or (cfg 'app.config/blur-sigma-y) 5))
                      FilterTileMode/CLAMP)
         ;; Create paint for the rectangle
         paint (doto (Paint.)
-                (.setColor (unchecked-int config/rect-color))
+                (.setColor (unchecked-int (or (cfg 'app.config/rect-color) 0xFF32CD32)))
                 (.setMode PaintMode/FILL)
                 (.setAntiAlias true)
                 (.setImageFilter blur-filter))]
@@ -83,7 +89,8 @@
               canvas (.getCanvas surface)
               w (.getWidth surface)
               h (.getHeight surface)]
-          (paint canvas w h)
+          ;; Use #'paint for var lookup so hot-reload works
+          (#'paint canvas w h)
           (.requestFrame window))
 
         EventFrame
