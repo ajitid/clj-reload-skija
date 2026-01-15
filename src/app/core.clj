@@ -13,10 +13,10 @@
            [java.util.function Consumer]))
 
 (defn cfg
-  "Get config value with runtime var lookup (survives hot-reload)."
+  "Get config value with runtime var lookup (survives hot-reload).
+   Uses resolve as recommended by clj-reload."
   [var-sym]
-  (when-let [v (find-var var-sym)]
-    @v))
+  (some-> (resolve var-sym) deref))
 
 (defn draw-circle-with-shadow
   "Draw a pink circle with drop shadow at the given position."
