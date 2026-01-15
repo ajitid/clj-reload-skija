@@ -5,13 +5,23 @@
   io.github.humbleui/types {:mvn/version "0.2.0"}
 
   ;; JWM for windowing
-  io.github.humbleui/jwm {:mvn/version "0.4.18" :exclusions [io.github.humbleui/types]}
-
-  ;; Skija for graphics - Windows x64
-  io.github.humbleui/skija-windows-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}}
+  io.github.humbleui/jwm {:mvn/version "0.4.18" :exclusions [io.github.humbleui/types]}}
 
  :aliases
- {:dev
+ {;; Platform-specific Skija dependencies
+  :macos-arm64
+  {:extra-deps {io.github.humbleui/skija-macos-arm64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}}}
+
+  :macos-x64
+  {:extra-deps {io.github.humbleui/skija-macos-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}}}
+
+  :windows
+  {:extra-deps {io.github.humbleui/skija-windows-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}}}
+
+  :linux
+  {:extra-deps {io.github.humbleui/skija-linux-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}}}
+
+  :dev
   {:extra-paths ["dev"]
    :extra-deps
    {io.github.tonsky/clj-reload {:mvn/version "0.7.1"}
