@@ -24,14 +24,14 @@
   (let [radius @state/circle-radius
         ;; Create drop shadow filter - reads from config (reloadable)
         shadow-filter (ImageFilter/makeDropShadow
-                       (float (or (cfg 'app.config/shadow-dx) 0))
-                       (float (or (cfg 'app.config/shadow-dy) 0))
-                       (float (or (cfg 'app.config/shadow-sigma) 0))
-                       (float (or (cfg 'app.config/shadow-sigma) 0))
-                       (unchecked-int (or (cfg 'app.config/shadow-color) 0x80000000)))
+                       (float (cfg 'app.config/shadow-dx))
+                       (float (cfg 'app.config/shadow-dy))
+                       (float (cfg 'app.config/shadow-sigma))
+                       (float (cfg 'app.config/shadow-sigma))
+                       (unchecked-int (cfg 'app.config/shadow-color)))
         ;; Create paint for the circle
         paint (doto (Paint.)
-                (.setColor (unchecked-int (or (cfg 'app.config/circle-color) 0xFFFF69B4)))
+                (.setColor (unchecked-int (cfg 'app.config/circle-color)))
                 (.setMode PaintMode/FILL)
                 (.setAntiAlias true)
                 (.setImageFilter shadow-filter))]
@@ -46,12 +46,12 @@
         height @state/rect-height
         ;; Create blur filter - reads from config (reloadable)
         blur-filter (ImageFilter/makeBlur
-                     (float (or (cfg 'app.config/blur-sigma-x) 5))
-                     (float (or (cfg 'app.config/blur-sigma-y) 5))
+                     (float (cfg 'app.config/blur-sigma-x))
+                     (float (cfg 'app.config/blur-sigma-y))
                      FilterTileMode/CLAMP)
         ;; Create paint for the rectangle
         paint (doto (Paint.)
-                (.setColor (unchecked-int (or (cfg 'app.config/rect-color) 0xFF32CD32)))
+                (.setColor (unchecked-int (cfg 'app.config/rect-color)))
                 (.setMode PaintMode/FILL)
                 (.setAntiAlias true)
                 (.setImageFilter blur-filter))]
@@ -59,17 +59,24 @@
     (.close paint)
     (.close blur-filter)))
 
+(defn config-loaded?
+  "Check if app.config namespace is loaded and ready."
+  []
+  (some? (resolve 'app.config/circle-color)))
+
 (defn paint
   "Main paint function called on each frame."
   [^Canvas canvas width height]
   ;; Clear background to white
   (.clear canvas (unchecked-int 0xFFFFFFFF))
 
-  ;; Draw the pink circle with drop shadow (left side)
-  (draw-circle-with-shadow canvas 200 200)
+  ;; Only render when config is loaded
+  (when (config-loaded?)
+    ;; Draw the pink circle with drop shadow (left side)
+    (draw-circle-with-shadow canvas 200 200)
 
-  ;; Draw the green rectangle with blur (right side)
-  (draw-rect-with-blur canvas 350 150))
+    ;; Draw the green rectangle with blur (right side)
+    (draw-rect-with-blur canvas 350 150)))
 
 (defn create-event-listener
   "Create an event listener for the window."
