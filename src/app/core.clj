@@ -6,7 +6,7 @@
    - app.config (def) - effects change on reload"
   (:require [app.state :as state]
             [app.config :as config])
-  (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventFrame]
+  (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventFrame ZOrder]
            [io.github.humbleui.jwm.skija EventFrameSkija LayerGLSkija]
            [io.github.humbleui.skija Canvas Paint PaintMode ImageFilter FilterTileMode]
            [io.github.humbleui.types Rect]
@@ -106,6 +106,7 @@
            (.setLayer layer)
            (.setEventListener (create-event-listener window layer))
            (.setContentSize 600 400)
+           (.setZOrder ZOrder/FLOATING)
            (.setVisible true))
          (.requestFrame window))))))
 
