@@ -3,13 +3,24 @@
 
    Usage:
    1. Start the app: (start)
-   2. Edit src/app/config.clj (change blur/shadow values)
-   3. Reload: (reload)
-   4. See changes immediately!
+   2. Open another terminal and connect: clj -M:connect
+   3. Edit src/app/config.clj (change blur/shadow values)
+   4. In connected REPL: (reload)
+   5. See changes immediately!
 
    Note: Values in app.state (sizes) persist across reloads.
          Values in app.config (effects) change on reload."
-  (:require [clj-reload.core :as reload]))
+  (:require [clj-reload.core :as reload]
+            [nrepl.server :as nrepl]))
+
+;; Start nREPL server for hot-reloading (connect from another terminal)
+(defonce nrepl-server
+  (let [server (nrepl/start-server :port 7888)]
+    (println "")
+    (println "nREPL server running on port 7888")
+    (println "Connect from another terminal: clj -M:connect")
+    (println "")
+    server))
 
 ;; Initialize clj-reload
 (reload/init

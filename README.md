@@ -78,16 +78,25 @@ clj -A:dev:windows
 clj -A:dev:linux
 ```
 
-In the REPL:
+An nREPL server will automatically start on port 7888.
+
+In the REPL, start the window:
 
 ```clojure
-(start)   ;; Start the JWM window application
-(reload)  ;; Hot-reload changed namespaces
+(start)
 ```
+
+The window opens and the REPL blocks (this is normal).
 
 ## Hot Reloading
 
-Edit `src/app/config.clj` to change blur/shadow values:
+To hot-reload changes, connect to the running nREPL from another terminal:
+
+```bash
+clj -M:connect
+```
+
+Now edit `src/app/config.clj` to change blur/shadow values:
 
 ```clojure
 ;; Try changing these values:
@@ -95,7 +104,7 @@ Edit `src/app/config.clj` to change blur/shadow values:
 (def blur-sigma-x 15.0)    ;; More rectangle blur
 ```
 
-Then in the REPL:
+Then in the connected REPL:
 
 ```clojure
 (reload)
