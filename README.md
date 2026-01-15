@@ -117,15 +117,17 @@ The window will immediately reflect your changes.
 The app uses a Love2D-inspired game loop with three hot-reloadable callbacks:
 
 ```clojure
-(defn load []
+(defn init []
   "Called once at startup. Initialize your game state here.")
 
-(defn update [dt]
+(defn tick [dt]
   "Called every frame with delta time (seconds). Update game logic here.")
 
 (defn draw [canvas width height]
   "Called every frame for rendering. Draw your game here.")
 ```
+
+> Note: Named `init`/`tick` instead of `load`/`update` to avoid shadowing `clojure.core` functions.
 
 All three functions are hot-reloadable - edit them and call `(reload)` to see changes instantly.
 
@@ -163,7 +165,7 @@ Love2D just makes it explicit, which is beginner-friendly.
 ### Example: Animation
 
 ```clojure
-(defn update [dt]
+(defn tick [dt]
   ;; Grow circle by 10 pixels per second
   (swap! state/circle-radius + (* 10 dt)))
 ```

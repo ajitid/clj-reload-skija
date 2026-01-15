@@ -2,9 +2,9 @@
   "Main application - Love2D style game loop with JWM/Skija.
 
    Game loop callbacks (hot-reloadable):
-   - load   - called once at startup
-   - update - called every frame with delta time (dt)
-   - draw   - called every frame for rendering
+   - init - called once at startup
+   - tick - called every frame with delta time (dt)
+   - draw - called every frame for rendering
 
    The rendering reads from:
    - app.state (defonce) - sizes persist across reloads
@@ -75,15 +75,16 @@
 
 ;; ============================================================
 ;; Love2D-style callbacks (hot-reloadable!)
+;; Renamed to avoid shadowing clojure.core/load and clojure.core/update
 ;; ============================================================
 
-(defn load
+(defn init
   "Called once when the game starts.
    Initialize your game state here."
   []
   (println "Game loaded!"))
 
-(defn update
+(defn tick
   "Called every frame with delta time in seconds.
    Update your game state here."
   [dt]
@@ -134,7 +135,7 @@
                 dt (/ (- now @last-time) 1e9)]
             (reset! last-time now)
             ;; Love2D-style game loop
-            (#'update dt)
+            (#'tick dt)
             (#'draw canvas w h)
             (.requestFrame window))
 
@@ -153,8 +154,8 @@
        (let [window (App/makeWindow)
              layer (LayerGLSkija.)]
          (reset! state/window window)
-         ;; Call load once at startup
-         (#'load)
+         ;; Call init once at startup
+         (#'init)
          (doto window
            (.setTitle "Skija Demo - Hot Reload with clj-reload")
            (.setLayer layer)
