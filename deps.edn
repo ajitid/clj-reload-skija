@@ -1,0 +1,25 @@
+{:paths ["src" "resources"]
+
+ :deps
+ {;; Types - core classes shared by JWM and Skija
+  io.github.humbleui/types {:mvn/version "0.2.0"}
+
+  ;; JWM for windowing
+  io.github.humbleui/jwm {:mvn/version "0.4.18" :exclusions [io.github.humbleui/types]}
+
+  ;; Skija for graphics - Windows x64
+  io.github.humbleui/skija-windows-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}}
+
+ :aliases
+ {:dev
+  {:extra-paths ["dev"]
+   :extra-deps
+   {io.github.tonsky/clj-reload {:mvn/version "0.7.1"}
+    nrepl/nrepl {:mvn/version "1.1.1"}}}
+
+  :run
+  {:main-opts ["-m" "app.core"]}
+
+  :repl
+  {:main-opts ["-m" "nrepl.cmdline"
+               "--middleware" "[cider.nrepl/cider-middleware]"]}}}
