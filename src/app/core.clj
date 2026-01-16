@@ -108,6 +108,23 @@
       (when (and source line)
         (str source ":" line (when column (str ":" column)))))))
 
+(defn find-best-message
+  "Search exception chain and suppressed exceptions for the most useful message."
+  [^Throwable e]
+  (let [;; Collect all exceptions in the chain
+        chain (loop [ex e, acc []]
+                (if ex
+                  (recur (.getCause ex) (conj acc ex))
+                  acc))
+        ;; Also check suppressed exceptions
+        all-exceptions (into chain (mapcat #(.getSuppressed ^Throwable %) chain))
+        ;; Find messages, preferring non-null, non-empty ones
+        messages (->> all-exceptions
+                      (map #(.getMessage ^Throwable %))
+                      (filter #(and % (not= % "null") (seq %))))]
+    ;; Return first good message, or nil
+    (first messages)))
+
 (defn get-error-info
   "Extract useful error information from exception chain.
    Returns {:message :location :root-message :type}."
@@ -119,9 +136,14 @@
                         (nil? ex) nil
                         (instance? clojure.lang.Compiler$CompilerException ex) ex
                         :else (recur (.getCause ex))))
-        location (when compiler-ex (get-compiler-location compiler-ex))]
+        location (when compiler-ex (get-compiler-location compiler-ex))
+        ;; Get the best available message
+        root-msg (.getMessage root)
+        best-msg (if (or (nil? root-msg) (= root-msg "null") (empty? root-msg))
+                   (or (find-best-message e) "(see console for details)")
+                   root-msg)]
     {:type (.getSimpleName (.getClass root))
-     :message (.getMessage root)
+     :message best-msg
      :location location
      :original-message (.getMessage e)}))
 
@@ -282,10 +304,14 @@
                 (try
                   (.save canvas)
                   (.scale canvas (float scale) (float scale))
-                  (when-let [tick-fn (requiring-resolve 'app.core/tick)]
-                    (tick-fn dt))
-                  (when-let [draw-fn (requiring-resolve 'app.core/draw)]
-                    (draw-fn canvas w h))
+                  ;; Check for pending reload error (e.g., parse errors where old code still works)
+                  (if-let [reload-err @state/last-reload-error]
+                    (draw-error canvas reload-err)
+                    (do
+                      (when-let [tick-fn (requiring-resolve 'app.core/tick)]
+                        (tick-fn dt))
+                      (when-let [draw-fn (requiring-resolve 'app.core/draw)]
+                        (draw-fn canvas w h))))
                   (catch Exception e
                     ;; Show reload error (root cause) if available, otherwise runtime error
                     (let [error-to-show (or @state/last-reload-error e)]
