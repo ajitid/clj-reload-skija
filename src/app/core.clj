@@ -37,41 +37,43 @@
 ;; ============================================================
 
 (defn draw-circle-with-shadow
-  "Draw a circle with drop shadow at the given position."
+  "Draw a circle with drop shadow at the given position.
+   Uses with-open for automatic resource cleanup (Skija best practice)."
   [^Canvas canvas x y]
-  (let [radius @state/circle-radius
-        shadow-filter (ImageFilter/makeDropShadow
-                       (float (cfg 'app.config/shadow-dx))
-                       (float (cfg 'app.config/shadow-dy))
-                       (float (cfg 'app.config/shadow-sigma))
-                       (float (cfg 'app.config/shadow-sigma))
-                       (unchecked-int (cfg 'app.config/shadow-color)))
-        paint (doto (Paint.)
-                (.setColor (unchecked-int (cfg 'app.config/circle-color)))
-                (.setMode PaintMode/FILL)
-                (.setAntiAlias true)
-                (.setImageFilter shadow-filter))]
-    (.drawCircle canvas (float x) (float y) (float radius) paint)
-    (.close paint)
-    (.close shadow-filter)))
+  (let [radius @state/circle-radius]
+    ;; with-open ensures ImageFilter and Paint are properly closed
+    ;; even if an exception occurs (Skija AutoCloseable pattern)
+    (with-open [shadow-filter (ImageFilter/makeDropShadow
+                               (float (cfg 'app.config/shadow-dx))
+                               (float (cfg 'app.config/shadow-dy))
+                               (float (cfg 'app.config/shadow-sigma))
+                               (float (cfg 'app.config/shadow-sigma))
+                               (unchecked-int (cfg 'app.config/shadow-color)))
+                paint (doto (Paint.)
+                        (.setColor (unchecked-int (cfg 'app.config/circle-color)))
+                        (.setMode PaintMode/FILL)
+                        (.setAntiAlias true)
+                        (.setImageFilter shadow-filter))]
+      (.drawCircle canvas (float x) (float y) (float radius) paint))))
 
 (defn draw-rect-with-blur
-  "Draw a rectangle with blur effect at the given position."
+  "Draw a rectangle with blur effect at the given position.
+   Uses with-open for automatic resource cleanup (Skija best practice)."
   [^Canvas canvas x y]
   (let [width @state/rect-width
-        height @state/rect-height
-        blur-filter (ImageFilter/makeBlur
-                     (float (cfg 'app.config/blur-sigma-x))
-                     (float (cfg 'app.config/blur-sigma-y))
-                     FilterTileMode/CLAMP)
-        paint (doto (Paint.)
-                (.setColor (unchecked-int (cfg 'app.config/rect-color)))
-                (.setMode PaintMode/FILL)
-                (.setAntiAlias true)
-                (.setImageFilter blur-filter))]
-    (.drawRect canvas (Rect/makeXYWH (float x) (float y) (float width) (float height)) paint)
-    (.close paint)
-    (.close blur-filter)))
+        height @state/rect-height]
+    ;; with-open ensures ImageFilter and Paint are properly closed
+    ;; even if an exception occurs (Skija AutoCloseable pattern)
+    (with-open [blur-filter (ImageFilter/makeBlur
+                             (float (cfg 'app.config/blur-sigma-x))
+                             (float (cfg 'app.config/blur-sigma-y))
+                             FilterTileMode/CLAMP)
+                paint (doto (Paint.)
+                        (.setColor (unchecked-int (cfg 'app.config/rect-color)))
+                        (.setMode PaintMode/FILL)
+                        (.setAntiAlias true)
+                        (.setImageFilter blur-filter))]
+      (.drawRect canvas (Rect/makeXYWH (float x) (float y) (float width) (float height)) paint))))
 
 ;; ============================================================
 ;; Love2D-style callbacks (hot-reloadable!)
@@ -134,9 +136,15 @@
                 now (System/nanoTime)
                 dt (/ (- now @last-time) 1e9)]
             (reset! last-time now)
-            ;; Love2D-style game loop
-            (#'tick dt)
-            (#'draw canvas w h)
+            ;; Love2D-style game loop with error isolation (Skija best practice)
+            ;; Prevents render errors during hot-reload from crashing the app
+            (try
+              (#'tick dt)
+              (#'draw canvas w h)
+              (catch Exception e
+                ;; Clear to error color so user knows something went wrong
+                (.clear canvas (unchecked-int 0xFFFF6B6B))
+                (println "Render error:" (.getMessage e))))
             (.requestFrame window))
 
           EventFrame
