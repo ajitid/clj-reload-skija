@@ -31,8 +31,9 @@
         py (cfg 'app.config/panel-y)
         pad (cfg 'app.config/panel-padding)
         sw (cfg 'app.config/slider-width)
-        sh (cfg 'app.config/slider-height)]
-    [(+ px pad) (+ py pad 22) sw sh]))
+        sh (cfg 'app.config/slider-height)
+        fps-offset 25]  ;; Space for FPS display
+    [(+ px pad) (+ py pad fps-offset 22) sw sh]))
 
 (defn slider-y-bounds
   "Get bounds for Y slider: [x y w h]"
@@ -41,8 +42,9 @@
         py (cfg 'app.config/panel-y)
         pad (cfg 'app.config/panel-padding)
         sw (cfg 'app.config/slider-width)
-        sh (cfg 'app.config/slider-height)]
-    [(+ px pad) (+ py pad 22 sh 30) sw sh]))
+        sh (cfg 'app.config/slider-height)
+        fps-offset 25]  ;; Space for FPS display
+    [(+ px pad) (+ py pad fps-offset 22 sh 30) sw sh]))
 
 (defn point-in-rect?
   "Check if point (px, py) is inside rect [x y w h]"
@@ -94,11 +96,23 @@
   (let [px (calc-panel-x window-width)
         py (cfg 'app.config/panel-y)
         pw (cfg 'app.config/panel-width)
-        ph (cfg 'app.config/panel-height)]
+        ph (cfg 'app.config/panel-height)
+        pad (cfg 'app.config/panel-padding)
+        font-size (or (cfg 'app.config/font-size) 18)]
     ;; Draw panel background
     (with-open [bg-paint (doto (Paint.)
                            (.setColor (unchecked-int (cfg 'app.config/panel-bg-color))))]
       (.drawRect canvas (Rect/makeXYWH (float px) (float py) (float pw) (float ph)) bg-paint))
+    ;; Draw FPS at top
+    (with-open [typeface (Typeface/makeDefault)
+                font (Font. typeface (float font-size))
+                fps-paint (doto (Paint.)
+                            (.setColor (unchecked-int (cfg 'app.config/panel-text-color))))]
+      (.drawString canvas
+                   (format "FPS: %.0f" (double @state/fps))
+                   (float (+ px pad))
+                   (float (+ py pad 14))
+                   font fps-paint))
     ;; Draw sliders
     (draw-slider canvas "X:" @state/circles-x (slider-x-bounds window-width))
     (draw-slider canvas "Y:" @state/circles-y (slider-y-bounds window-width))))

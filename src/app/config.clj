@@ -16,13 +16,13 @@
 (def grid-circle-radius 100)       ;; Each circle is 200x200 (radius 100)
 (def grid-bg-color 0xFF222222)     ;; Dark background
 (def min-circles 1)
-(def max-circles 10)
+(def max-circles 250)
 
 ;; Control panel settings (in logical pixels, will be scaled)
 (def panel-right-offset 20)    ;; Distance from right edge
 (def panel-y 20)
 (def panel-width 200)
-(def panel-height 140)
+(def panel-height 170)
 (def panel-padding 15)
 (def panel-bg-color 0xDD333333)
 (def panel-text-color 0xFFFFFFFF)

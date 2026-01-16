@@ -21,3 +21,6 @@
 
 ;; Slider drag state
 (defonce dragging-slider (atom nil))  ;; :x or :y when dragging
+
+;; FPS tracking
+(defonce fps (atom 0.0))

@@ -140,6 +140,12 @@
                 now (System/nanoTime)
                 dt (/ (- now @last-time) 1e9)]
             (reset! last-time now)
+            ;; Update FPS (smoothed)
+            (when (pos? dt)
+              (let [current-fps (/ 1.0 dt)
+                    smoothing 0.9]
+                (reset! state/fps (+ (* smoothing @state/fps)
+                                     (* (- 1.0 smoothing) current-fps)))))
             ;; Love2D-style game loop with error isolation
             ;; Prevents render errors during hot-reload from crashing the app
             (try
