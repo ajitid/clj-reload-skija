@@ -1,17 +1,16 @@
 (ns app.core
   "Main application - Love2D style game loop with JWM/Skija.
 
+   Architecture (clj-reload pattern):
+   - ALL callbacks use (resolve ...) for dynamic dispatch
+   - This allows hot-reloading of ALL namespaces including app.core
+   - Only defonce values in app.state persist across reloads
+
    Game loop callbacks (hot-reloadable):
    - init - called once at startup
    - tick - called every frame with delta time (dt)
-   - draw - called every frame for rendering
-
-   The rendering reads from:
-   - app.state (defonce) - sizes persist across reloads
-   - app.config (def) - effects change on reload"
-  (:require [app.state :as state]
-            [app.config :as config]
-            [app.controls :as controls])
+   - draw - called every frame for rendering"
+  (:require [app.state :as state])
   (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventWindowResize EventFrame EventMouseButton EventMouseMove ZOrder]
            [io.github.humbleui.jwm.skija EventFrameSkija LayerGLSkija]
            [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap]
@@ -110,7 +109,7 @@
     (draw-circle-grid canvas)
 
     ;; Draw control panel on top (at top-right)
-    (controls/draw-panel canvas width)))
+    ((resolve 'app.controls/draw-panel) canvas width)))
 
 ;; ============================================================
 ;; Game loop infrastructure
@@ -132,11 +131,11 @@
           EventMouseButton
           (let [^EventMouseButton me event]
             (if (.isPressed me)
-              (controls/handle-mouse-press me)
-              (controls/handle-mouse-release me)))
+              ((resolve 'app.controls/handle-mouse-press) me)
+              ((resolve 'app.controls/handle-mouse-release) me)))
 
           EventMouseMove
-          (controls/handle-mouse-move event)
+          ((resolve 'app.controls/handle-mouse-move) event)
 
           EventWindowResize
           (let [^io.github.humbleui.jwm.EventWindowResize re event
@@ -145,7 +144,8 @@
                 h (/ (.getContentHeight re) scale)]
             (reset! state/window-width w)
             (reset! state/window-height h)
-            (recalculate-grid! w h))
+            (when-let [recalc (resolve 'app.core/recalculate-grid!)]
+              (recalc w h)))
 
           EventFrameSkija
           (let [^EventFrameSkija frame-event event
@@ -180,8 +180,11 @@
               ;; Scale canvas so we work in logical pixels
               (.save canvas)
               (.scale canvas (float scale) (float scale))
-              (#'tick dt)
-              (#'draw canvas w h)
+              ;; Dynamic dispatch via resolve - survives namespace reload
+              (when-let [tick-fn (resolve 'app.core/tick)]
+                (tick-fn dt))
+              (when-let [draw-fn (resolve 'app.core/draw)]
+                (draw-fn canvas w h))
               (.restore canvas)
               (catch Exception e
                 ;; Clear to error color so user knows something went wrong
@@ -204,8 +207,9 @@
        (let [window (App/makeWindow)
              layer (LayerGLSkija.)]
          (reset! state/window window)
-         ;; Call init once at startup
-         (#'init)
+         ;; Call init once at startup (via resolve for consistency)
+         (when-let [init-fn (resolve 'app.core/init)]
+           (init-fn))
          (doto window
            (.setTitle "Skija Demo - Hot Reload with clj-reload")
            (.setLayer layer)

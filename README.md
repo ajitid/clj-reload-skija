@@ -9,11 +9,12 @@ clj-reloadable-skija-on-window/
 ├── deps.edn              # Dependencies (JWM, Skija, clj-reload)
 ├── src/
 │   └── app/
-│       ├── state.clj     # Persistent state (defonce) - sizes
-│       ├── config.clj    # Reloadable config (def) - blur/shadow
-│       └── core.clj      # Main app with JWM window + Skija rendering
+│       ├── state.clj     # Persistent state (defonce) - survives reload
+│       ├── config.clj    # Reloadable config (def) - visual params
+│       ├── controls.clj  # Reloadable UI (defn) - sliders, mouse
+│       └── core.clj      # Reloadable app (defn) - game loop callbacks
 └── dev/
-    └── user.clj          # REPL namespace with reload function
+    └── user.clj          # REPL namespace (excluded from reload)
 ```
 
 ## Requirements
@@ -96,12 +97,16 @@ To hot-reload changes, connect to the running nREPL from another terminal:
 clj -M:connect
 ```
 
-Now edit `src/app/config.clj` to change blur/shadow values:
+Now edit ANY source file - `config.clj`, `controls.clj`, or even `core.clj`:
 
 ```clojure
-;; Try changing these values:
-(def shadow-sigma 20.0)    ;; More shadow blur
-(def blur-sigma-x 15.0)    ;; More rectangle blur
+;; Example: change config values
+(def circle-color 0xFFFF6B6B)  ;; Red circles
+
+;; Example: change draw function in core.clj
+(defn draw [canvas w h]
+  (.clear canvas 0xFF000000)  ;; Black background
+  ...)
 ```
 
 Then in the connected REPL:
@@ -110,7 +115,7 @@ Then in the connected REPL:
 (reload)
 ```
 
-The window will immediately reflect your changes.
+Changes apply immediately - no restart needed.
 
 ## Using Calva (VS Code)
 
@@ -196,26 +201,33 @@ Love2D just makes it explicit, which is beginner-friendly.
 
 ## How It Works
 
-| Namespace    | Uses      | Behavior on Reload                            |
-| ------------ | --------- | --------------------------------------------- |
-| `app.state`  | `defonce` | Persists - circle radius, rect size stay same |
-| `app.config` | `def`     | Reloads - shadow/blur amounts update          |
+| Namespace      | Uses      | Behavior on Reload                    |
+| -------------- | --------- | ------------------------------------- |
+| `app.state`    | `defonce` | **Persists** - atoms survive reload   |
+| `app.config`   | `def`     | **Reloads** - values update           |
+| `app.controls` | `defn`    | **Reloads** - functions update        |
+| `app.core`     | `defn`    | **Reloads** - game loop updates       |
+| `user`         | -         | **Excluded** - keeps REPL stable      |
 
-This demonstrates [clj-reload](https://github.com/tonsky/clj-reload)'s `defonce` vs `def` distinction for managing state during hot-reloading.
+Following [clj-reload](https://github.com/tonsky/clj-reload) best practices:
+- `defonce` for persistent state
+- `(resolve 'ns/sym)` for cross-namespace calls (vars are removed on unload)
 
-### Cross-namespace References
+### Why `resolve`?
 
-When referencing values from a reloaded namespace, use `resolve` for runtime lookup:
+When clj-reload unloads a namespace, vars are **completely removed** (not just re-bound). Direct references become stale:
 
 ```clojure
-;; Bad - alias becomes stale after reload
+;; Bad - var object is removed on reload
 config/shadow-dx
+#'app.core/draw
 
-;; Good - runtime lookup survives reload
+;; Good - runtime lookup by symbol name
 @(resolve 'app.config/shadow-dx)
+(when-let [f (resolve 'app.core/draw)] (f canvas w h))
 ```
 
-This follows [clj-reload's recommendation](https://github.com/tonsky/clj-reload) for avoiding stale references.
+The event listener uses `resolve` for ALL callbacks, allowing every namespace to reload.
 
 ## References
 

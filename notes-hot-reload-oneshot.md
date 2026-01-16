@@ -84,7 +84,7 @@ make install
 
 2. In another terminal, run watchexec:
    ```bash
-   watchexec -e clj -w src -w dev -- rep -p 7888 "(reload)"
+   watchexec -qnrc -e clj -w src -w dev -- rep -p 7888 "(reload)"
    ```
 
 **Flags explained:**
@@ -95,8 +95,6 @@ make install
 - `"(reload)"` — the code to evaluate
 
 Now whenever you save a `.clj` file, `watchexec` will automatically send `(reload)` to your running REPL.
-
-You can add the flag `-qnrc` if you want.
 
 ## Optional: add debounce
 

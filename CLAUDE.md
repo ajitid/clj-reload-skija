@@ -31,14 +31,22 @@ clj -A:run
 
 This is a Clojure demo showcasing hot-reloading with JWM (windowing) and Skija (2D graphics).
 
-### Key Design Pattern: Reloadable vs Persistent State
+### Design Pattern: clj-reload
 
-The project demonstrates clj-reload's `defonce` vs `def` distinction:
+Following [clj-reload](https://github.com/tonsky/clj-reload) best practices:
+- **Everything reloads** except `user` namespace and `defonce` values
+- Use `(resolve 'ns/sym)` for cross-namespace function calls (vars are removed on unload)
+- Use `defonce` for state that must survive reloads
+- Structure code by business logic, not reload constraints
+
+### Reloadable vs Persistent
 
 | Namespace | Declaration | Reload Behavior |
 |-----------|-------------|-----------------|
-| `app.state` | `defonce` | Values **persist** across reloads (window, sizes, running state) |
-| `app.config` | `def` | Values **update** on reload (shadow/blur params, colors) |
+| `app.state` | `defonce` | Values **persist** (window, atoms, running state) |
+| `app.config` | `def` | Values **update** on reload |
+| `app.controls` | `defn` | Functions **update** on reload |
+| `app.core` | `defn` | Functions **update** on reload |
 
 ### Love2D-Style Game Loop
 
@@ -50,26 +58,31 @@ The app uses three hot-reloadable callbacks in `app.core`:
 (defn draw [canvas w h] ...) ;; Called every frame for rendering
 ```
 
-Named `init`/`tick` instead of `load`/`update` to avoid shadowing `clojure.core` functions.
+### Dynamic Dispatch Pattern
 
-### Cross-Namespace Reference Pattern
-
-When referencing values from reloadable namespaces, use `resolve` for runtime lookup:
+The event listener uses `resolve` for ALL callbacks so they survive namespace reload:
 
 ```clojure
-;; Bad - alias becomes stale after reload
-config/shadow-dx
+;; In event listener (created once, persists):
+(when-let [draw-fn (resolve 'app.core/draw)]
+  (draw-fn canvas w h))
 
-;; Good - runtime lookup survives reload (see cfg helper in app.core)
-@(resolve 'app.config/shadow-dx)
+;; For config values, use the cfg helper:
+(cfg 'app.config/circle-color)  ;; wraps @(resolve ...)
 ```
+
+**Why `resolve` not `#'var`?**
+- `#'var` captures the var object at compile time
+- clj-reload unloads/reloads namespaces, creating NEW var objects
+- `resolve` looks up by symbol at runtime, always finding current var
 
 ### Namespace Responsibilities
 
-- **app.core** - Main entry point, JWM window setup, Skija rendering loop. Contains `cfg` helper for safe config access.
-- **app.state** - Atoms wrapped in `defonce` for persistent state (circle-radius, rect-width/height, window reference).
-- **app.config** - Plain `def` values for effect parameters. Includes optional `before-ns-unload` and `after-ns-reload` hooks.
-- **user** (dev/) - REPL namespace with `start` and `reload` functions. Starts nREPL on port 7888.
+- **app.core** - Game loop callbacks (init/tick/draw), event listener with dynamic dispatch
+- **app.state** - Atoms wrapped in `defonce` for persistent state
+- **app.controls** - UI drawing and mouse handling (fully reloadable)
+- **app.config** - Plain `def` values for visual parameters
+- **user** (dev/) - REPL namespace with `start` and `reload` functions
 
 ### Dependencies
 

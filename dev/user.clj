@@ -4,12 +4,14 @@
    Usage:
    1. Start the app: (start)
    2. Open another terminal and connect: clj -M:connect
-   3. Edit src/app/config.clj (change blur/shadow values)
+   3. Edit ANY source file (config, controls, core, etc.)
    4. In connected REPL: (reload)
    5. See changes immediately!
 
-   Note: Values in app.state (sizes) persist across reloads.
-         Values in app.config (effects) change on reload."
+   Architecture (clj-reload pattern):
+   - Event listener uses (resolve ...) for ALL callbacks
+   - Everything reloads except 'user' namespace and defonce values
+   - See: https://github.com/tonsky/clj-reload"
   (:require [clj-reload.core :as reload]
             [nrepl.server :as nrepl]))
 
@@ -23,9 +25,10 @@
     server))
 
 ;; Initialize clj-reload
+;; Only 'user' is excluded - app.core uses resolve for all callbacks so it can reload safely
 (reload/init
  {:dirs ["src" "dev"]
-  :no-reload '#{user app.core}})  ;; Don't reload user or app.core (keeps window running)
+  :no-reload '#{user}})
 
 (defn reload
   "Reload all changed namespaces.
