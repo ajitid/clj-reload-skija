@@ -28,3 +28,7 @@
 ;; Cached grid positions - recalculated only on resize or grid change
 ;; Each entry is {:cx :cy :radius} for each circle
 (defonce grid-positions (atom []))
+
+;; Reload guard - true while namespaces are being reloaded
+;; Used to skip event handling during reload (avoids NPE from unloaded vars)
+(defonce reloading? (atom false))

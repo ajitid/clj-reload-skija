@@ -22,14 +22,26 @@
 
 (defn cfg
   "Get config value with runtime var lookup (survives hot-reload).
-   Uses resolve as recommended by clj-reload."
+   Uses requiring-resolve to load namespace if needed."
   [var-sym]
-  (some-> (resolve var-sym) deref))
+  (some-> (requiring-resolve var-sym) deref))
 
 (defn config-loaded?
   "Check if app.config namespace is loaded and ready."
   []
   (some? (resolve 'app.config/circle-color)))
+
+;; ============================================================
+;; clj-reload hooks
+;; ============================================================
+;; app.core is unloaded FIRST and loaded LAST (top of dependency tree)
+;; so these hooks bracket the entire reload process
+
+(defn before-ns-unload []
+  (reset! state/reloading? true))
+
+(defn after-ns-reload []
+  (reset! state/reloading? false))
 
 ;; ============================================================
 ;; Drawing helpers
@@ -109,93 +121,86 @@
     (draw-circle-grid canvas)
 
     ;; Draw control panel on top (at top-right)
-    ((resolve 'app.controls/draw-panel) canvas width)))
+    ((requiring-resolve 'app.controls/draw-panel) canvas width)))
 
 ;; ============================================================
 ;; Game loop infrastructure
 ;; ============================================================
 
 (defn create-event-listener
-  "Create an event listener for the window."
+  "Create an event listener for the window.
+   Uses state/reloading? guard to skip event handling during namespace reload."
   [^Window window layer]
   (let [last-time (atom (System/nanoTime))]
     (reify Consumer
       (accept [_ event]
         (condp instance? event
+          ;; Always handle close - no resolve needed
           EventWindowCloseRequest
           (do
             (reset! state/running? false)
             (.close window)
             (App/terminate))
 
-          EventMouseButton
-          (let [^EventMouseButton me event]
-            (if (.isPressed me)
-              ((resolve 'app.controls/handle-mouse-press) me)
-              ((resolve 'app.controls/handle-mouse-release) me)))
-
-          EventMouseMove
-          ((resolve 'app.controls/handle-mouse-move) event)
-
-          EventWindowResize
-          (let [^io.github.humbleui.jwm.EventWindowResize re event
-                scale @state/scale
-                w (/ (.getContentWidth re) scale)
-                h (/ (.getContentHeight re) scale)]
-            (reset! state/window-width w)
-            (reset! state/window-height h)
-            (when-let [recalc (resolve 'app.core/recalculate-grid!)]
-              (recalc w h)))
-
-          EventFrameSkija
-          (let [^EventFrameSkija frame-event event
-                surface (.getSurface frame-event)
-                canvas (.getCanvas surface)
-                ;; Get scale factor for HiDPI support
-                scale (if-let [screen (.getScreen window)]
-                        (.getScale screen)
-                        1.0)
-                _ (reset! state/scale scale)
-                ;; Physical pixels from surface
-                pw (.getWidth surface)
-                ph (.getHeight surface)
-                ;; Logical pixels (what we work with)
-                w (/ pw scale)
-                h (/ ph scale)
-                _ (reset! state/window-width w)
-                _ (reset! state/window-height h)
-                ;; Calculate delta time
-                now (System/nanoTime)
-                dt (/ (- now @last-time) 1e9)]
-            (reset! last-time now)
-            ;; Update FPS (smoothed)
-            (when (pos? dt)
-              (let [current-fps (/ 1.0 dt)
-                    smoothing 0.9]
-                (reset! state/fps (+ (* smoothing @state/fps)
-                                     (* (- 1.0 smoothing) current-fps)))))
-            ;; Love2D-style game loop with error isolation
-            ;; Prevents render errors during hot-reload from crashing the app
-            (try
-              ;; Scale canvas so we work in logical pixels
-              (.save canvas)
-              (.scale canvas (float scale) (float scale))
-              ;; Dynamic dispatch via resolve - survives namespace reload
-              (when-let [tick-fn (resolve 'app.core/tick)]
-                (tick-fn dt))
-              (when-let [draw-fn (resolve 'app.core/draw)]
-                (draw-fn canvas w h))
-              (.restore canvas)
-              (catch Exception e
-                ;; Clear to error color so user knows something went wrong
-                (.clear canvas (unchecked-int 0xFFFF6B6B))
-                (println "Render error:" (.getMessage e))))
-            (.requestFrame window))
-
+          ;; Always request frames - keeps render loop alive during reload
           EventFrame
           (.requestFrame window)
 
-          nil)))))
+          ;; Skip other events during reload (vars not available)
+          (when-not @state/reloading?
+            (condp instance? event
+              EventMouseButton
+              (let [^EventMouseButton me event]
+                (if (.isPressed me)
+                  ((requiring-resolve 'app.controls/handle-mouse-press) me)
+                  ((requiring-resolve 'app.controls/handle-mouse-release) me)))
+
+              EventMouseMove
+              ((requiring-resolve 'app.controls/handle-mouse-move) event)
+
+              EventWindowResize
+              (let [^io.github.humbleui.jwm.EventWindowResize re event
+                    scale @state/scale
+                    w (/ (.getContentWidth re) scale)
+                    h (/ (.getContentHeight re) scale)]
+                (reset! state/window-width w)
+                (reset! state/window-height h)
+                ((requiring-resolve 'app.core/recalculate-grid!) w h))
+
+              EventFrameSkija
+              (let [^EventFrameSkija frame-event event
+                    surface (.getSurface frame-event)
+                    canvas (.getCanvas surface)
+                    scale (if-let [screen (.getScreen window)]
+                            (.getScale screen)
+                            1.0)
+                    _ (reset! state/scale scale)
+                    pw (.getWidth surface)
+                    ph (.getHeight surface)
+                    w (/ pw scale)
+                    h (/ ph scale)
+                    _ (reset! state/window-width w)
+                    _ (reset! state/window-height h)
+                    now (System/nanoTime)
+                    dt (/ (- now @last-time) 1e9)]
+                (reset! last-time now)
+                (when (pos? dt)
+                  (let [current-fps (/ 1.0 dt)
+                        smoothing 0.9]
+                    (reset! state/fps (+ (* smoothing @state/fps)
+                                         (* (- 1.0 smoothing) current-fps)))))
+                (try
+                  (.save canvas)
+                  (.scale canvas (float scale) (float scale))
+                  ((requiring-resolve 'app.core/tick) dt)
+                  ((requiring-resolve 'app.core/draw) canvas w h)
+                  (.restore canvas)
+                  (catch Exception e
+                    (.clear canvas (unchecked-int 0xFFFF6B6B))
+                    (println "Render error:" (.getMessage e))))
+                (.requestFrame window))
+
+              nil)))))))
 
 (defn start-app
   "Start the application - creates window and begins game loop."

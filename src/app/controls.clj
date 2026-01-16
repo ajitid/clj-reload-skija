@@ -13,12 +13,12 @@
 (defn cfg
   "Get config value with runtime var lookup (survives hot-reload)."
   [var-sym]
-  (some-> (resolve var-sym) deref))
+  (some-> (requiring-resolve var-sym) deref))
 
 (defn trigger-grid-recalc!
-  "Trigger grid recalculation (calls core/recalculate-grid! via resolve to avoid circular dep)."
+  "Trigger grid recalculation (calls core/recalculate-grid! via requiring-resolve)."
   []
-  (when-let [recalc (resolve 'app.core/recalculate-grid!)]
+  (when-let [recalc (requiring-resolve 'app.core/recalculate-grid!)]
     (recalc @state/window-width @state/window-height)))
 
 ;; ============================================================
