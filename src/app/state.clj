@@ -16,11 +16,11 @@
 (defonce running? (atom false))
 
 ;; Grid settings - user-adjustable, persist across reloads
-(defonce circles-x (atom 3))          ;; Number of circles in X direction
-(defonce circles-y (atom 2))          ;; Number of circles in Y direction
+(defonce circles-x (atom 3))
+(defonce circles-y (atom 2))
 
 ;; Slider drag state
-(defonce dragging-slider (atom nil))  ;; :x or :y when dragging
+(defonce dragging-slider (atom nil))
 
 ;; FPS tracking
 (defonce fps (atom 0.0))
@@ -40,3 +40,18 @@
 ;; Last runtime error - stores runtime errors caught during rendering
 ;; Used for F2 copy-to-clipboard when no reload error exists
 (defonce last-runtime-error (atom nil))
+
+(defn reset-state!
+  "Reset state to initial values (for restart)."
+  []
+  (reset! scale 1.0)
+  (reset! window-width 800)
+  (reset! window-height 600)
+  (reset! circles-x 3)
+  (reset! circles-y 2)
+  (reset! dragging-slider nil)
+  (reset! fps 0.0)
+  (reset! grid-positions [])
+  (reset! reloading? false)
+  (reset! last-reload-error nil)
+  (reset! last-runtime-error nil))

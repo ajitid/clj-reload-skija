@@ -74,11 +74,13 @@
          (.close window))))))
 
 (defn restart
-  "Restart the application (closes window and creates new one)."
+  "Restart the application fresh (closes window, resets state, creates new window)."
   []
   (stop)
   ;; Give UI thread time to close window
   (Thread/sleep 100)
+  ;; Reset state to initial values
+  ((resolve 'app.state/reset-state!))
   ;; Create new window on UI thread
   (io.github.humbleui.jwm.App/runOnUIThread
    (fn []
@@ -101,11 +103,10 @@
   (reload)
 
   ;; Check current state values (these persist)
-  @(resolve 'app.state/circle-radius)
-  @(resolve 'app.state/rect-width)
-  @(resolve 'app.state/rect-height)
+  @(resolve 'app.state/circles-x)
+  @(resolve 'app.state/circles-y)
 
   ;; You can also modify persistent state from REPL
-  (reset! (resolve 'app.state/circle-radius) 100)
-  (reset! (resolve 'app.state/rect-width) 200)
+  (reset! @(resolve 'app.state/circles-x) 5)
+  (reset! @(resolve 'app.state/circles-y) 4)
   )
