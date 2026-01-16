@@ -112,6 +112,30 @@ Then in the connected REPL:
 
 The window will immediately reflect your changes.
 
+## Using Calva (VS Code)
+
+[Calva](https://calva.io/) provides a rich Clojure editing experience in VS Code.
+
+### Option 1: Connect to Running REPL
+
+1. Start the REPL from terminal: `clj -A:dev:macos-arm64` (or your platform)
+2. Run `(start)` to launch the window
+3. In VS Code, run **Calva: Connect to a Running REPL Server in the Project** (`Ctrl+Alt+C Ctrl+Alt+C`)
+4. Select "deps.edn" → "localhost:7888"
+
+### Option 2: Jack-In (Calva Starts REPL)
+
+1. Run **Calva: Start a Project REPL and Connect (aka Jack-In)** (`Ctrl+Alt+C Ctrl+Alt+J`)
+2. Select "deps.edn"
+3. Check the aliases: `:dev` and your platform (e.g., `:macos-arm64`)
+4. Once connected, evaluate `(start)` in the REPL
+
+### Workflow
+
+- Edit `src/app/config.clj`
+- Evaluate `(reload)` in the REPL (or `Ctrl+Alt+C Enter` to eval current form)
+- See changes instantly in the window
+
 ## Game Loop (Love2D-style)
 
 The app uses a Love2D-inspired game loop with three hot-reloadable callbacks:
