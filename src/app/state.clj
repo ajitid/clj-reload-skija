@@ -10,36 +10,55 @@
 (defonce running? (atom false))
 
 ;; ============================================================
-;; Resettable state
+;; Reset values - SINGLE SOURCE OF TRUTH
 ;; ============================================================
 
-(defonce scale (atom 1.0))
-(defonce window-width (atom 800))
-(defonce window-height (atom 600))
-(defonce circles-x (atom 2))
-(defonce circles-y (atom 2))
-(defonce dragging-slider (atom nil))
-(defonce fps (atom 0.0))
-(defonce grid-positions (atom []))
-(defonce reloading? (atom false))
-(defonce last-reload-error (atom nil))
-(defonce last-runtime-error (atom nil))
+(def ^:private reset-values
+  "Initial/reset values for resettable state.
+   Both defonce and reset-state! reference this map."
+  {:scale 1.0
+   :window-width 800
+   :window-height 600
+   :circles-x 2
+   :circles-y 2
+   :dragging-slider nil
+   :fps 0.0
+   :grid-positions []
+   :reloading? false
+   :last-reload-error nil
+   :last-runtime-error nil})
 
 ;; ============================================================
-;; Reset function
+;; Resettable state (values from reset-values)
+;; ============================================================
+
+(defonce scale (atom (:scale reset-values)))
+(defonce window-width (atom (:window-width reset-values)))
+(defonce window-height (atom (:window-height reset-values)))
+(defonce circles-x (atom (:circles-x reset-values)))
+(defonce circles-y (atom (:circles-y reset-values)))
+(defonce dragging-slider (atom (:dragging-slider reset-values)))
+(defonce fps (atom (:fps reset-values)))
+(defonce grid-positions (atom (:grid-positions reset-values)))
+(defonce reloading? (atom (:reloading? reset-values)))
+(defonce last-reload-error (atom (:last-reload-error reset-values)))
+(defonce last-runtime-error (atom (:last-runtime-error reset-values)))
+
+;; ============================================================
+;; Reset function (uses same reset-values map)
 ;; ============================================================
 
 (defn reset-state!
   "Reset resettable state to initial values (for restart)."
   []
-  (reset! scale 1.0)
-  (reset! window-width 800)
-  (reset! window-height 600)
-  (reset! circles-x 2)
-  (reset! circles-y 2)
-  (reset! dragging-slider nil)
-  (reset! fps 0.0)
-  (reset! grid-positions [])
-  (reset! reloading? false)
-  (reset! last-reload-error nil)
-  (reset! last-runtime-error nil))
+  (reset! scale (:scale reset-values))
+  (reset! window-width (:window-width reset-values))
+  (reset! window-height (:window-height reset-values))
+  (reset! circles-x (:circles-x reset-values))
+  (reset! circles-y (:circles-y reset-values))
+  (reset! dragging-slider (:dragging-slider reset-values))
+  (reset! fps (:fps reset-values))
+  (reset! grid-positions (:grid-positions reset-values))
+  (reset! reloading? (:reloading? reset-values))
+  (reset! last-reload-error (:last-reload-error reset-values))
+  (reset! last-runtime-error (:last-runtime-error reset-values)))
