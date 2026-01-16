@@ -10,11 +10,11 @@
    - app.state (defonce) - sizes persist across reloads
    - app.config (def) - effects change on reload"
   (:require [app.state :as state]
-            [app.config :as config])
-  (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventFrame ZOrder]
+            [app.config :as config]
+            [app.controls :as controls])
+  (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventFrame EventMouseButton EventMouseMove ZOrder]
            [io.github.humbleui.jwm.skija EventFrameSkija LayerGLSkija]
-           [io.github.humbleui.skija Canvas Paint PaintMode ImageFilter FilterTileMode]
-           [io.github.humbleui.types Rect]
+           [io.github.humbleui.skija Canvas Paint PaintMode]
            [java.util.function Consumer]))
 
 ;; ============================================================
@@ -36,48 +36,34 @@
 ;; Drawing helpers
 ;; ============================================================
 
-(defn draw-circle-with-shadow
-  "Draw a circle with drop shadow at the given position.
-   Uses with-open for automatic resource cleanup (Skija best practice)."
-  [^Canvas canvas x y]
-  (let [radius @state/circle-radius]
-    ;; with-open ensures ImageFilter and Paint are properly closed
-    ;; even if an exception occurs (Skija AutoCloseable pattern)
-    (with-open [shadow-filter (ImageFilter/makeDropShadow
-                               (float (cfg 'app.config/shadow-dx))
-                               (float (cfg 'app.config/shadow-dy))
-                               (float (cfg 'app.config/shadow-sigma))
-                               (float (cfg 'app.config/shadow-sigma))
-                               (unchecked-int (cfg 'app.config/shadow-color)))
-                paint (doto (Paint.)
-                        (.setColor (unchecked-int (cfg 'app.config/circle-color)))
-                        (.setMode PaintMode/FILL)
-                        (.setAntiAlias true)
-                        (.setImageFilter shadow-filter))]
-      (.drawCircle canvas (float x) (float y) (float radius) paint))))
+(defn draw-circle
+  "Draw a circle at the given position."
+  [^Canvas canvas x y radius]
+  (with-open [paint (doto (Paint.)
+                      (.setColor (unchecked-int (cfg 'app.config/circle-color)))
+                      (.setMode PaintMode/FILL)
+                      (.setAntiAlias true))]
+    (.drawCircle canvas (float x) (float y) (float radius) paint)))
 
-(defn draw-rect-with-blur
-  "Draw a rectangle with blur effect at the given position.
-   Uses with-open for automatic resource cleanup (Skija best practice)."
-  [^Canvas canvas x y]
-  (let [width @state/rect-width
-        height @state/rect-height]
-    ;; with-open ensures ImageFilter and Paint are properly closed
-    ;; even if an exception occurs (Skija AutoCloseable pattern)
-    (with-open [blur-filter (ImageFilter/makeBlur
-                             (float (cfg 'app.config/blur-sigma-x))
-                             (float (cfg 'app.config/blur-sigma-y))
-                             FilterTileMode/CLAMP)
-                paint (doto (Paint.)
-                        (.setColor (unchecked-int (cfg 'app.config/rect-color)))
-                        (.setMode PaintMode/FILL)
-                        (.setAntiAlias true)
-                        (.setImageFilter blur-filter))]
-      (.drawRect canvas (Rect/makeXYWH (float x) (float y) (float width) (float height)) paint))))
+(defn draw-circle-grid
+  "Draw a grid of circles that fills the screen."
+  [^Canvas canvas width height]
+  (let [nx @state/circles-x
+        ny @state/circles-y
+        radius (cfg 'app.config/grid-circle-radius)
+        ;; Calculate cell size based on window dimensions
+        cell-w (/ width nx)
+        cell-h (/ height ny)]
+    (doseq [row (range ny)
+            col (range nx)]
+      (let [cx (+ (* col cell-w) (/ cell-w 2))
+            cy (+ (* row cell-h) (/ cell-h 2))
+            ;; Scale radius to fit in cell (use smaller of cell dimensions)
+            fit-radius (min (/ cell-w 2.2) (/ cell-h 2.2) radius)]
+        (draw-circle canvas cx cy fit-radius)))))
 
 ;; ============================================================
 ;; Love2D-style callbacks (hot-reloadable!)
-;; Renamed to avoid shadowing clojure.core/load and clojure.core/update
 ;; ============================================================
 
 (defn init
@@ -90,24 +76,22 @@
   "Called every frame with delta time in seconds.
    Update your game state here."
   [dt]
-  ;; Example: you could animate things based on dt
-  ;; (swap! state/circle-radius + (* 10 dt))
   nil)
 
 (defn draw
   "Called every frame for rendering.
    Draw your game here."
   [^Canvas canvas width height]
-  ;; Clear background to white
-  (.clear canvas (unchecked-int 0xFFFFFFFF))
+  ;; Clear background
+  (.clear canvas (unchecked-int (or (cfg 'app.config/grid-bg-color) 0xFF222222)))
 
   ;; Only render when config is loaded
   (when (config-loaded?)
-    ;; Draw the circle with drop shadow (left side)
-    (draw-circle-with-shadow canvas 200 200)
+    ;; Draw the circle grid (auto-adjusts to window size)
+    (draw-circle-grid canvas width height)
 
-    ;; Draw the rectangle with blur (right side)
-    (draw-rect-with-blur canvas 350 150)))
+    ;; Draw control panel on top
+    (controls/draw-panel canvas)))
 
 ;; ============================================================
 ;; Game loop infrastructure
@@ -126,6 +110,15 @@
             (.close window)
             (App/terminate))
 
+          EventMouseButton
+          (let [^EventMouseButton me event]
+            (if (.isPressed me)
+              (controls/handle-mouse-press me)
+              (controls/handle-mouse-release me)))
+
+          EventMouseMove
+          (controls/handle-mouse-move event)
+
           EventFrameSkija
           (let [^EventFrameSkija frame-event event
                 surface (.getSurface frame-event)
@@ -136,7 +129,7 @@
                 now (System/nanoTime)
                 dt (/ (- now @last-time) 1e9)]
             (reset! last-time now)
-            ;; Love2D-style game loop with error isolation (Skija best practice)
+            ;; Love2D-style game loop with error isolation
             ;; Prevents render errors during hot-reload from crashing the app
             (try
               (#'tick dt)
@@ -168,7 +161,7 @@
            (.setTitle "Skija Demo - Hot Reload with clj-reload")
            (.setLayer layer)
            (.setEventListener (create-event-listener window layer))
-           (.setContentSize 600 400)
+           (.setContentSize 800 600)
            (.setZOrder ZOrder/FLOATING)
            (.setVisible true))
          (.requestFrame window))))))

@@ -9,22 +9,26 @@
    - after-ns-reload  - called after this namespace is reloaded
    See: https://github.com/tonsky/clj-reload")
 
-;; Drop shadow settings for the pink circle
-;; dx, dy = shadow offset in pixels
-;; sigma = blur amount (higher = more blur)
-(def shadow-dx 0)
-(def shadow-dy 0)
-(def shadow-sigma 0.0)
-
-;; Blur settings for the green rectangle
-;; sigma-x, sigma-y = blur radius (higher = more blur)
-(def blur-sigma-x 2.0)
-(def blur-sigma-y 2.0)
-
-;; Colors (can also be changed on reload)
+;; Grid circle settings
 (def circle-color 0xFFFF69B4)      ;; Hot pink (ARGB format)
-(def shadow-color 0x80000000)      ;; Semi-transparent black
-(def rect-color 0xAA1132FF)        ;; Lime green
+
+;; Grid settings
+(def grid-circle-radius 100)       ;; Each circle is 200x200 (radius 100)
+(def grid-bg-color 0xFF222222)     ;; Dark background
+(def min-circles 1)
+(def max-circles 10)
+
+;; Control panel settings
+(def panel-x 10)
+(def panel-y 10)
+(def panel-width 200)
+(def panel-height 80)
+(def panel-bg-color 0xDD333333)
+(def panel-text-color 0xFFFFFFFF)
+(def slider-track-color 0xFF555555)
+(def slider-fill-color 0xFFFF69B4)
+(def slider-height 8)
+(def slider-width 120)
 
 ;; ============================================================
 ;; clj-reload hooks (optional - for resource cleanup/restart)
