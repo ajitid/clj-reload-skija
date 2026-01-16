@@ -108,22 +108,12 @@
       (when (and source line)
         (str source ":" line (when column (str ":" column)))))))
 
-(defn find-best-message
-  "Search exception chain and suppressed exceptions for the most useful message."
+(defn clj-reload-parse-error?
+  "Check if exception is from clj-reload's file reading/parsing (scan function)."
   [^Throwable e]
-  (let [;; Collect all exceptions in the chain
-        chain (loop [ex e, acc []]
-                (if ex
-                  (recur (.getCause ex) (conj acc ex))
-                  acc))
-        ;; Also check suppressed exceptions
-        all-exceptions (into chain (mapcat #(.getSuppressed ^Throwable %) chain))
-        ;; Find messages, preferring non-null, non-empty ones
-        messages (->> all-exceptions
-                      (map #(.getMessage ^Throwable %))
-                      (filter #(and % (not= % "null") (seq %))))]
-    ;; Return first good message, or nil
-    (first messages)))
+  (let [stack-trace (.getStackTrace e)]
+    (some #(str/includes? (.getClassName ^StackTraceElement %) "clj_reload.core$scan")
+          stack-trace)))
 
 (defn get-error-info
   "Extract useful error information from exception chain.
@@ -137,10 +127,12 @@
                         (instance? clojure.lang.Compiler$CompilerException ex) ex
                         :else (recur (.getCause ex))))
         location (when compiler-ex (get-compiler-location compiler-ex))
-        ;; Get the best available message
+        ;; Get the message
         root-msg (.getMessage root)
-        best-msg (if (or (nil? root-msg) (= root-msg "null") (empty? root-msg))
-                   (or (find-best-message e) "(see console for details)")
+        msg-empty? (or (nil? root-msg) (= root-msg "null") (empty? root-msg))
+        ;; Only suggest console for clj-reload parse errors with empty messages
+        best-msg (if (and msg-empty? (clj-reload-parse-error? e))
+                   "(see console for details)"
                    root-msg)]
     {:type (.getSimpleName (.getClass root))
      :message best-msg
