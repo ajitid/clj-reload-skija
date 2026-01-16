@@ -117,6 +117,15 @@ Then in the connected REPL:
 
 Changes apply immediately - no restart needed.
 
+### Error Recovery
+
+If you introduce a syntax or runtime error (e.g., typo like `forma` instead of `format`), the window shows a **red screen** (`0xFFFF6B6B`) as immediate visual feedback. The error message is printed to the console.
+
+To recover:
+1. Fix the error in your code
+2. Call `(reload)` in the connected REPL
+3. Drawing resumes automatically
+
 ## Using Calva (VS Code)
 
 [Calva](https://calva.io/) provides a rich Clojure editing experience in VS Code.

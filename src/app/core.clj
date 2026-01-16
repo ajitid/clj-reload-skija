@@ -10,11 +10,13 @@
    - init - called once at startup
    - tick - called every frame with delta time (dt)
    - draw - called every frame for rendering"
-  (:require [app.state :as state])
+  (:require [app.state :as state]
+            [clojure.string :as str])
   (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventWindowResize EventFrame EventMouseButton EventMouseMove ZOrder]
            [io.github.humbleui.jwm.skija EventFrameSkija LayerGLSkija]
-           [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap]
-           [java.util.function Consumer]))
+           [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap Font Typeface]
+           [java.util.function Consumer]
+           [java.io StringWriter PrintWriter]))
 
 ;; ============================================================
 ;; Helpers
@@ -89,6 +91,44 @@
                            (.setAntiAlias true))]
           (.drawPoints canvas points paint))))))
 
+(defn get-stack-trace-string
+  "Get stack trace as a string."
+  [^Throwable e]
+  (let [sw (StringWriter.)
+        pw (PrintWriter. sw)]
+    (.printStackTrace e pw)
+    (.toString sw)))
+
+(defn draw-error
+  "Draw error message and stack trace on canvas with red background."
+  [^Canvas canvas ^Exception e]
+  (let [bg-color    0xFFCC4444
+        text-color  0xFFFFFFFF
+        font-size   14
+        padding     20
+        line-height 18]
+    ;; Red background
+    (.clear canvas (unchecked-int bg-color))
+    ;; Draw error text
+    (with-open [typeface (Typeface/makeDefault)
+                font (Font. typeface (float font-size))
+                paint (doto (Paint.)
+                        (.setColor (unchecked-int text-color)))]
+      ;; Header
+      (.drawString canvas "ERROR" (float padding) (float (+ padding line-height)) font paint)
+      ;; Exception class and message
+      (let [msg (str (.getSimpleName (.getClass e)) ": " (.getMessage e))]
+        (.drawString canvas msg (float padding) (float (+ padding (* 2.5 line-height))) font paint))
+      ;; Stack trace (limited lines)
+      (let [stack-lines (-> (get-stack-trace-string e)
+                            (str/split #"\n")
+                            (->> (take 20)))]
+        (doseq [[idx line] (map-indexed vector stack-lines)]
+          (.drawString canvas
+                       (subs line 0 (min (count line) 100))  ;; truncate long lines
+                       (float padding)
+                       (float (+ padding (* (+ 4 idx) line-height)))
+                       font paint))))))
 
 ;; ============================================================
 ;; Love2D-style callbacks (hot-reloadable!)
@@ -198,7 +238,7 @@
                   (when-let [draw-fn (requiring-resolve 'app.core/draw)]
                     (draw-fn canvas w h))
                   (catch Exception e
-                    (.clear canvas (unchecked-int 0xFFFF6B6B))
+                    (draw-error canvas e)
                     (println "Render error:" (.getMessage e)))
                   (finally
                     (.restore canvas)))
