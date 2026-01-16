@@ -115,7 +115,7 @@
                 fps-paint (doto (Paint.)
                             (.setColor (unchecked-int (cfg 'app.config/panel-text-color))))]
       (.drawString canvas
-                   (format "FPS meters: %.0f" (double @state/fps))
+                   (format "FPS: %.0f" (double @state/fps))
                    (float (+ px pad))
                    (float (+ py pad 14))
                    font fps-paint))

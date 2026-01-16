@@ -121,7 +121,8 @@
     (draw-circle-grid canvas)
 
     ;; Draw control panel on top (at top-right)
-    ((requiring-resolve 'app.controls/draw-panel) canvas width)))
+    (when-let [draw-panel-fn (requiring-resolve 'app.controls/draw-panel)]
+      (draw-panel-fn canvas width))))
 
 ;; ============================================================
 ;; Game loop infrastructure
@@ -192,8 +193,10 @@
                 (try
                   (.save canvas)
                   (.scale canvas (float scale) (float scale))
-                  ((requiring-resolve 'app.core/tick) dt)
-                  ((requiring-resolve 'app.core/draw) canvas w h)
+                  (when-let [tick-fn (requiring-resolve 'app.core/tick)]
+                    (tick-fn dt))
+                  (when-let [draw-fn (requiring-resolve 'app.core/draw)]
+                    (draw-fn canvas w h))
                   (.restore canvas)
                   (catch Exception e
                     (.clear canvas (unchecked-int 0xFFFF6B6B))

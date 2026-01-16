@@ -36,9 +36,16 @@
    - app.state values (sizes) will persist (defonce)"
   []
   (println "Reloading...")
-  (let [result (reload/reload)]
-    (println "Reloaded:" (:loaded result))
-    result))
+  ;; Set guard BEFORE unload starts (protects against all namespace reloads)
+  ;; @(resolve ...) - deref var to get atom, then reset! the atom
+  (reset! @(resolve 'app.state/reloading?) true)
+  (try
+    (let [result (reload/reload)]
+      (println "Reloaded:" (:loaded result))
+      result)
+    (finally
+      ;; Always clear guard, even on error
+      (reset! @(resolve 'app.state/reloading?) false))))
 
 (defn start
   "Start the application."
