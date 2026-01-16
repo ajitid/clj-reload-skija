@@ -197,10 +197,11 @@
                     (tick-fn dt))
                   (when-let [draw-fn (requiring-resolve 'app.core/draw)]
                     (draw-fn canvas w h))
-                  (.restore canvas)
                   (catch Exception e
                     (.clear canvas (unchecked-int 0xFFFF6B6B))
-                    (println "Render error:" (.getMessage e))))
+                    (println "Render error:" (.getMessage e)))
+                  (finally
+                    (.restore canvas)))
                 (.requestFrame window))
 
               nil)))))))
