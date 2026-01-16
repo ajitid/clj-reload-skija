@@ -15,6 +15,12 @@
   [var-sym]
   (some-> (resolve var-sym) deref))
 
+(defn trigger-grid-recalc!
+  "Trigger grid recalculation (calls core/recalculate-grid! via resolve to avoid circular dep)."
+  []
+  (when-let [recalc (resolve 'app.core/recalculate-grid!)]
+    (recalc @state/window-width @state/window-height)))
+
 ;; ============================================================
 ;; Slider geometry
 ;; ============================================================
@@ -134,12 +140,14 @@
         (point-in-rect? mx my (slider-x-bounds ww))
         (do
           (reset! state/dragging-slider :x)
-          (reset! state/circles-x (slider-value-from-x mx (slider-x-bounds ww))))
+          (reset! state/circles-x (slider-value-from-x mx (slider-x-bounds ww)))
+          (trigger-grid-recalc!))
 
         (point-in-rect? mx my (slider-y-bounds ww))
         (do
           (reset! state/dragging-slider :y)
-          (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds ww))))))))
+          (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds ww)))
+          (trigger-grid-recalc!))))))
 
 (defn handle-mouse-release
   "Handle mouse button release - stop dragging."
@@ -156,4 +164,5 @@
           mx (/ (.getX event) scale)]
       (case slider
         :x (reset! state/circles-x (slider-value-from-x mx (slider-x-bounds ww)))
-        :y (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds ww)))))))
+        :y (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds ww))))
+      (trigger-grid-recalc!))))

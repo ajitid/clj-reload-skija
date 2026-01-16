@@ -67,14 +67,6 @@
   (doseq [{:keys [cx cy radius]} @state/grid-positions]
     (draw-circle canvas cx cy radius)))
 
-;; Watchers to recalculate grid when slider values change
-(defonce _grid-watchers
-  (do
-    (add-watch state/circles-x :grid-recalc
-               (fn [_ _ _ _] (recalculate-grid! @state/window-width @state/window-height)))
-    (add-watch state/circles-y :grid-recalc
-               (fn [_ _ _ _] (recalculate-grid! @state/window-width @state/window-height)))
-    true))
 
 ;; ============================================================
 ;; Love2D-style callbacks (hot-reloadable!)
