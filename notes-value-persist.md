@@ -46,3 +46,51 @@ This is why the codebase uses resolve for cross-namespace calls (see user.clj:40
 - resolve looks up vars by symbol at runtime
 - If a var is removed, resolve returns nil (no crash, just skip)
 - If a var is added, resolve finds it immediately
+
+---
+
+## Why macros don't work for DRYing state definitions
+
+**The goal**: Avoid duplicating init values in `src/app/state.clj` between `defonce` declarations and `reset-state!` function.
+
+**Approaches tried (all failed)**:
+
+1. **Registry with `swap!`** — Macro registers atom + init value in a registry atom
+   ```clojure
+   (defmacro defstate [name init-val]
+     `(do
+        (defonce ~name (atom ~init-val))
+        (swap! state-registry assoc '~name {:var (var ~name) :init ~init-val})))
+   ```
+   Result: **Hangs on reload** — `swap!` during namespace load conflicts with clj-reload
+
+2. **`defstates` macro** — Single macro generates all defonce forms + an init-values map
+   ```clojure
+   (defstates
+     scale 1.0
+     window-width 800
+     ...)
+   ```
+   Result: **Hangs on reload** — the `def init-values` form interferes with clj-reload's defonce handling
+
+3. **Atom metadata** — Store init value in atom metadata
+   ```clojure
+   (defonce scale (with-meta (atom 1.0) {:init 1.0}))
+   ```
+   Result: **ClassCastException** — Clojure atoms don't implement IObj (no metadata support)
+
+**Why it fails**: clj-reload has special handling for `defonce` to preserve values across reloads. Any side effects during namespace load (`swap!`, `def`, `alter-meta!`) interfere with this mechanism.
+
+**The working pattern**: Plain `defonce` + plain `reset-state!` with literal values.
+
+```clojure
+;; state.clj
+(defonce scale (atom 1.0))
+(defonce circles-x (atom 3))
+
+(defn reset-state! []
+  (reset! scale 1.0)      ; yes, duplicated
+  (reset! circles-x 3))   ; that's the cost
+```
+
+The 2-place duplication is the price of clj-reload compatibility. This is the same pattern used in Tonsky's own projects.

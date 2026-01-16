@@ -9,8 +9,8 @@
    5. See changes immediately!
 
    Other commands:
-   - (stop)    - Close window (can restart)
-   - (restart) - Close and reopen window
+   - (stop)    - Close window, reset state (can restart)
+   - (restart) - stop + reopen window
 
    Architecture (clj-reload pattern):
    - Event listener uses (resolve ...) for ALL callbacks
@@ -64,23 +64,22 @@
   ((resolve 'app.core/start-app)))
 
 (defn stop
-  "Stop the application (closes window, keeps event loop for restart)."
+  "Stop the application (closes window, resets state, keeps event loop for restart)."
   []
   (when @@(resolve 'app.state/running?)
     (reset! @(resolve 'app.state/running?) false)
     (io.github.humbleui.jwm.App/runOnUIThread
      (fn []
        (when-let [window @@(resolve 'app.state/window)]
-         (.close window))))))
+         (.close window))))
+    ;; Give UI thread time to close window, then reset state
+    (Thread/sleep 100)
+    ((resolve 'app.state/reset-state!))))
 
 (defn restart
   "Restart the application fresh (closes window, resets state, creates new window)."
   []
   (stop)
-  ;; Give UI thread time to close window
-  (Thread/sleep 100)
-  ;; Reset state to initial values
-  ((resolve 'app.state/reset-state!))
   ;; Create new window on UI thread
   (io.github.humbleui.jwm.App/runOnUIThread
    (fn []
