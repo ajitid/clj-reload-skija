@@ -14,7 +14,7 @@
             [app.controls :as controls])
   (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventWindowResize EventFrame EventMouseButton EventMouseMove ZOrder]
            [io.github.humbleui.jwm.skija EventFrameSkija LayerGLSkija]
-           [io.github.humbleui.skija Canvas Paint PaintMode]
+           [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap]
            [java.util.function Consumer]))
 
 ;; ============================================================
@@ -62,10 +62,21 @@
     (reset! state/grid-positions (vec positions))))
 
 (defn draw-circle-grid
-  "Draw a grid of circles using cached positions."
+  "Draw a grid of circles using batched points API."
   [^Canvas canvas]
-  (doseq [{:keys [cx cy radius]} @state/grid-positions]
-    (draw-circle canvas cx cy radius)))
+  (let [positions @state/grid-positions]
+    (when (seq positions)
+      (let [;; All circles same radius - use first one
+            radius (:radius (first positions))
+            ;; Build float array of x,y pairs
+            points (float-array (mapcat (fn [{:keys [cx cy]}] [cx cy]) positions))]
+        (with-open [paint (doto (Paint.)
+                           (.setColor (unchecked-int (cfg 'app.config/circle-color)))
+                           (.setMode PaintMode/STROKE)
+                           (.setStrokeWidth (float (* 2 radius)))  ; diameter
+                           (.setStrokeCap PaintStrokeCap/ROUND)
+                           (.setAntiAlias true))]
+          (.drawPoints canvas points paint))))))
 
 
 ;; ============================================================
