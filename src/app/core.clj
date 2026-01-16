@@ -12,11 +12,13 @@
    - draw - called every frame for rendering"
   (:require [app.state :as state]
             [clojure.string :as str])
-  (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventWindowResize EventFrame EventMouseButton EventMouseMove ZOrder]
+  (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventWindowResize EventFrame EventMouseButton EventMouseMove EventKey Key ZOrder]
            [io.github.humbleui.jwm.skija EventFrameSkija LayerGLSkija]
            [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap Font Typeface]
            [java.util.function Consumer]
-           [java.io StringWriter PrintWriter]))
+           [java.io StringWriter PrintWriter]
+           [java.awt Toolkit]
+           [java.awt.datatransfer StringSelection]))
 
 ;; ============================================================
 ;; Helpers
@@ -147,6 +149,41 @@
     (.printStackTrace e pw)
     (.toString sw)))
 
+(defn copy-to-clipboard!
+  "Copy text to system clipboard."
+  [^String text]
+  (let [clipboard (.getSystemClipboard (Toolkit/getDefaultToolkit))
+        selection (StringSelection. text)]
+    (.setContents clipboard selection nil)))
+
+(defn format-error-for-clipboard
+  "Format error with full stack trace for clipboard."
+  [^Throwable e]
+  (let [{:keys [type message location original-message]} (get-error-info e)
+        lines [(str "ERROR")
+               (when location (str "Location: " location))
+               (str type ": " message)
+               (when (and original-message (not= original-message message))
+                 (str "Context: " original-message))
+               ""
+               "Stack trace:"
+               (get-stack-trace-string e)]]
+    (str/join "\n" (remove nil? lines))))
+
+(defn truncate-with-ellipsis
+  "Truncate string to max-len, adding ellipsis if truncated."
+  [s max-len]
+  (if (> (count s) max-len)
+    (str (subs s 0 max-len) "…›")
+    s))
+
+(defn copy-current-error-to-clipboard!
+  "Copy the current error (if any) to clipboard.
+   Prioritizes reload error over runtime error."
+  []
+  (when-let [err (or @state/last-reload-error @state/last-runtime-error)]
+    (copy-to-clipboard! (format-error-for-clipboard err))))
+
 (defn draw-error
   "Draw error message and stack trace on canvas with red background."
   [^Canvas canvas ^Exception e]
@@ -177,7 +214,7 @@
             has-context? (and original-message (not= original-message message))]
         (when has-context?
           (.drawString canvas
-                       (str "(while: " (subs original-message 0 (min (count original-message) 80)) ")")
+                       (str "(while: " (truncate-with-ellipsis original-message 80) ")")
                        (float padding)
                        (float (+ padding (* base-y-offset line-height)))
                        font paint))
@@ -188,7 +225,7 @@
               stack-y-offset (if has-context? (+ base-y-offset 1.5) base-y-offset)]
           (doseq [[idx line] (map-indexed vector stack-lines)]
             (.drawString canvas
-                         (subs line 0 (min (count line) 100))
+                         (truncate-with-ellipsis line 100)
                          (float padding)
                          (float (+ padding (* (+ stack-y-offset idx) line-height)))
                          font paint)))))))
@@ -262,6 +299,12 @@
               EventMouseMove
               ((requiring-resolve 'app.controls/handle-mouse-move) event)
 
+              EventKey
+              (let [^EventKey ke event]
+                (when (and (.isPressed ke) (= Key/F2 (.getKey ke)))
+                  (when-let [copy-fn (requiring-resolve 'app.core/copy-current-error-to-clipboard!)]
+                    (copy-fn))))
+
               EventWindowResize
               (let [^io.github.humbleui.jwm.EventWindowResize re event
                     scale @state/scale
@@ -300,11 +343,14 @@
                   (if-let [reload-err @state/last-reload-error]
                     (draw-error canvas reload-err)
                     (do
+                      (reset! state/last-runtime-error nil) ;; Clear runtime error on success
                       (when-let [tick-fn (requiring-resolve 'app.core/tick)]
                         (tick-fn dt))
                       (when-let [draw-fn (requiring-resolve 'app.core/draw)]
                         (draw-fn canvas w h))))
                   (catch Exception e
+                    ;; Store runtime error for F2 copy-to-clipboard
+                    (reset! state/last-runtime-error e)
                     ;; Show reload error (root cause) if available, otherwise runtime error
                     (let [error-to-show (or @state/last-reload-error e)]
                       (draw-error canvas error-to-show))

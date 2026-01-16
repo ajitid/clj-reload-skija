@@ -36,3 +36,7 @@
 ;; Last reload error - stores compile-time errors from (reload)
 ;; Displayed in UI so users see the actual error, not just "unbound fn"
 (defonce last-reload-error (atom nil))
+
+;; Last runtime error - stores runtime errors caught during rendering
+;; Used for F2 copy-to-clipboard when no reload error exists
+(defonce last-runtime-error (atom nil))
