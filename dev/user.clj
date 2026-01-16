@@ -41,8 +41,14 @@
   (reset! @(resolve 'app.state/reloading?) true)
   (try
     (let [result (reload/reload)]
+      ;; Clear error on successful reload
+      (reset! @(resolve 'app.state/last-reload-error) nil)
       (println "Reloaded:" (:loaded result))
       result)
+    (catch Exception e
+      ;; Store compile error so UI can display it
+      (reset! @(resolve 'app.state/last-reload-error) e)
+      (throw e))  ;; Re-throw for REPL feedback
     (finally
       ;; Always clear guard, even on error
       (reset! @(resolve 'app.state/reloading?) false))))

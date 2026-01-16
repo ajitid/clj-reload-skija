@@ -91,6 +91,40 @@
                            (.setAntiAlias true))]
           (.drawPoints canvas points paint))))))
 
+(defn get-root-cause
+  "Traverse exception chain to find root cause."
+  [^Throwable e]
+  (if-let [cause (.getCause e)]
+    (recur cause)
+    e))
+
+(defn get-compiler-location
+  "Extract file:line:column from Clojure CompilerException ex-data."
+  [^Throwable e]
+  (when-let [data (ex-data e)]
+    (let [source (:clojure.error/source data)
+          line (:clojure.error/line data)
+          column (:clojure.error/column data)]
+      (when (and source line)
+        (str source ":" line (when column (str ":" column)))))))
+
+(defn get-error-info
+  "Extract useful error information from exception chain.
+   Returns {:message :location :root-message :type}."
+  [^Throwable e]
+  (let [root (get-root-cause e)
+        ;; Try to find CompilerException in the chain for location info
+        compiler-ex (loop [ex e]
+                      (cond
+                        (nil? ex) nil
+                        (instance? clojure.lang.Compiler$CompilerException ex) ex
+                        :else (recur (.getCause ex))))
+        location (when compiler-ex (get-compiler-location compiler-ex))]
+    {:type (.getSimpleName (.getClass root))
+     :message (.getMessage root)
+     :location location
+     :original-message (.getMessage e)}))
+
 (defn get-stack-trace-string
   "Get stack trace as a string."
   [^Throwable e]
@@ -106,7 +140,8 @@
         text-color  0xFFFFFFFF
         font-size   14
         padding     20
-        line-height 18]
+        line-height 18
+        {:keys [type message location original-message]} (get-error-info e)]
     ;; Red background
     (.clear canvas (unchecked-int bg-color))
     ;; Draw error text
@@ -116,19 +151,33 @@
                         (.setColor (unchecked-int text-color)))]
       ;; Header
       (.drawString canvas "ERROR" (float padding) (float (+ padding line-height)) font paint)
-      ;; Exception class and message
-      (let [msg (str (.getSimpleName (.getClass e)) ": " (.getMessage e))]
-        (.drawString canvas msg (float padding) (float (+ padding (* 2.5 line-height))) font paint))
-      ;; Stack trace (limited lines)
-      (let [stack-lines (-> (get-stack-trace-string e)
-                            (str/split #"\n")
-                            (->> (take 20)))]
-        (doseq [[idx line] (map-indexed vector stack-lines)]
+      ;; Location (file:line:column) if available (for compile errors)
+      (when location
+        (.drawString canvas (str "at " location) (float padding) (float (+ padding (* 2.5 line-height))) font paint))
+      ;; Root cause message (the actual error like "Unable to resolve symbol: forma")
+      (let [root-msg (str type ": " message)
+            y-offset (if location 4.0 2.5)]
+        (.drawString canvas root-msg (float padding) (float (+ padding (* y-offset line-height))) font paint))
+      ;; Original message if different (shows context like "Failed to load namespace")
+      (let [base-y-offset (if location 5.5 4.0)
+            has-context? (and original-message (not= original-message message))]
+        (when has-context?
           (.drawString canvas
-                       (subs line 0 (min (count line) 100))  ;; truncate long lines
+                       (str "(while: " (subs original-message 0 (min (count original-message) 80)) ")")
                        (float padding)
-                       (float (+ padding (* (+ 4 idx) line-height)))
-                       font paint))))))
+                       (float (+ padding (* base-y-offset line-height)))
+                       font paint))
+        ;; Stack trace
+        (let [stack-lines (-> (get-stack-trace-string e)
+                              (str/split #"\n")
+                              (->> (take 15)))
+              stack-y-offset (if has-context? (+ base-y-offset 1.5) base-y-offset)]
+          (doseq [[idx line] (map-indexed vector stack-lines)]
+            (.drawString canvas
+                         (subs line 0 (min (count line) 100))
+                         (float padding)
+                         (float (+ padding (* (+ stack-y-offset idx) line-height)))
+                         font paint)))))))
 
 ;; ============================================================
 ;; Love2D-style callbacks (hot-reloadable!)
@@ -238,7 +287,9 @@
                   (when-let [draw-fn (requiring-resolve 'app.core/draw)]
                     (draw-fn canvas w h))
                   (catch Exception e
-                    (draw-error canvas e)
+                    ;; Show reload error (root cause) if available, otherwise runtime error
+                    (let [error-to-show (or @state/last-reload-error e)]
+                      (draw-error canvas error-to-show))
                     (println "Render error:" (.getMessage e)))
                   (finally
                     (.restore canvas)))

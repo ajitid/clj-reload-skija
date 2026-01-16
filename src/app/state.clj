@@ -32,3 +32,7 @@
 ;; Reload guard - true while namespaces are being reloaded
 ;; Used to skip event handling during reload (avoids NPE from unloaded vars)
 (defonce reloading? (atom false))
+
+;; Last reload error - stores compile-time errors from (reload)
+;; Displayed in UI so users see the actual error, not just "unbound fn"
+(defonce last-reload-error (atom nil))
