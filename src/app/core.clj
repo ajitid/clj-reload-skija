@@ -12,7 +12,7 @@
   (:require [app.state :as state]
             [app.config :as config]
             [app.controls :as controls])
-  (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventFrame EventMouseButton EventMouseMove ZOrder]
+  (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventWindowResize EventFrame EventMouseButton EventMouseMove ZOrder]
            [io.github.humbleui.jwm.skija EventFrameSkija LayerGLSkija]
            [io.github.humbleui.skija Canvas Paint PaintMode]
            [java.util.function Consumer]))
@@ -45,22 +45,36 @@
                       (.setAntiAlias true))]
     (.drawCircle canvas (float x) (float y) (float radius) paint)))
 
-(defn draw-circle-grid
-  "Draw a grid of circles that fills the screen."
-  [^Canvas canvas width height]
+(defn recalculate-grid!
+  "Recalculate and cache grid positions. Called on resize or grid settings change."
+  [width height]
   (let [nx @state/circles-x
         ny @state/circles-y
-        radius (cfg 'app.config/grid-circle-radius)
-        ;; Calculate cell size based on window dimensions
+        radius (or (cfg 'app.config/grid-circle-radius) 100)
         cell-w (/ width nx)
-        cell-h (/ height ny)]
-    (doseq [row (range ny)
-            col (range nx)]
-      (let [cx (+ (* col cell-w) (/ cell-w 2))
-            cy (+ (* row cell-h) (/ cell-h 2))
-            ;; Scale radius to fit in cell (use smaller of cell dimensions)
-            fit-radius (min (/ cell-w 2.2) (/ cell-h 2.2) radius)]
-        (draw-circle canvas cx cy fit-radius)))))
+        cell-h (/ height ny)
+        positions (for [row (range ny)
+                        col (range nx)]
+                    (let [cx (+ (* col cell-w) (/ cell-w 2))
+                          cy (+ (* row cell-h) (/ cell-h 2))
+                          fit-radius (min (/ cell-w 2.2) (/ cell-h 2.2) radius)]
+                      {:cx cx :cy cy :radius fit-radius}))]
+    (reset! state/grid-positions (vec positions))))
+
+(defn draw-circle-grid
+  "Draw a grid of circles using cached positions."
+  [^Canvas canvas]
+  (doseq [{:keys [cx cy radius]} @state/grid-positions]
+    (draw-circle canvas cx cy radius)))
+
+;; Watchers to recalculate grid when slider values change
+(defonce _grid-watchers
+  (do
+    (add-watch state/circles-x :grid-recalc
+               (fn [_ _ _ _] (recalculate-grid! @state/window-width @state/window-height)))
+    (add-watch state/circles-y :grid-recalc
+               (fn [_ _ _ _] (recalculate-grid! @state/window-width @state/window-height)))
+    true))
 
 ;; ============================================================
 ;; Love2D-style callbacks (hot-reloadable!)
@@ -70,7 +84,9 @@
   "Called once when the game starts.
    Initialize your game state here."
   []
-  (println "Game loaded!"))
+  (println "Game loaded!")
+  ;; Initial grid calculation
+  (recalculate-grid! @state/window-width @state/window-height))
 
 (defn tick
   "Called every frame with delta time in seconds.
@@ -87,8 +103,8 @@
 
   ;; Only render when config is loaded
   (when (config-loaded?)
-    ;; Draw the circle grid (auto-adjusts to window size)
-    (draw-circle-grid canvas width height)
+    ;; Draw the circle grid (uses cached positions)
+    (draw-circle-grid canvas)
 
     ;; Draw control panel on top (at top-right)
     (controls/draw-panel canvas width)))
@@ -118,6 +134,15 @@
 
           EventMouseMove
           (controls/handle-mouse-move event)
+
+          EventWindowResize
+          (let [^io.github.humbleui.jwm.EventWindowResize re event
+                scale @state/scale
+                w (/ (.getContentWidth re) scale)
+                h (/ (.getContentHeight re) scale)]
+            (reset! state/window-width w)
+            (reset! state/window-height h)
+            (recalculate-grid! w h))
 
           EventFrameSkija
           (let [^EventFrameSkija frame-event event

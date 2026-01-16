@@ -24,3 +24,7 @@
 
 ;; FPS tracking
 (defonce fps (atom 0.0))
+
+;; Cached grid positions - recalculated only on resize or grid change
+;; Each entry is {:cx :cy :radius} for each circle
+(defonce grid-positions (atom []))
