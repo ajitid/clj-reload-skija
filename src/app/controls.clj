@@ -19,23 +19,30 @@
 ;; Slider geometry
 ;; ============================================================
 
+(defn calc-panel-x
+  "Calculate panel x position (right-aligned)"
+  [window-width]
+  (- window-width (cfg 'app.config/panel-width) (cfg 'app.config/panel-right-offset)))
+
 (defn slider-x-bounds
   "Get bounds for X slider: [x y w h]"
-  []
-  (let [px (cfg 'app.config/panel-x)
+  [window-width]
+  (let [px (calc-panel-x window-width)
         py (cfg 'app.config/panel-y)
+        pad (cfg 'app.config/panel-padding)
         sw (cfg 'app.config/slider-width)
         sh (cfg 'app.config/slider-height)]
-    [(+ px 90) (+ py 30) sw sh]))
+    [(+ px pad) (+ py pad 22) sw sh]))
 
 (defn slider-y-bounds
   "Get bounds for Y slider: [x y w h]"
-  []
-  (let [px (cfg 'app.config/panel-x)
+  [window-width]
+  (let [px (calc-panel-x window-width)
         py (cfg 'app.config/panel-y)
+        pad (cfg 'app.config/panel-padding)
         sw (cfg 'app.config/slider-width)
         sh (cfg 'app.config/slider-height)]
-    [(+ px 90) (+ py 75) sw sh]))
+    [(+ px pad) (+ py pad 22 sh 30) sw sh]))
 
 (defn point-in-rect?
   "Check if point (px, py) is inside rect [x y w h]"
@@ -57,13 +64,21 @@
 ;; ============================================================
 
 (defn draw-slider
-  "Draw a slider with label and value."
+  "Draw a slider with label and value above it.
+   Layout:  Label: <value>
+            [====slider====]"
   [^Canvas canvas label value [sx sy sw sh]]
   (let [min-val (cfg 'app.config/min-circles)
         max-val (cfg 'app.config/max-circles)
         ratio (/ (- value min-val) (- max-val min-val))
         fill-w (* sw ratio)
         font-size (or (cfg 'app.config/font-size) 18)]
+    ;; Draw label and value ABOVE the slider
+    (with-open [typeface (Typeface/makeDefault)
+                font (Font. typeface (float font-size))
+                text-paint (doto (Paint.)
+                             (.setColor (unchecked-int (cfg 'app.config/panel-text-color))))]
+      (.drawString canvas (str label " " value) (float sx) (float (- sy 6)) font text-paint))
     ;; Draw track
     (with-open [track-paint (doto (Paint.)
                               (.setColor (unchecked-int (cfg 'app.config/slider-track-color))))]
@@ -71,19 +86,12 @@
     ;; Draw fill
     (with-open [fill-paint (doto (Paint.)
                              (.setColor (unchecked-int (cfg 'app.config/slider-fill-color))))]
-      (.drawRect canvas (Rect/makeXYWH (float sx) (float sy) (float fill-w) (float sh)) fill-paint))
-    ;; Draw label and value
-    (with-open [typeface (Typeface/makeDefault)
-                font (Font. typeface (float font-size))
-                text-paint (doto (Paint.)
-                             (.setColor (unchecked-int (cfg 'app.config/panel-text-color))))]
-      (.drawString canvas label (float (- sx 70)) (float (+ sy sh -2)) font text-paint)
-      (.drawString canvas (str value) (float (+ sx sw 12)) (float (+ sy sh -2)) font text-paint))))
+      (.drawRect canvas (Rect/makeXYWH (float sx) (float sy) (float fill-w) (float sh)) fill-paint))))
 
 (defn draw-panel
-  "Draw control panel with sliders."
-  [^Canvas canvas]
-  (let [px (cfg 'app.config/panel-x)
+  "Draw control panel with sliders at top-right."
+  [^Canvas canvas window-width]
+  (let [px (calc-panel-x window-width)
         py (cfg 'app.config/panel-y)
         pw (cfg 'app.config/panel-width)
         ph (cfg 'app.config/panel-height)]
@@ -92,8 +100,8 @@
                            (.setColor (unchecked-int (cfg 'app.config/panel-bg-color))))]
       (.drawRect canvas (Rect/makeXYWH (float px) (float py) (float pw) (float ph)) bg-paint))
     ;; Draw sliders
-    (draw-slider canvas "X:" @state/circles-x (slider-x-bounds))
-    (draw-slider canvas "Y:" @state/circles-y (slider-y-bounds))))
+    (draw-slider canvas "X:" @state/circles-x (slider-x-bounds window-width))
+    (draw-slider canvas "Y:" @state/circles-y (slider-y-bounds window-width))))
 
 ;; ============================================================
 ;; Mouse event handling
@@ -105,18 +113,19 @@
   (when (= (.getButton event) MouseButton/PRIMARY)
     ;; Convert physical pixels to logical pixels
     (let [scale @state/scale
+          ww @state/window-width
           mx (/ (.getX event) scale)
           my (/ (.getY event) scale)]
       (cond
-        (point-in-rect? mx my (slider-x-bounds))
+        (point-in-rect? mx my (slider-x-bounds ww))
         (do
           (reset! state/dragging-slider :x)
-          (reset! state/circles-x (slider-value-from-x mx (slider-x-bounds))))
+          (reset! state/circles-x (slider-value-from-x mx (slider-x-bounds ww))))
 
-        (point-in-rect? mx my (slider-y-bounds))
+        (point-in-rect? mx my (slider-y-bounds ww))
         (do
           (reset! state/dragging-slider :y)
-          (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds))))))))
+          (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds ww))))))))
 
 (defn handle-mouse-release
   "Handle mouse button release - stop dragging."
@@ -129,7 +138,8 @@
   (when-let [slider @state/dragging-slider]
     ;; Convert physical pixels to logical pixels
     (let [scale @state/scale
+          ww @state/window-width
           mx (/ (.getX event) scale)]
       (case slider
-        :x (reset! state/circles-x (slider-value-from-x mx (slider-x-bounds)))
-        :y (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds)))))))
+        :x (reset! state/circles-x (slider-value-from-x mx (slider-x-bounds ww)))
+        :y (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds ww)))))))

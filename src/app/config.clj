@@ -19,10 +19,11 @@
 (def max-circles 10)
 
 ;; Control panel settings (in logical pixels, will be scaled)
-(def panel-x 20)
+(def panel-right-offset 20)    ;; Distance from right edge
 (def panel-y 20)
-(def panel-width 280)
-(def panel-height 120)
+(def panel-width 200)
+(def panel-height 140)
+(def panel-padding 15)
 (def panel-bg-color 0xDD333333)
 (def panel-text-color 0xFFFFFFFF)
 (def slider-track-color 0xFF555555)

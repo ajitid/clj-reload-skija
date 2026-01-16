@@ -8,6 +8,10 @@
 ;; Display scale factor (for HiDPI support)
 (defonce scale (atom 1.0))
 
+;; Window dimensions (logical pixels, for control positioning)
+(defonce window-width (atom 800))
+(defonce window-height (atom 600))
+
 ;; App running state
 (defonce running? (atom false))
 

@@ -90,8 +90,8 @@
     ;; Draw the circle grid (auto-adjusts to window size)
     (draw-circle-grid canvas width height)
 
-    ;; Draw control panel on top
-    (controls/draw-panel canvas)))
+    ;; Draw control panel on top (at top-right)
+    (controls/draw-panel canvas width)))
 
 ;; ============================================================
 ;; Game loop infrastructure
@@ -134,6 +134,8 @@
                 ;; Logical pixels (what we work with)
                 w (/ pw scale)
                 h (/ ph scale)
+                _ (reset! state/window-width w)
+                _ (reset! state/window-height h)
                 ;; Calculate delta time
                 now (System/nanoTime)
                 dt (/ (- now @last-time) 1e9)]
