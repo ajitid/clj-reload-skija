@@ -81,13 +81,19 @@ clj -A:dev:linux
 
 An nREPL server will automatically start on port 7888.
 
-In the REPL, start the window:
+In the REPL, open the window:
 
 ```clojure
-(start)
+(open)
 ```
 
 The window opens and the REPL blocks (this is normal).
+
+Other REPL commands:
+```clojure
+(close)   ;; Close window, reset state (can reopen)
+(reopen)  ;; Close + open new window
+```
 
 ## Hot Reloading
 
@@ -142,7 +148,7 @@ To recover:
 1. Run **Calva: Start a Project REPL and Connect (aka Jack-In)** (`Ctrl+Alt+C Ctrl+Alt+J`)
 2. Select "deps.edn"
 3. Check the aliases: `:dev` and your platform (e.g., `:macos-arm64`)
-4. Once connected, evaluate `(start)` in the REPL
+4. Once connected, evaluate `(open)` in the REPL
 
 ### Workflow
 

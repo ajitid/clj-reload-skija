@@ -2,15 +2,15 @@
   "Development namespace - loaded automatically when REPL starts.
 
    Usage:
-   1. Start the app: (start)
+   1. Open the app: (open)
    2. Open another terminal and connect: clj -M:connect
    3. Edit ANY source file (config, controls, core, etc.)
    4. In connected REPL: (reload)
    5. See changes immediately!
 
    Other commands:
-   - (stop)    - Close window, reset state (can restart)
-   - (restart) - stop + reopen window
+   - (close)  - Close window, reset state (can reopen)
+   - (reopen) - close + open new window
 
    Architecture (clj-reload pattern):
    - Event listener uses (resolve ...) for ALL callbacks
@@ -57,14 +57,14 @@
       ;; Always clear guard, even on error
       (reset! @(resolve 'app.state/reloading?) false))))
 
-(defn start
-  "Start the application."
+(defn open
+  "Open the application window."
   []
   (require 'app.core)
   ((resolve 'app.core/start-app)))
 
-(defn stop
-  "Stop the application (closes window, resets state, keeps event loop for restart)."
+(defn close
+  "Close the application window and reset state (can reopen)."
   []
   (when @@(resolve 'app.state/running?)
     (reset! @(resolve 'app.state/running?) false)
@@ -76,10 +76,10 @@
     (Thread/sleep 100)
     ((resolve 'app.state/reset-state!))))
 
-(defn restart
-  "Restart the application fresh (closes window, resets state, creates new window)."
+(defn reopen
+  "Reopen the application (close + open new window)."
   []
-  (stop)
+  (close)
   ;; Create new window on UI thread
   (io.github.humbleui.jwm.App/runOnUIThread
    (fn []
@@ -89,14 +89,14 @@
 (comment
   ;; Quick REPL commands:
 
-  ;; Start the app
-  (start)
+  ;; Open the app
+  (open)
 
-  ;; Stop the app (window closes, can restart)
-  (stop)
+  ;; Close the app (window closes, can reopen)
+  (close)
 
-  ;; Restart the app (closes window and creates new one)
-  (restart)
+  ;; Reopen the app (closes window and creates new one)
+  (reopen)
 
   ;; After editing config.clj, reload to see changes
   (reload)

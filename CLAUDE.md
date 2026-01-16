@@ -23,7 +23,9 @@ clj -A:run
 
 **In the REPL:**
 ```clojure
-(start)   ;; Start the JWM window application (blocks this REPL)
+(open)    ;; Open the JWM window application (blocks this REPL)
+(close)   ;; Close window, reset state (can reopen)
+(reopen)  ;; Close + open new window
 (reload)  ;; Hot-reload changed namespaces (run from connected REPL)
 ```
 
@@ -82,7 +84,7 @@ The event listener uses `resolve` for ALL callbacks so they survive namespace re
 - **app.state** - Atoms wrapped in `defonce` for persistent state
 - **app.controls** - UI drawing and mouse handling (fully reloadable)
 - **app.config** - Plain `def` values for visual parameters
-- **user** (dev/) - REPL namespace with `start` and `reload` functions
+- **user** (dev/) - REPL namespace with `open`, `close`, `reopen`, and `reload` functions
 
 ### Dependencies
 
