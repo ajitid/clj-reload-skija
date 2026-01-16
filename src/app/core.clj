@@ -361,27 +361,31 @@
 
               nil)))))))
 
-(defn start-app
-  "Start the application - creates window and begins game loop."
+(defn create-window
+  "Create a new window. Can be called from UI thread after App/start."
   []
   (when-not @state/running?
     (reset! state/running? true)
-    (App/start
-     (fn []
-       (let [window (App/makeWindow)
-             layer (LayerGLSkija.)]
-         (reset! state/window window)
-         ;; Call init once at startup (via resolve for consistency)
-         (when-let [init-fn (resolve 'app.core/init)]
-           (init-fn))
-         (doto window
-           (.setTitle "Skija Demo - Hot Reload with clj-reload")
-           (.setLayer layer)
-           (.setEventListener (create-event-listener window layer))
-           (.setContentSize 800 600)
-           (.setZOrder ZOrder/FLOATING)
-           (.setVisible true))
-         (.requestFrame window))))))
+    (let [window (App/makeWindow)
+          layer (LayerGLSkija.)]
+      (reset! state/window window)
+      ;; Call init once at startup (via resolve for consistency)
+      (when-let [init-fn (resolve 'app.core/init)]
+        (init-fn))
+      (doto window
+        (.setTitle "Skija Demo - Hot Reload with clj-reload")
+        (.setLayer layer)
+        (.setEventListener (create-event-listener window layer))
+        (.setContentSize 800 600)
+        (.setZOrder ZOrder/FLOATING)
+        (.setVisible true))
+      (.requestFrame window))))
+
+(defn start-app
+  "Start the application - starts event loop and creates window."
+  []
+  (when-not @state/running?
+    (App/start create-window)))
 
 (defn -main
   "Entry point for running the application."
