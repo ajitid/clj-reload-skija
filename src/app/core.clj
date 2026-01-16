@@ -123,8 +123,17 @@
           (let [^EventFrameSkija frame-event event
                 surface (.getSurface frame-event)
                 canvas (.getCanvas surface)
-                w (.getWidth surface)
-                h (.getHeight surface)
+                ;; Get scale factor for HiDPI support
+                scale (if-let [screen (.getScreen window)]
+                        (.getScale screen)
+                        1.0)
+                _ (reset! state/scale scale)
+                ;; Physical pixels from surface
+                pw (.getWidth surface)
+                ph (.getHeight surface)
+                ;; Logical pixels (what we work with)
+                w (/ pw scale)
+                h (/ ph scale)
                 ;; Calculate delta time
                 now (System/nanoTime)
                 dt (/ (- now @last-time) 1e9)]
@@ -132,8 +141,12 @@
             ;; Love2D-style game loop with error isolation
             ;; Prevents render errors during hot-reload from crashing the app
             (try
+              ;; Scale canvas so we work in logical pixels
+              (.save canvas)
+              (.scale canvas (float scale) (float scale))
               (#'tick dt)
               (#'draw canvas w h)
+              (.restore canvas)
               (catch Exception e
                 ;; Clear to error color so user knows something went wrong
                 (.clear canvas (unchecked-int 0xFFFF6B6B))

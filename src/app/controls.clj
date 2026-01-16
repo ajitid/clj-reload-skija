@@ -26,7 +26,7 @@
         py (cfg 'app.config/panel-y)
         sw (cfg 'app.config/slider-width)
         sh (cfg 'app.config/slider-height)]
-    [(+ px 70) (+ py 22) sw sh]))
+    [(+ px 90) (+ py 30) sw sh]))
 
 (defn slider-y-bounds
   "Get bounds for Y slider: [x y w h]"
@@ -35,7 +35,7 @@
         py (cfg 'app.config/panel-y)
         sw (cfg 'app.config/slider-width)
         sh (cfg 'app.config/slider-height)]
-    [(+ px 70) (+ py 52) sw sh]))
+    [(+ px 90) (+ py 75) sw sh]))
 
 (defn point-in-rect?
   "Check if point (px, py) is inside rect [x y w h]"
@@ -62,7 +62,8 @@
   (let [min-val (cfg 'app.config/min-circles)
         max-val (cfg 'app.config/max-circles)
         ratio (/ (- value min-val) (- max-val min-val))
-        fill-w (* sw ratio)]
+        fill-w (* sw ratio)
+        font-size (or (cfg 'app.config/font-size) 18)]
     ;; Draw track
     (with-open [track-paint (doto (Paint.)
                               (.setColor (unchecked-int (cfg 'app.config/slider-track-color))))]
@@ -73,11 +74,11 @@
       (.drawRect canvas (Rect/makeXYWH (float sx) (float sy) (float fill-w) (float sh)) fill-paint))
     ;; Draw label and value
     (with-open [typeface (Typeface/makeDefault)
-                font (Font. typeface (float 14))
+                font (Font. typeface (float font-size))
                 text-paint (doto (Paint.)
                              (.setColor (unchecked-int (cfg 'app.config/panel-text-color))))]
-      (.drawString canvas label (float (- sx 60)) (float (+ sy sh)) font text-paint)
-      (.drawString canvas (str value) (float (+ sx sw 8)) (float (+ sy sh)) font text-paint))))
+      (.drawString canvas label (float (- sx 70)) (float (+ sy sh -2)) font text-paint)
+      (.drawString canvas (str value) (float (+ sx sw 12)) (float (+ sy sh -2)) font text-paint))))
 
 (defn draw-panel
   "Draw control panel with sliders."
@@ -102,8 +103,10 @@
   "Handle mouse button press - start dragging if on slider."
   [^EventMouseButton event]
   (when (= (.getButton event) MouseButton/PRIMARY)
-    (let [mx (.getX event)
-          my (.getY event)]
+    ;; Convert physical pixels to logical pixels
+    (let [scale @state/scale
+          mx (/ (.getX event) scale)
+          my (/ (.getY event) scale)]
       (cond
         (point-in-rect? mx my (slider-x-bounds))
         (do
@@ -124,7 +127,9 @@
   "Handle mouse move - update slider if dragging."
   [^EventMouseMove event]
   (when-let [slider @state/dragging-slider]
-    (let [mx (.getX event)]
+    ;; Convert physical pixels to logical pixels
+    (let [scale @state/scale
+          mx (/ (.getX event) scale)]
       (case slider
         :x (reset! state/circles-x (slider-value-from-x mx (slider-x-bounds)))
         :y (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds)))))))

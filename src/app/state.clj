@@ -5,6 +5,9 @@
 ;; Window reference - persists so we don't create multiple windows
 (defonce window (atom nil))
 
+;; Display scale factor (for HiDPI support)
+(defonce scale (atom 1.0))
+
 ;; App running state
 (defonce running? (atom false))
 

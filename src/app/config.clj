@@ -18,17 +18,18 @@
 (def min-circles 1)
 (def max-circles 10)
 
-;; Control panel settings
-(def panel-x 10)
-(def panel-y 10)
-(def panel-width 200)
-(def panel-height 80)
+;; Control panel settings (in logical pixels, will be scaled)
+(def panel-x 20)
+(def panel-y 20)
+(def panel-width 280)
+(def panel-height 120)
 (def panel-bg-color 0xDD333333)
 (def panel-text-color 0xFFFFFFFF)
 (def slider-track-color 0xFF555555)
 (def slider-fill-color 0xFFFF69B4)
-(def slider-height 8)
-(def slider-width 120)
+(def slider-height 16)
+(def slider-width 160)
+(def font-size 18)
 
 ;; ============================================================
 ;; clj-reload hooks (optional - for resource cleanup/restart)
