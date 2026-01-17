@@ -260,20 +260,16 @@
   ;; Advance game time (dt is in seconds, apply time scale)
   (swap! state/game-time + (* dt @state/time-scale))
 
-  ;; Update spring demo if not dragging
+  ;; Update demo circle momentum (X-axis only, velocity decay)
   (when-not @state/demo-dragging?
-    ;; Update X spring
-    (when-let [spring-x @state/demo-spring-x]
-      (when-let [spring-now (requiring-resolve 'lib.spring.core/spring-now)]
-        (let [{:keys [value at-rest?]} (spring-now spring-x)]
-          (reset! state/demo-circle-x value)
-          (when at-rest? (reset! state/demo-spring-x nil)))))
-    ;; Update Y spring
-    (when-let [spring-y @state/demo-spring-y]
-      (when-let [spring-now (requiring-resolve 'lib.spring.core/spring-now)]
-        (let [{:keys [value at-rest?]} (spring-now spring-y)]
-          (reset! state/demo-circle-y value)
-          (when at-rest? (reset! state/demo-spring-y nil)))))))
+    (let [vx @state/demo-velocity-x
+          friction 0.98]  ;; Velocity decay per frame
+      ;; Only update if velocity is significant
+      (when (> (abs vx) 0.5)
+        ;; Apply velocity to position
+        (swap! state/demo-circle-x + (* vx dt))
+        ;; Decay velocity (friction)
+        (swap! state/demo-velocity-x * friction)))))
 
 (defn draw-demo-anchor
   "Draw the anchor/rest position for the spring demo."

@@ -178,33 +178,9 @@
   ;; Handle slider release
   (reset! state/dragging-slider nil)
 
-  ;; Handle demo circle release - create springs back to anchor
+  ;; Handle demo circle release - just stop dragging, momentum continues in tick
   (when @state/demo-dragging?
-    (reset! state/demo-dragging? false)
-    ;; Use velocity that was calculated during drag
-    (let [vx @state/demo-velocity-x
-          vy @state/demo-velocity-y
-          ;; Get spring config from app.config
-          stiffness (or (cfg 'app.config/demo-spring-stiffness) 180)
-          damping (or (cfg 'app.config/demo-spring-damping) 12)
-          mass (or (cfg 'app.config/demo-spring-mass) 1.0)]
-      ;; Create X spring
-      (when-let [spring-fn (requiring-resolve 'lib.spring.core/spring)]
-        (reset! state/demo-spring-x
-                (spring-fn {:from @state/demo-circle-x
-                            :to @state/demo-anchor-x
-                            :velocity vx
-                            :stiffness stiffness
-                            :damping damping
-                            :mass mass}))
-        ;; Create Y spring
-        (reset! state/demo-spring-y
-                (spring-fn {:from @state/demo-circle-y
-                            :to @state/demo-anchor-y
-                            :velocity vy
-                            :stiffness stiffness
-                            :damping damping
-                            :mass mass}))))))
+    (reset! state/demo-dragging? false)))
 
 (defn handle-mouse-move
   "Handle mouse move - update slider or demo circle if dragging."
@@ -222,15 +198,13 @@
         :y (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds ww))))
       (trigger-grid-recalc!))
 
-    ;; Handle demo circle dragging
+    ;; Handle demo circle dragging (X-axis only)
     (when @state/demo-dragging?
       (let [dt (- @state/game-time @state/demo-last-mouse-time)]
-        ;; Calculate velocity from position change (if dt is positive and reasonable)
+        ;; Calculate X velocity from position change (if dt is positive and reasonable)
         (when (and (pos? dt) (< dt 0.5))
-          (reset! state/demo-velocity-x (/ (- mx @state/demo-circle-x) dt))
-          (reset! state/demo-velocity-y (/ (- my @state/demo-circle-y) dt)))
+          (reset! state/demo-velocity-x (/ (- mx @state/demo-circle-x) dt)))
         ;; Update tracking state
         (reset! state/demo-last-mouse-time @state/game-time)
-        ;; Move circle to mouse position
-        (reset! state/demo-circle-x mx)
-        (reset! state/demo-circle-y my)))))
+        ;; Move circle only in X direction (Y stays fixed)
+        (reset! state/demo-circle-x mx)))))
