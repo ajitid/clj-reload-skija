@@ -51,14 +51,6 @@
 (defn reset-state!
   "Reset resettable state to initial values (for restart)."
   []
-  (reset! scale (:scale reset-values))
-  (reset! window-width (:window-width reset-values))
-  (reset! window-height (:window-height reset-values))
-  (reset! circles-x (:circles-x reset-values))
-  (reset! circles-y (:circles-y reset-values))
-  (reset! dragging-slider (:dragging-slider reset-values))
-  (reset! fps (:fps reset-values))
-  (reset! grid-positions (:grid-positions reset-values))
-  (reset! reloading? (:reloading? reset-values))
-  (reset! last-reload-error (:last-reload-error reset-values))
-  (reset! last-runtime-error (:last-runtime-error reset-values)))
+  (doseq [[k v] reset-values]
+    (when-let [atom-var (ns-resolve 'app.state (symbol (name k)))]
+      (reset! @atom-var v))))
