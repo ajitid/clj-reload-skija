@@ -91,10 +91,7 @@
    :padding-left nil
    :padding-right nil
    :padding-top nil
-   :padding-bottom nil
-   :align :start   ; :start :center :end :stretch (cross-axis alignment)
-   :justify :start ; :start :center :end :space-between :space-around (main-axis distribution)
-   })
+   :padding-bottom nil})
 
 ;; ============================================================
 ;; Helpers
@@ -222,7 +219,6 @@
   (let [{:keys [x y w h]} parent-bounds
         padding (get-padding children-layout)
         gap (or (:gap children-layout) 0)
-        align (or (:align children-layout) :start)
 
         ;; Available space after padding
         content-x (+ x (:left padding))
@@ -262,38 +258,25 @@
                              main-before (if horizontal? (or before-h 0) (or before-v 0))
                              main-pos (+ pos main-before)
 
-                             ;; Default size if not specified
+                             ;; Default size if not specified (fill cross-axis)
                              child-w (or w content-w)
                              child-h (or h content-h)
 
-                             ;; Cross-axis alignment
-                             cross-size (if horizontal? child-h child-w)
-                             cross-available (if horizontal? content-h content-w)
-                             cross-offset (case align
-                                            :start 0
-                                            :center (/ (- cross-available cross-size) 2)
-                                            :end (- cross-available cross-size)
-                                            :stretch 0
-                                            0)
-
-                             ;; Apply stretch to cross-axis
-                             [final-w final-h]
-                             (if (= align :stretch)
-                               (if horizontal?
-                                 [child-w content-h]
-                                 [content-w child-h])
-                               [child-w child-h])
+                             ;; Cross-axis positioning via child's before property
+                             cross-before (if horizontal?
+                                            (or before-v 0)
+                                            (or before-h 0))
 
                              ;; Calculate bounds
                              bounds (if horizontal?
                                       {:x main-pos
-                                       :y (+ content-y cross-offset)
-                                       :w final-w
-                                       :h final-h}
-                                      {:x (+ content-x cross-offset)
+                                       :y (+ content-y cross-before)
+                                       :w child-w
+                                       :h child-h}
+                                      {:x (+ content-x cross-before)
                                        :y main-pos
-                                       :w final-w
-                                       :h final-h})
+                                       :w child-w
+                                       :h child-h})
 
                              ;; Handle after margin
                              after-h (resolve-unit (:after h-props) content-w 0 0)
@@ -301,7 +284,7 @@
                              main-after (if horizontal? (or after-h 0) (or after-v 0))
 
                              ;; Main-axis size for advancement
-                             main-size (if horizontal? final-w final-h)
+                             main-size (if horizontal? child-w child-h)
                              next-pos (+ main-pos main-size main-after gap)]
 
                          (recur (rest remaining)
@@ -478,7 +461,6 @@
    Options:
      :gap - space between children (default 0)
      :padding - space around all children
-     :align - cross-axis alignment :start :center :end :stretch
 
    Example:
      (hstack {:gap 10 :padding 20}
@@ -495,7 +477,6 @@
    Options:
      :gap - space between children (default 0)
      :padding - space around all children
-     :align - cross-axis alignment :start :center :end :stretch
 
    Example:
      (vstack {:gap 10}
