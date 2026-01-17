@@ -13,8 +13,10 @@ clj-reloadable-skija-on-window/
 │       ├── config.clj    # Reloadable config (def) - visual params
 │       ├── controls.clj  # Reloadable UI (defn) - sliders, mouse
 │       └── core.clj      # Reloadable app (defn) - game loop callbacks
-└── dev/
-    └── user.clj          # REPL namespace (excluded from reload)
+├── dev/
+│   └── user.clj          # REPL namespace (excluded from reload)
+└── scripts/
+    └── check_state.bb    # Babashka script to check state consistency
 ```
 
 ## Requirements
@@ -243,6 +245,32 @@ config/shadow-dx
 ```
 
 The event listener uses `resolve` for ALL callbacks, allowing every namespace to reload.
+
+## Scripts
+
+### State Consistency Check
+
+A Babashka script to verify that all keys in `initial-state` have corresponding `defonce` declarations:
+
+```bash
+# Check the default state file (src/app/state.clj)
+bb scripts/check_state.bb
+
+# Check a specific file
+bb scripts/check_state.bb path/to/state.clj
+```
+
+The script detects:
+- **Unused keys**: defined in `initial-state` but no `defonce` uses them
+- **Missing keys**: used in `defonce` but not defined in `initial-state`
+
+Example output when issues are found:
+```
+UNUSED keys (in initial-state but no defonce):
+  - :unused-key
+```
+
+Exits with code 0 if synchronized, code 1 if issues found.
 
 ## References
 
