@@ -5,23 +5,23 @@
 
    Usage:
      (-> (timeline)
-         (add tween1 0)              ;; at 0ms
-         (add tween2 [:+ 100])       ;; 100ms after timeline end
+         (add tween1 0)              ;; at 0s
+         (add tween2 [:+ 0.1])       ;; 0.1s after timeline end
          (add spring1 :<)            ;; at tween2's end (sequential)
          (label :section2)           ;; mark current position
          (add decay1 [:label :section2])
          (add tween3 :<<))           ;; parallel with decay1
 
    Positioning syntax:
-     500            - absolute: at 500ms
-     [:+ 100]       - relative: 100ms after timeline end
-     [:- 50]        - relative: 50ms before timeline end
+     0.5            - absolute: at 0.5s
+     [:+ 0.1]       - relative: 0.1s after timeline end
+     [:- 0.05]      - relative: 0.05s before timeline end
      :<             - at previous item's END (sequential)
      :<<            - at previous item's START (parallel)
-     [:< :+ 100]    - previous end + 100ms
-     [:<< :+ 250]   - previous start + 250ms
+     [:< :+ 0.1]    - previous end + 0.1s
+     [:<< :+ 0.25]  - previous start + 0.25s
      [:label :name] - at label position
-     [:label :name :+ 100] - label + 100ms
+     [:label :name :+ 0.1] - label + 0.1s
 
    Query state:
      (timeline-now my-timeline)
@@ -62,34 +62,6 @@
 ;; Duration Calculation
 ;; ============================================================
 
-(defn- decay-duration
-  "Calculate duration for a decay animation using projection.
-
-   Uses the time to travel 99% of the total projected distance.
-
-   Why 99% instead of 100%?
-   Because decay asymptotically approaches the projection - it never actually
-   reaches 100%.
-
-   Mathematically:
-     - Position approaches projection as rate^(1000t) → 0
-     - But rate^(1000t) = 0 only when t = ∞
-
-   So 100% completion would require infinite time. We have to pick a
-   'close enough' threshold (99%, 99.9%, etc.).
-
-   This is the same reason springs use :velocity-threshold and
-   :displacement-threshold - they also asymptotically approach their target
-   and never mathematically 'arrive'."
-  [{:keys [velocity rate] :or {rate (:normal decay/rate)}}]
-  (if (or (nil? velocity) (zero? velocity))
-    0.0
-    (let [log-rate (Math/log rate)]
-      (if (zero? log-rate)
-        0.0
-        ;; Time to reach 99% of projected distance
-        (/ (Math/log 0.01) (* 1000 log-rate))))))
-
 (defn- tween-total-duration
   "Calculate total duration of a tween including delay and loops."
   [{:keys [duration delay loop loop-delay] :or {delay 0 loop-delay 0}}]
@@ -124,7 +96,7 @@
     :spring (or (:perceptual-duration animation)
                 (spring/spring-perceptual-duration animation))
     :decay (or (:perceptual-duration animation)
-               (decay-duration animation))
+               (decay/decay-perceptual-duration animation))
     :tween (tween-total-duration animation)
     :timer (timer-total-duration animation)
     0.0))

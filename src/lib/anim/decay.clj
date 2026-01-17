@@ -1,15 +1,16 @@
 (ns lib.anim.decay
-  "Decay animation using Apple's UIScrollView deceleration formula.
+  "Decay animation using exponential deceleration (iOS-style).
 
    Decay animates momentum without a target - velocity decreases exponentially
    until the animation comes to rest.
 
-   Formula (from Apple UIScrollView):
-     v(t) = v₀ × d^(1000t)
-     x(t) = x₀ + v₀/(1000 × ln(d)) × (d^(1000t) - 1)
+   Formula (exp-based, equivalent to Apple UIScrollView):
+     k = (1 - d) × 1000           ;; decay constant per second
+     v(t) = v₀ × e^(-k×t)
+     x(t) = x₀ + v₀/k × (1 - e^(-k×t))
 
    Where:
-     d = deceleration rate per millisecond (0.998 normal, 0.99 fast)
+     d = deceleration rate (0.998 normal, 0.99 fast)
      t = time in seconds
 
    Usage:
@@ -18,7 +19,7 @@
 
    Sources:
      - Apple UIScrollView.decelerationRate documentation
-     - Ilya Lobanov: Deceleration mechanics of UIScrollView"
+     - pmndrs/react-spring decay implementation"
   (:require [lib.time :as time]))
 
 ;; ============================================================
@@ -43,40 +44,56 @@
 (defn decay-perceptual-duration
   "Time to reach 99% of projected distance. Only depends on rate.
 
-   Formula: ln(0.01) / (1000 × ln(rate))
+   Why 99% instead of 100%?
+   Because decay asymptotically approaches the projection - it never actually
+   reaches 100%.
+
+   Mathematically (using exp-based formula):
+     - Position approaches projection as e^(-k×t) → 0
+     - But e^(-k×t) = 0 only when t = ∞
+
+   So 100% completion would require infinite time. We have to pick a
+   'close enough' threshold (99%, 99.9%, etc.).
+
+   This is the same reason springs use :velocity-threshold and
+   :displacement-threshold - they also asymptotically approach their target
+   and never mathematically 'arrive'.
+
+   Formula: -ln(0.01) / k  where k = (1-rate) × 1000
 
    This gives consistent durations:
      :normal (0.998) → ~2.3 seconds
      :fast   (0.99)  → ~0.46 seconds"
-  [r]
-  (let [log-rate (Math/log r)]
-    (if (zero? log-rate)
+  [{:keys [rate] :or {rate (:normal rate)}}]
+  (let [k (* (- 1 rate) 1000)]
+    (if (zero? k)
       0.0
-      (/ (Math/log 0.01) (* 1000 log-rate)))))
+      (/ (- (Math/log 0.01)) k))))
 
 ;; ============================================================
-;; Core Algorithm (Apple's UIScrollView formula)
+;; Core Algorithm (exp-based, faster than pow)
 ;; ============================================================
 
 (defn- calculate-decay-state
-  "Calculate decay position and velocity at time t using Apple's closed-form solution.
+  "Calculate decay position and velocity at time t using exp-based formula.
    Returns {:value :velocity :at-rest?}"
   [{:keys [from velocity rate start-time velocity-threshold]} t]
   (let [;; Elapsed time since animation start (in seconds)
         elapsed (max 0 (- t start-time))
 
-        ;; Apple's formula: v(t) = v₀ × d^(1000t)
-        ;; where d is applied per millisecond, so we multiply elapsed by 1000
-        decay-factor (Math/pow rate (* elapsed 1000))
-        current-velocity (* velocity decay-factor)
+        ;; Decay constant: k = (1-d) × 1000
+        k (* (- 1 rate) 1000)
 
-        ;; Position: x(t) = x₀ + v₀/(1000 × ln(d)) × (d^(1000t) - 1)
-        ;; Note: ln(d) is negative for d < 1, so this works out correctly
-        log-rate (Math/log rate)
-        position-delta (if (zero? log-rate)
+        ;; e^(-k×t) - the decay factor
+        e (Math/exp (- (* k elapsed)))
+
+        ;; Velocity: v(t) = v₀ × e^(-k×t)
+        current-velocity (* velocity e)
+
+        ;; Position: x(t) = x₀ + v₀/k × (1 - e^(-k×t))
+        position-delta (if (zero? k)
                          0.0
-                         (* (/ velocity (* 1000 log-rate))
-                            (- decay-factor 1)))
+                         (* (/ velocity k) (- 1 e)))
         current-position (+ from position-delta)
 
         ;; Check if at rest
@@ -112,7 +129,7 @@
         resolved-rate (if-let [r (:rate config)]
                         (if (keyword? r) (get rate r r) r)
                         (:rate defaults))
-        perceptual-dur (decay-perceptual-duration resolved-rate)]
+        perceptual-dur (decay-perceptual-duration {:rate resolved-rate})]
     (merge defaults
            config
            {:rate resolved-rate
@@ -149,7 +166,7 @@
         new-rate (if-let [r (:rate changes)]
                    (if (keyword? r) (get rate r r) r)
                    (:rate decay))
-        perceptual-dur (decay-perceptual-duration new-rate)]
+        perceptual-dur (decay-perceptual-duration {:rate new-rate})]
     (merge decay
            changes
            {:from value

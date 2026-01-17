@@ -5,8 +5,9 @@
    and deceleration rate. Used to determine user intent before starting
    an animation (e.g., which corner to snap to in PIP).
 
-   Formula (derived from decay/UIScrollView):
-     final = from - velocity / (1000 × ln(rate))
+   Formula (exp-based, equivalent to Apple UIScrollView):
+     k = (1 - rate) × 1000
+     final = from + velocity / k
 
    Usage:
      (projection 100 500 :normal)      ;; => ~349.7 (where it would land)
@@ -15,7 +16,8 @@
      - WWDC 2018: Designing Fluid Interfaces
        https://developer.apple.com/videos/play/wwdc2018/803/
      - Ilya Lobanov: How UIScrollView works
-       https://medium.com/@esskeetit/how-uiscrollview-works-e418adc47060"
+       https://medium.com/@esskeetit/how-uiscrollview-works-e418adc47060
+     - pmndrs/react-spring decay implementation"
   (:require [lib.anim.decay :as decay]))
 
 ;; ============================================================
@@ -39,10 +41,10 @@
        https://developer.apple.com/videos/play/wwdc2018/803/"
   [from velocity r]
   (let [resolved-rate (if (keyword? r) (get decay/rate r r) r)
-        log-rate (Math/log resolved-rate)]
-    (if (zero? log-rate)
+        ;; Decay constant: k = (1-rate) × 1000
+        k (* (- 1 resolved-rate) 1000)]
+    (if (zero? k)
       from
-      ;; As t→∞, d^(1000t)→0, so: final = from + v/(1000×ln(d))×(0-1)
-      ;;                               = from - v/(1000×ln(d))
-      (- from (/ velocity (* 1000 log-rate))))))
+      ;; As t→∞, e^(-k×t)→0, so: final = from + v/k × (1 - 0) = from + v/k
+      (+ from (/ velocity k)))))
 
