@@ -27,6 +27,44 @@
    :displacement-threshold 0.001})
 
 ;; ============================================================
+;; Perceptual Parameters (duration + bounce)
+;; ============================================================
+;; Source: https://www.kvin.me/posts/effortless-ui-spring-animations
+;; Extended with variable mass support
+
+(defn perceptual->physics
+  "Convert perceptual spring params to physics params.
+
+   Arguments:
+     duration - perceptual duration in seconds (when key motion completes)
+     bounce   - bounciness from -1 to 1 (-1=overdamped, 0=critical, 1=very bouncy)
+     mass     - optional, defaults to 1.0
+
+   Returns: {:mass :stiffness :damping}
+
+   Example:
+     (perceptual->physics 0.5 0.3)      ;; 0.5s bouncy spring
+     (perceptual->physics 0.3 0 2.0)    ;; 0.3s critical, mass=2"
+  ([duration bounce] (perceptual->physics duration bounce 1.0))
+  ([duration bounce mass]
+   (let [two-pi (* 2 Math/PI)
+         four-pi (* 4 Math/PI)
+         sqrt-mass (Math/sqrt mass)]
+     {:mass mass
+      :stiffness (* mass (Math/pow (/ two-pi duration) 2))
+      :damping (if (>= bounce 0)
+                 (/ (* sqrt-mass (- 1 bounce) four-pi) duration)
+                 (/ (* sqrt-mass four-pi) (* duration (+ 1 bounce))))})))
+
+(defn spring-perceptual-duration
+  "Calculate perceptual duration from physics params.
+   This is how long the 'key motion' takes (useful for Timeline).
+
+   Formula: 2π ÷ √(stiffness / mass)"
+  [{:keys [stiffness mass] :or {mass 1.0}}]
+  (/ (* 2 Math/PI) (Math/sqrt (/ stiffness mass))))
+
+;; ============================================================
 ;; Core Algorithm (from wobble)
 ;; ============================================================
 
@@ -111,20 +149,26 @@
 (defn spring
   "Create a spring with the given config, merged with defaults.
    :start-time defaults to (now) if not provided.
+   :perceptual-duration is pre-calculated for performance.
 
    Example:
      (spring {:from 0 :to 100})
      (spring {:from 0 :to 100 :stiffness 300 :damping 20})"
   [config]
-  (merge defaults
-         config
-         {:start-time (or (:start-time config) (time/now))}))
+  (let [merged (merge defaults config)
+        perceptual-dur (spring-perceptual-duration merged)]
+    (assoc merged
+           :start-time (or (:start-time config) (time/now))
+           :perceptual-duration perceptual-dur)))
 
 (defn spring-at
   "Get spring state at a specific time. Pure function.
-   Returns {:value :velocity :at-rest?}"
+   Returns {:value :velocity :at-rest? :at-perceptual-rest?}"
   [spring t]
-  (calculate-spring-state spring t))
+  (let [state (calculate-spring-state spring t)
+        elapsed (- t (:start-time spring))]
+    (assoc state :at-perceptual-rest?
+           (>= elapsed (:perceptual-duration spring)))))
 
 (defn spring-now
   "Get spring state at current time. Uses configured time source.
@@ -147,6 +191,7 @@
 (defn spring-update
   "Update spring config mid-animation (stiffness, damping, mass, to, etc).
    Preserves current position and velocity.
+   Recalculates perceptual-duration in case stiffness or mass changed.
    Returns a new spring with updated config.
 
    Example:
@@ -154,9 +199,29 @@
      (spring-update s {:stiffness 300 :mass 0.5})"
   [spring changes]
   (let [t (time/now)
-        {:keys [value velocity]} (spring-at spring t)]
-    (merge spring
-           changes
-           {:from value
-            :velocity velocity
-            :start-time t})))
+        {:keys [value velocity]} (spring-at spring t)
+        updated (merge spring changes
+                       {:from value
+                        :velocity velocity
+                        :start-time t})
+        ;; Recalculate in case stiffness or mass changed
+        perceptual-dur (spring-perceptual-duration updated)]
+    (assoc updated :perceptual-duration perceptual-dur)))
+
+(defn spring-perceptual
+  "Create spring using perceptual duration and bounce.
+   More intuitive than physics params for designers.
+
+   Options:
+     :from      - start value (default 0)
+     :to        - target value (default 1)
+     :duration  - perceptual duration in seconds (required)
+     :bounce    - bounciness -1 to 1 (default 0 = critical damping)
+     :mass      - mass (default 1.0)
+     :velocity  - initial velocity (default 0)
+
+   Example:
+     (spring-perceptual {:from 0 :to 100 :duration 0.5 :bounce 0.3})"
+  [{:keys [duration bounce mass] :or {bounce 0 mass 1.0} :as opts}]
+  (let [physics (perceptual->physics duration bounce mass)]
+    (spring (merge (dissoc opts :duration :bounce) physics))))

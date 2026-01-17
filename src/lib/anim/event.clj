@@ -61,8 +61,11 @@
   "Check if an event occurred between two spring or decay states.
 
    Events:
-     :at-rest   - came to rest (at-rest? became true)
-     :in-motion - started moving (at-rest? became false)
+     :at-rest            - came to rest (at-rest? became true)
+     :in-motion          - started moving (at-rest? became false)
+     :at-perceptual-rest - key motion complete (earlier than :at-rest)
+                           spring: perceptual duration elapsed
+                           decay: 99% of projected distance traveled
 
    Example:
      (defonce state (atom nil))
@@ -70,6 +73,9 @@
      (defn tick [dt]
        (let [prev @state
              curr (spring-now @my-spring)]
+
+         (when (physics-event? prev curr :at-perceptual-rest)
+           (println \"Key motion done!\"))
 
          (when (physics-event? prev curr :at-rest)
            (println \"Settled!\"))
@@ -80,8 +86,10 @@
          (reset! state curr)))"
   [prev curr event]
   (case event
-    :at-rest   (and (not (:at-rest? prev))
-                    (:at-rest? curr))
-    :in-motion (and (:at-rest? prev)
-                    (not (:at-rest? curr)))
+    :at-rest            (and (not (:at-rest? prev))
+                             (:at-rest? curr))
+    :in-motion          (and (:at-rest? prev)
+                             (not (:at-rest? curr)))
+    :at-perceptual-rest (and (not (:at-perceptual-rest? prev))
+                             (:at-perceptual-rest? curr))
     false))

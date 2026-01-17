@@ -37,6 +37,24 @@
    :velocity-threshold 0.5})     ;; stop when velocity below this
 
 ;; ============================================================
+;; Perceptual Duration
+;; ============================================================
+
+(defn decay-perceptual-duration
+  "Time to reach 99% of projected distance. Only depends on rate.
+
+   Formula: ln(0.01) / (1000 × ln(rate))
+
+   This gives consistent durations:
+     :normal (0.998) → ~2.3 seconds
+     :fast   (0.99)  → ~0.46 seconds"
+  [r]
+  (let [log-rate (Math/log r)]
+    (if (zero? log-rate)
+      0.0
+      (/ (Math/log 0.01) (* 1000 log-rate)))))
+
+;; ============================================================
 ;; Core Algorithm (Apple's UIScrollView formula)
 ;; ============================================================
 
@@ -75,6 +93,7 @@
 (defn decay
   "Create a decay animation with the given config, merged with defaults.
    :start-time defaults to (time/now) if not provided.
+   :perceptual-duration is pre-calculated for performance.
 
    Options:
      :from     - starting position (default 0.0)
@@ -92,17 +111,22 @@
   (let [;; Resolve rate if keyword, otherwise use as-is
         resolved-rate (if-let [r (:rate config)]
                         (if (keyword? r) (get rate r r) r)
-                        (:rate defaults))]
+                        (:rate defaults))
+        perceptual-dur (decay-perceptual-duration resolved-rate)]
     (merge defaults
            config
            {:rate resolved-rate
-            :start-time (or (:start-time config) (time/now))})))
+            :start-time (or (:start-time config) (time/now))
+            :perceptual-duration perceptual-dur})))
 
 (defn decay-at
   "Get decay state at a specific time. Pure function.
-   Returns {:value :velocity :at-rest?}"
+   Returns {:value :velocity :at-rest? :at-perceptual-rest?}"
   [decay t]
-  (calculate-decay-state decay t))
+  (let [state (calculate-decay-state decay t)
+        elapsed (- t (:start-time decay))]
+    (assoc state :at-perceptual-rest?
+           (>= elapsed (:perceptual-duration decay)))))
 
 (defn decay-now
   "Get decay state at current time. Uses configured time source.
@@ -113,15 +137,23 @@
 (defn decay-update
   "Update decay config mid-animation (rate, velocity-threshold).
    Preserves current position and velocity.
+   Recalculates perceptual-duration in case rate changed.
    Returns a new decay with updated config.
 
    Example:
      (decay-update d {:rate 0.99})  ;; switch to faster stopping"
   [decay changes]
   (let [t (time/now)
-        {:keys [value velocity]} (decay-at decay t)]
+        {:keys [value velocity]} (decay-at decay t)
+        ;; Resolve new rate if provided
+        new-rate (if-let [r (:rate changes)]
+                   (if (keyword? r) (get rate r r) r)
+                   (:rate decay))
+        perceptual-dur (decay-perceptual-duration new-rate)]
     (merge decay
            changes
            {:from value
             :velocity velocity
-            :start-time t})))
+            :start-time t
+            :rate new-rate
+            :perceptual-duration perceptual-dur})))
