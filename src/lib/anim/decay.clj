@@ -37,38 +37,39 @@
    :rate (:normal rate)          ;; default to Apple normal
    :velocity-threshold 0.5})     ;; stop when velocity below this
 
+;; Perceptual velocity threshold (units/s)
+;; Motion below this speed is imperceptible to the human eye.
+;; Based on React Native Reanimated's VELOCITY_EPS = 1 px/s
+;; See: https://github.com/software-mansion/react-native-reanimated
+(def perceptual-velocity-threshold 1.0)
+
 ;; ============================================================
 ;; Perceptual Duration
 ;; ============================================================
 
 (defn decay-perceptual-duration
-  "Time to reach 99% of projected distance. Only depends on rate.
+  "Time until velocity drops below perceptual threshold (imperceptible motion).
 
-   Why 99% instead of 100%?
-   Because decay asymptotically approaches the projection - it never actually
-   reaches 100%.
+   Uses a fixed velocity threshold (1 unit/s) based on human perception research.
+   This is the industry standard approach used by:
+     - React Native Reanimated (VELOCITY_EPS = 1)
+     - Popmotion/Framer Motion (restSpeed)
 
-   Mathematically (using exp-based formula):
-     - Position approaches projection as e^(-k×t) → 0
-     - But e^(-k×t) = 0 only when t = ∞
+   Formula: ln(|v₀| / threshold) / k  where k = (1-rate) × 1000
 
-   So 100% completion would require infinite time. We have to pick a
-   'close enough' threshold (99%, 99.9%, etc.).
+   Unlike the old 99%-of-distance approach, this correctly depends on
+   initial velocity - faster flicks take longer to become imperceptible.
 
-   This is the same reason springs use :velocity-threshold and
-   :displacement-threshold - they also asymptotically approach their target
-   and never mathematically 'arrive'.
-
-   Formula: -ln(0.01) / k  where k = (1-rate) × 1000
-
-   This gives consistent durations:
-     :normal (0.998) → ~2.3 seconds
-     :fast   (0.99)  → ~0.46 seconds"
-  [{:keys [rate] :or {rate (:normal rate)}}]
-  (let [k (* (- 1 rate) 1000)]
-    (if (zero? k)
+   Example durations (rate=0.998, threshold=1):
+     v=100  → ~2.30s
+     v=1000 → ~3.45s
+     v=5000 → ~4.26s"
+  [{:keys [velocity rate] :or {rate (:normal rate) velocity 0}}]
+  (let [k (* (- 1 rate) 1000)
+        v0 (Math/abs velocity)]
+    (if (or (zero? k) (<= v0 perceptual-velocity-threshold))
       0.0
-      (/ (- (Math/log 0.01)) k))))
+      (/ (Math/log (/ v0 perceptual-velocity-threshold)) k))))
 
 ;; ============================================================
 ;; Core Algorithm (exp-based, faster than pow)
@@ -129,7 +130,9 @@
         resolved-rate (if-let [r (:rate config)]
                         (if (keyword? r) (get rate r r) r)
                         (:rate defaults))
-        perceptual-dur (decay-perceptual-duration {:rate resolved-rate})]
+        velocity (or (:velocity config) (:velocity defaults))
+        perceptual-dur (decay-perceptual-duration {:rate resolved-rate
+                                                   :velocity velocity})]
     (merge defaults
            config
            {:rate resolved-rate
@@ -166,7 +169,8 @@
         new-rate (if-let [r (:rate changes)]
                    (if (keyword? r) (get rate r r) r)
                    (:rate decay))
-        perceptual-dur (decay-perceptual-duration {:rate new-rate})]
+        perceptual-dur (decay-perceptual-duration {:rate new-rate
+                                                   :velocity velocity})]
     (merge decay
            changes
            {:from value
