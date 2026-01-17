@@ -21,7 +21,7 @@
    Example:
      (spring-2d {:from [0 0] :to [100 200]})
      (spring-2d {:from [0 0] :to [100 200] :velocity [10 20]})"
-  [{:keys [from to velocity stiffness damping mass velocity-threshold displacement-threshold start-time]
+  [{:keys [from to velocity stiffness damping mass start-time]
     :or {from [0.0 0.0]
          to [1.0 1.0]
          velocity [0.0 0.0]}}]
@@ -32,8 +32,6 @@
                       stiffness (assoc :stiffness stiffness)
                       damping (assoc :damping damping)
                       mass (assoc :mass mass)
-                      velocity-threshold (assoc :velocity-threshold velocity-threshold)
-                      displacement-threshold (assoc :displacement-threshold displacement-threshold)
                       start-time (assoc :start-time start-time))]
     {:spring-x (spring/spring (merge base-config {:from fx :to tx :velocity vx}))
      :spring-y (spring/spring (merge base-config {:from fy :to ty :velocity vy}))}))

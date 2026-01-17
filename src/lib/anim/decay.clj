@@ -34,14 +34,14 @@
 (def defaults
   {:from 0.0
    :velocity 0.0                 ;; initial velocity (units/s)
-   :rate (:normal rate)          ;; default to Apple normal
-   :velocity-threshold 0.5})     ;; stop when velocity below this
+   :rate (:normal rate)})        ;; default to Apple normal
 
-;; Perceptual velocity threshold (units/s)
-;; Motion below this speed is imperceptible to the human eye.
-;; Based on React Native Reanimated's VELOCITY_EPS = 1 px/s
-;; See: https://github.com/software-mansion/react-native-reanimated
-(def perceptual-velocity-threshold 1.0)
+;; Rest detection thresholds (units/s)
+;; Based on human perception - motion below these values is imperceptible.
+;; Works for logical pixels on HiDPI displays.
+;; See: https://github.com/software-mansion/react-native-reanimated (VELOCITY_EPS)
+(def ^:private velocity-threshold 0.5)
+(def ^:private perceptual-velocity-threshold 1.0)
 
 ;; ============================================================
 ;; Perceptual Duration
@@ -78,7 +78,7 @@
 (defn- calculate-decay-state
   "Calculate decay position and velocity at time t using exp-based formula.
    Returns {:value :velocity :at-rest?}"
-  [{:keys [from velocity rate start-time velocity-threshold]} t]
+  [{:keys [from velocity rate start-time]} t]
   (let [;; Elapsed time since animation start (in seconds)
         elapsed (max 0 (- t start-time))
 
@@ -119,7 +119,6 @@
      :rate     - deceleration rate, keyword or number (default :normal)
                  Keywords: :normal (0.998), :fast (0.99)
                  Or raw number for custom rate
-     :velocity-threshold - stop when velocity below this (default 0.5)
 
    Example:
      (decay {:from 400 :velocity 1000})
@@ -155,7 +154,7 @@
   (decay-at decay (time/now)))
 
 (defn decay-update
-  "Update decay config mid-animation (rate, velocity-threshold).
+  "Update decay config mid-animation (rate).
    Preserves current position and velocity.
    Recalculates perceptual-duration in case rate changed.
    Returns a new decay with updated config.

@@ -17,14 +17,13 @@
    Example:
      (decay-2d {:from [400 300] :velocity [1000 -500]})
      (decay-2d {:from [400 300] :velocity [1000 -500] :rate :fast})"
-  [{:keys [from velocity rate velocity-threshold start-time]
+  [{:keys [from velocity rate start-time]
     :or {from [0.0 0.0]
          velocity [0.0 0.0]}}]
   (let [[fx fy] from
         [vx vy] velocity
         base-config (cond-> {}
                       rate (assoc :rate rate)
-                      velocity-threshold (assoc :velocity-threshold velocity-threshold)
                       start-time (assoc :start-time start-time))]
     {:decay-x (decay/decay (merge base-config {:from fx :velocity vx}))
      :decay-y (decay/decay (merge base-config {:from fy :velocity vy}))}))
@@ -50,7 +49,7 @@
      :at-rest? (and (:at-rest? state-x) (:at-rest? state-y))}))
 
 (defn decay-2d-update
-  "Update 2D decay config mid-animation (rate, velocity-threshold).
+  "Update 2D decay config mid-animation (rate).
    Preserves current position and velocity.
 
    Example:

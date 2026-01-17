@@ -22,9 +22,13 @@
    :stiffness 180.0              ;; Apple-like bouncy feel
    :damping 12.0                 ;; Settles in ~0.5s
    :mass 1.0
-   :velocity 0.0                 ;; initial velocity (units/s)
-   :velocity-threshold 1.0
-   :displacement-threshold 0.001})
+   :velocity 0.0})               ;; initial velocity (units/s)
+
+;; Rest detection thresholds (units/s and units)
+;; Based on human perception - motion below these values is imperceptible.
+;; Works for logical pixels on HiDPI displays.
+(def ^:private velocity-threshold 1.0)
+(def ^:private displacement-threshold 0.001)
 
 ;; ============================================================
 ;; Perceptual Parameters (duration + bounce)
@@ -71,8 +75,7 @@
 (defn- calculate-spring-state
   "Calculate spring position and velocity at time t using closed-form solution.
    Returns {:value :velocity :at-rest?}"
-  [{:keys [from to stiffness damping mass velocity start-time
-           velocity-threshold displacement-threshold]} t]
+  [{:keys [from to stiffness damping mass velocity start-time]} t]
   (let [;; Initial displacement (x0) and velocity (v0)
         x0 (- to from)
         v0 (- velocity)  ;; wobble uses negative velocity in equations
