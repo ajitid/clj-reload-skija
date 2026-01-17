@@ -18,8 +18,14 @@
    Resolution rules (Flutter-inspired):
    1. Single declaration → that recognizer wins
    2. Multiple declarations → highest priority wins
-   3. Only one remaining → it wins
-   4. Otherwise → nil (still undecided)
+   3. Otherwise → nil (still undecided)
+
+   Note: Unlike a naive implementation, we do NOT auto-win when only one
+   recognizer is active. In Flutter/iOS, a recognizer must explicitly declare
+   victory (wants-to-win? = true) through user action (e.g., movement threshold).
+   The 'last one standing' rule only applies when others have explicitly failed,
+   not when there was only one recognizer to begin with. Sweep handles forced
+   resolution on pointer-up.
 
    Returns the winning recognizer or nil."
   [recognizers]
@@ -34,11 +40,7 @@
       (> (count declared) 1)
       (apply max-key :priority declared)
 
-      ;; Only one left standing wins
-      (= 1 (count active))
-      (first active)
-
-      ;; Still undecided
+      ;; Still undecided - wait for declaration or sweep
       :else nil)))
 
 (defn sweep-arena

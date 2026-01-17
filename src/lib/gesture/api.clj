@@ -151,6 +151,9 @@
         (let [prev-state (:state winner)
               updated (recognizers/update-recognizer-move winner [px py] time)]
           (swap! state/arena assoc :winner updated)
+          ;; Deliver :on-drag-start when transitioning from :possible to :began
+          (when (and (= prev-state :possible) (= (:state updated) :began))
+            (deliver-gesture! updated :began))
           ;; Deliver :on-drag for :changed state
           (when (= (:state updated) :changed)
             (deliver-gesture! updated :changed)))
