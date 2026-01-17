@@ -82,19 +82,14 @@
    - Use springs for each child's animation
 
    Example - stagger + springs with :delay property:
-     (let [delays (stagger-delays 10 2.0 {:ease :out-quad})]
-       (map-indexed
-         (fn [i delay]
-           (spring {:from 0 :to 100 :delay delay}))
-         delays))
+     (->> (stagger-delays 10 2.0 {:ease :out-quad})
+          (map #(spring {:from 0 :to 100 :delay %})))
 
    Or with timeline positioning:
-     (let [delays (stagger-delays 10 2.0 {:ease :out-quad})]
-       (reduce-kv
-         (fn [tl i delay]
-           (add tl (spring {:from 0 :to 100}) delay))
-         (timeline)
-         (vec delays)))
+     (->> (stagger-delays 10 2.0 {:ease :out-quad})
+          (reduce (fn [tl delay]
+                    (add tl (spring {:from 0 :to 100}) delay))
+                  (timeline)))
 
    ## Sources
 

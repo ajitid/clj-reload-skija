@@ -19,6 +19,7 @@
          (add tween2 :<))
 
    Timeline options:
+     :delay      - initial delay before timeline starts (seconds)
      :loop       - false (no loop), true (infinite), or iteration count
      :loop-delay - pause between timeline iterations (seconds)
      :alternate  - reverse direction each loop
@@ -41,7 +42,7 @@
      ;;     :progress 0.6
      ;;     :iteration 0
      ;;     :direction :forward
-     ;;     :phase :active
+     ;;     :phase :active  ;; :delay, :active, :loop-delay, or :done
      ;;     :children [{:id :tween1 :value 80 :done? true} ...]
      ;;     :done? false}
 
@@ -258,9 +259,9 @@
     (assoc tl :duration max-end)))
 
 (defn- timeline-total-duration
-  "Calculate total timeline duration including loops.
+  "Calculate total timeline duration including delay and loops.
    :duration is iteration duration, this calculates total."
-  [{:keys [duration loop loop-delay] :or {loop-delay 0}}]
+  [{:keys [duration delay loop loop-delay] :or {delay 0 loop-delay 0}}]
   (let [iteration-dur duration
         iterations (cond
                      (true? loop) ##Inf
@@ -268,7 +269,8 @@
                      :else 1)]
     (if (= iterations ##Inf)
       ##Inf
-      (+ (* iterations iteration-dur)
+      (+ delay
+         (* iterations iteration-dur)
          (* (max 0 (dec iterations)) loop-delay)))))
 
 ;; ============================================================
@@ -276,9 +278,10 @@
 ;; ============================================================
 
 (defn timeline
-  "Create a timeline with optional loop parameters.
+  "Create a timeline with optional parameters.
 
    Options:
+     :delay      - initial delay before timeline starts (default 0)
      :loop       - false (no loop), true (infinite), or iteration count
      :loop-delay - pause between timeline iterations (seconds)
      :alternate  - reverse direction each loop
@@ -286,6 +289,11 @@
 
    Example:
      (-> (timeline)
+         (add tween1 0)
+         (add tween2 :<))
+
+     ;; Timeline with initial delay
+     (-> (timeline {:delay 0.5})
          (add tween1 0)
          (add tween2 :<))
 
@@ -299,7 +307,8 @@
     :labels {}
     :children []
     :duration 0.0
-    ;; Loop params (like anime.js Timeline extends Timer)
+    ;; Timer params (like anime.js Timeline extends Timer)
+    :delay (get opts :delay 0.0)
     :loop (get opts :loop false)
     :loop-delay (get opts :loop-delay 0.0)
     :alternate (get opts :alternate false)
@@ -382,69 +391,87 @@
       :progress   - 0.0-1.0 overall progress
       :iteration  - current loop iteration (0-indexed)
       :direction  - :forward or :backward
-      :phase      - :active, :loop-delay, or :done
+      :phase      - :delay, :active, :loop-delay, or :done
       :children   - vector of child states [{:id :value :done? ...}]
       :done?      - true if all loops complete}"
   [tl t]
-  (let [{:keys [start-time duration children loop loop-delay alternate reversed]
-         :or {loop false loop-delay 0 alternate false reversed false}} tl
+  (let [{:keys [start-time duration children delay loop loop-delay alternate reversed]
+         :or {delay 0 loop false loop-delay 0 alternate false reversed false}} tl
         iteration-dur duration
         total-dur (timeline-total-duration tl)
         raw-elapsed (- t start-time)
 
-        ;; Calculate max iterations
-        max-iterations (cond
-                         (true? loop) ##Inf
-                         (number? loop) loop
-                         :else 1)
+        ;; Check if still in initial delay period
+        in-delay? (< raw-elapsed delay)]
 
-        ;; Calculate which iteration we're in
-        iteration-with-delay (+ iteration-dur loop-delay)
-        raw-iteration (if (or (<= raw-elapsed 0) (zero? iteration-dur))
-                        0
-                        (Math/floor (/ raw-elapsed iteration-with-delay)))
-        iteration (long (min raw-iteration (max 0 (dec max-iterations))))
+    (if in-delay?
+      ;; In delay phase - return initial state
+      {:elapsed raw-elapsed
+       :progress 0.0
+       :iteration 0
+       :direction (if reversed :backward :forward)
+       :phase :delay
+       :done? false
+       :children (mapv #(query-child-state % start-time start-time) children)}
 
-        ;; Time within current iteration
-        iteration-start (* iteration iteration-with-delay)
-        time-in-iteration (- raw-elapsed iteration-start)
-        elapsed-in-iteration (min (max 0 time-in-iteration) iteration-dur)
+      ;; Past delay - calculate active state
+      (let [;; Active elapsed time (after delay)
+            active-elapsed (- raw-elapsed delay)
 
-        ;; Direction based on alternate + reversed
-        base-forward? (if alternate (even? iteration) true)
-        direction (if reversed
-                    (if base-forward? :backward :forward)
-                    (if base-forward? :forward :backward))
+            ;; Calculate max iterations
+            max-iterations (cond
+                             (true? loop) ##Inf
+                             (number? loop) loop
+                             :else 1)
 
-        ;; Phase
-        in-loop-delay? (and (> time-in-iteration iteration-dur)
-                            (< iteration (dec max-iterations)))
-        phase (cond
-                (and (not (true? loop))
-                     (>= raw-elapsed total-dur)) :done
-                in-loop-delay? :loop-delay
-                :else :active)
-        done? (= phase :done)
+            ;; Calculate which iteration we're in
+            iteration-with-delay (+ iteration-dur loop-delay)
+            raw-iteration (if (or (<= active-elapsed 0) (zero? iteration-dur))
+                            0
+                            (Math/floor (/ active-elapsed iteration-with-delay)))
+            iteration (long (min raw-iteration (max 0 (dec max-iterations))))
 
-        ;; Progress (over total duration)
-        progress (if (or (zero? total-dur) (= total-dur ##Inf))
-                   (if done? 1.0 0.0)
-                   (min 1.0 (max 0.0 (/ raw-elapsed total-dur))))
+            ;; Time within current iteration
+            iteration-start (* iteration iteration-with-delay)
+            time-in-iteration (- active-elapsed iteration-start)
+            elapsed-in-iteration (min (max 0 time-in-iteration) iteration-dur)
 
-        ;; Query children at effective time within iteration
-        ;; If direction is backward, reverse time within iteration
-        child-t (if (= direction :backward)
-                  (+ start-time iteration-start (- iteration-dur elapsed-in-iteration))
-                  (+ start-time iteration-start elapsed-in-iteration))
-        child-states (mapv #(query-child-state % start-time child-t) children)]
+            ;; Direction based on alternate + reversed
+            base-forward? (if alternate (even? iteration) true)
+            direction (if reversed
+                        (if base-forward? :backward :forward)
+                        (if base-forward? :forward :backward))
 
-    {:elapsed raw-elapsed
-     :progress progress
-     :iteration iteration
-     :direction direction
-     :phase phase
-     :done? done?
-     :children child-states}))
+            ;; Phase
+            in-loop-delay? (and (> time-in-iteration iteration-dur)
+                                (< iteration (dec max-iterations)))
+            phase (cond
+                    (and (not (true? loop))
+                         (>= raw-elapsed total-dur)) :done
+                    in-loop-delay? :loop-delay
+                    :else :active)
+            done? (= phase :done)
+
+            ;; Progress (over total duration)
+            progress (if (or (zero? total-dur) (= total-dur ##Inf))
+                       (if done? 1.0 0.0)
+                       (min 1.0 (max 0.0 (/ raw-elapsed total-dur))))
+
+            ;; Query children at effective time within iteration
+            ;; Account for delay in child time calculation
+            child-base-t (+ start-time delay)
+            child-t (if (= direction :backward)
+                      (+ child-base-t iteration-start (- iteration-dur elapsed-in-iteration))
+                      (+ child-base-t iteration-start elapsed-in-iteration))
+            child-states (mapv #(query-child-state % (+ start-time delay) child-t) children)]
+
+        {:elapsed raw-elapsed
+         :progress progress
+         :iteration iteration
+         :direction direction
+         :phase phase
+         :done? done?
+         :children child-states}))))
 
 (defn timeline-now
   "Get timeline state at current time. Uses configured time source.
@@ -454,14 +481,14 @@
       :progress   - 0.0-1.0 overall progress
       :iteration  - current loop iteration (0-indexed)
       :direction  - :forward or :backward
-      :phase      - :active, :loop-delay, or :done
+      :phase      - :delay, :active, :loop-delay, or :done
       :children   - vector of child states [{:id :value :done? ...}]
       :done?      - true if all loops complete}"
   [tl]
   (timeline-at tl (time/now)))
 
 (defn timeline-duration
-  "Get the total duration of the timeline in seconds (including loops)."
+  "Get the total duration of the timeline in seconds (including delay and loops)."
   [tl]
   (timeline-total-duration tl))
 
