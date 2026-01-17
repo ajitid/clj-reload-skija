@@ -20,7 +20,8 @@
      (spring-update s {:to 200})          ;; change target (clears delay)
      (spring-restart s)                   ;; restart from beginning
      (spring-reverse s)                   ;; reverse direction"
-  (:require [lib.time :as time]))
+  (:require [lib.time :as time]
+            [lib.anim.util :as util]))
 
 ;; ============================================================
 ;; Default Values
@@ -192,10 +193,7 @@
                              :else 1)
 
             ;; Which iteration are we in?
-            raw-iteration (if (<= active-elapsed 0)
-                            0
-                            (Math/floor (/ active-elapsed iteration-with-delay)))
-            iteration (long (min raw-iteration (dec max-iterations)))
+            iteration (util/calc-iteration active-elapsed iteration-with-delay max-iterations)
 
             ;; Time within current iteration
             iteration-start (* iteration iteration-with-delay)

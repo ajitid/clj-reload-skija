@@ -15,7 +15,8 @@
      (decay-2d-update d {:rate :fast})
      (decay-2d-restart d)
      (decay-2d-reverse d)"
-  (:require [lib.anim.decay :as decay]))
+  (:require [lib.anim.decay :as decay]
+            [lib.anim.util :as util]))
 
 ;; ============================================================
 ;; Public API
@@ -59,33 +60,15 @@
   "Get 2D decay state at a specific time. Pure function.
    Returns {:value [x y] :velocity [vx vy] :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
   [{:keys [decay-x decay-y]} t]
-  (let [state-x (decay/decay-at decay-x t)
-        state-y (decay/decay-at decay-y t)]
-    {:value [(:value state-x) (:value state-y)]
-     :velocity [(:velocity state-x) (:velocity state-y)]
-     :actual-at-rest? (and (:actual-at-rest? state-x) (:actual-at-rest? state-y))
-     :at-rest? (and (:at-rest? state-x) (:at-rest? state-y))
-     :in-delay? (:in-delay? state-x)
-     :iteration (:iteration state-x)
-     :direction (:direction state-x)
-     :phase (:phase state-x)
-     :done? (and (:done? state-x) (:done? state-y))}))
+  (util/combine-2d-states (decay/decay-at decay-x t)
+                          (decay/decay-at decay-y t)))
 
 (defn decay-2d-now
   "Get 2D decay state at current time.
    Returns {:value [x y] :velocity [vx vy] :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
   [{:keys [decay-x decay-y]}]
-  (let [state-x (decay/decay-now decay-x)
-        state-y (decay/decay-now decay-y)]
-    {:value [(:value state-x) (:value state-y)]
-     :velocity [(:velocity state-x) (:velocity state-y)]
-     :actual-at-rest? (and (:actual-at-rest? state-x) (:actual-at-rest? state-y))
-     :at-rest? (and (:at-rest? state-x) (:at-rest? state-y))
-     :in-delay? (:in-delay? state-x)
-     :iteration (:iteration state-x)
-     :direction (:direction state-x)
-     :phase (:phase state-x)
-     :done? (and (:done? state-x) (:done? state-y))}))
+  (util/combine-2d-states (decay/decay-now decay-x)
+                          (decay/decay-now decay-y)))
 
 (defn decay-2d-restart
   "Restart 2D decay from now, keeping all other config.

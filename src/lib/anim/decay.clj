@@ -33,7 +33,8 @@
    Sources:
      - Apple UIScrollView.decelerationRate documentation
      - pmndrs/react-spring decay implementation"
-  (:require [lib.time :as time]))
+  (:require [lib.time :as time]
+            [lib.anim.util :as util]))
 
 ;; ============================================================
 ;; Default Values
@@ -167,10 +168,10 @@
                              :else 1)
 
             ;; Which iteration are we in?
-            raw-iteration (if (or (<= active-elapsed 0) (zero? perceptual-dur))
-                            0
-                            (Math/floor (/ active-elapsed iteration-with-delay)))
-            iteration (long (min raw-iteration (dec max-iterations)))
+            ;; (zero? perceptual-dur) check needed because decay duration depends on velocity
+            iteration (if (zero? perceptual-dur)
+                        0
+                        (util/calc-iteration active-elapsed iteration-with-delay max-iterations))
 
             ;; Time within current iteration
             iteration-start (* iteration iteration-with-delay)

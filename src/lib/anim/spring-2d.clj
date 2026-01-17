@@ -16,7 +16,8 @@
      (spring-2d-update s {:to [200 400]})  ;; change target
      (spring-2d-restart s)
      (spring-2d-reverse s)"
-  (:require [lib.anim.spring :as spring]))
+  (:require [lib.anim.spring :as spring]
+            [lib.anim.util :as util]))
 
 ;; ============================================================
 ;; Public API
@@ -66,33 +67,15 @@
   "Get 2D spring state at a specific time. Pure function.
    Returns {:value [x y] :velocity [vx vy] :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
   [{:keys [spring-x spring-y]} t]
-  (let [state-x (spring/spring-at spring-x t)
-        state-y (spring/spring-at spring-y t)]
-    {:value [(:value state-x) (:value state-y)]
-     :velocity [(:velocity state-x) (:velocity state-y)]
-     :actual-at-rest? (and (:actual-at-rest? state-x) (:actual-at-rest? state-y))
-     :at-rest? (and (:at-rest? state-x) (:at-rest? state-y))
-     :in-delay? (:in-delay? state-x)
-     :iteration (:iteration state-x)
-     :direction (:direction state-x)
-     :phase (:phase state-x)
-     :done? (and (:done? state-x) (:done? state-y))}))
+  (util/combine-2d-states (spring/spring-at spring-x t)
+                          (spring/spring-at spring-y t)))
 
 (defn spring-2d-now
   "Get 2D spring state at current time.
    Returns {:value [x y] :velocity [vx vy] :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
   [{:keys [spring-x spring-y]}]
-  (let [state-x (spring/spring-now spring-x)
-        state-y (spring/spring-now spring-y)]
-    {:value [(:value state-x) (:value state-y)]
-     :velocity [(:velocity state-x) (:velocity state-y)]
-     :actual-at-rest? (and (:actual-at-rest? state-x) (:actual-at-rest? state-y))
-     :at-rest? (and (:at-rest? state-x) (:at-rest? state-y))
-     :in-delay? (:in-delay? state-x)
-     :iteration (:iteration state-x)
-     :direction (:direction state-x)
-     :phase (:phase state-x)
-     :done? (and (:done? state-x) (:done? state-y))}))
+  (util/combine-2d-states (spring/spring-now spring-x)
+                          (spring/spring-now spring-y)))
 
 (defn spring-2d-restart
   "Restart 2D spring from now, keeping all other config.

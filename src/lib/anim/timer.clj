@@ -16,7 +16,8 @@
 
    Restart:
      (timer-restart t)  ;; restart from now, same config"
-  (:require [lib.time :as time]))
+  (:require [lib.time :as time]
+            [lib.anim.util :as util]))
 
 ;; ============================================================
 ;; Default Values
@@ -55,10 +56,7 @@
                          :else 1)
 
         ;; Which iteration are we in?
-        raw-iteration (if (<= active-elapsed 0)
-                        0
-                        (Math/floor (/ active-elapsed iteration-with-delay)))
-        iteration (min raw-iteration (dec max-iterations))
+        iteration (util/calc-iteration active-elapsed iteration-with-delay max-iterations)
 
         ;; Time within current iteration
         iteration-start (* iteration iteration-with-delay)
