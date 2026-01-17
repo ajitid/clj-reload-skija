@@ -249,7 +249,11 @@
   (reset! state/demo-circle-x (/ @state/window-width 2))
   (reset! state/demo-circle-y (/ @state/window-height 2))
   ;; Initial grid calculation
-  (recalculate-grid! @state/window-width @state/window-height))
+  (recalculate-grid! @state/window-width @state/window-height)
+
+  ;; Register gesture targets
+  (when-let [register-gestures! (requiring-resolve 'app.gestures/register-gestures!)]
+    (register-gestures!)))
 
 (defn tick
   "Called every frame with delta time in seconds.
@@ -280,6 +284,10 @@
           (when (pos? dt-hist)
             (reset! state/demo-velocity-x
                     (/ (- (:x newest) (:x oldest)) dt-hist)))))))
+
+  ;; Check long-press timers in gesture system
+  (when-let [check-long-press! (requiring-resolve 'lib.gesture.api/check-long-press!)]
+    (check-long-press!))
 
   ;; Update demo circle decay animation (X-axis only)
   (when-not @state/demo-dragging?
@@ -362,13 +370,14 @@
           (when-not @state/reloading?
             (condp instance? event
               EventMouseButton
-              (let [^EventMouseButton me event]
-                (if (.isPressed me)
-                  ((requiring-resolve 'app.controls/handle-mouse-press) me)
-                  ((requiring-resolve 'app.controls/handle-mouse-release) me)))
+              (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
+                (handle-fn event {:scale @state/scale
+                                  :window-width @state/window-width}))
 
               EventMouseMove
-              ((requiring-resolve 'app.controls/handle-mouse-move) event)
+              (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-move)]
+                (handle-fn event {:scale @state/scale
+                                  :window-width @state/window-width}))
 
               EventKey
               (let [^EventKey ke event]
