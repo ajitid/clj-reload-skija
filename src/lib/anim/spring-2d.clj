@@ -3,11 +3,19 @@
 
    Usage:
      (def s (spring-2d {:from [0 0] :to [100 200]}))
-     (spring-2d-now s)  ;; => {:value [67.3 134.6] :velocity [0.42 0.84] :at-rest? false}
+     (spring-2d-now s)  ;; => {:value [67.3 134.6] :velocity [0.42 0.84] :at-rest? false ...}
+
+   With options:
+     (spring-2d {:from [0 0] :to [100 200]
+                 :delay 0.5
+                 :loop 3
+                 :alternate true})
 
    Mid-animation updates:
-     (spring-2d-retarget s [200 400])
-     (spring-2d-update s {:damping 20})"
+     (spring-2d-update s {:damping 20})
+     (spring-2d-update s {:to [200 400]})  ;; change target
+     (spring-2d-restart s)
+     (spring-2d-reverse s)"
   (:require [lib.anim.spring :as spring]))
 
 ;; ============================================================
@@ -18,10 +26,23 @@
   "Create a 2D spring with the given config.
    :from, :to, and :velocity should be [x y] vectors.
 
+   Options:
+     :from      - start value [x y] (default [0 0])
+     :to        - target value [x y] (default [1 1])
+     :velocity  - initial velocity [vx vy] (default [0 0])
+     :stiffness - spring stiffness (default 180)
+     :damping   - damping coefficient (default 12)
+     :mass      - mass (default 1)
+     :delay     - seconds to wait before starting (default 0)
+     :loop      - false (no loop), true (infinite), or number of iterations
+     :loop-delay - pause between loop iterations (default 0)
+     :alternate - reverse direction each loop (default false)
+     :reversed  - start playing backwards (default false)
+
    Example:
      (spring-2d {:from [0 0] :to [100 200]})
-     (spring-2d {:from [0 0] :to [100 200] :velocity [10 20]})"
-  [{:keys [from to velocity stiffness damping mass start-time]
+     (spring-2d {:from [0 0] :to [100 200] :loop 3 :alternate true})"
+  [{:keys [from to velocity stiffness damping mass delay loop loop-delay alternate reversed start-time]
     :or {from [0.0 0.0]
          to [1.0 1.0]
          velocity [0.0 0.0]}}]
@@ -32,44 +53,75 @@
                       stiffness (assoc :stiffness stiffness)
                       damping (assoc :damping damping)
                       mass (assoc :mass mass)
+                      delay (assoc :delay delay)
+                      loop (assoc :loop loop)
+                      loop-delay (assoc :loop-delay loop-delay)
+                      alternate (assoc :alternate alternate)
+                      reversed (assoc :reversed reversed)
                       start-time (assoc :start-time start-time))]
     {:spring-x (spring/spring (merge base-config {:from fx :to tx :velocity vx}))
      :spring-y (spring/spring (merge base-config {:from fy :to ty :velocity vy}))}))
 
 (defn spring-2d-at
   "Get 2D spring state at a specific time. Pure function.
-   Returns {:value [x y] :velocity [vx vy] :at-rest?}"
+   Returns {:value [x y] :velocity [vx vy] :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
   [{:keys [spring-x spring-y]} t]
   (let [state-x (spring/spring-at spring-x t)
         state-y (spring/spring-at spring-y t)]
     {:value [(:value state-x) (:value state-y)]
      :velocity [(:velocity state-x) (:velocity state-y)]
-     :at-rest? (and (:at-rest? state-x) (:at-rest? state-y))}))
+     :actual-at-rest? (and (:actual-at-rest? state-x) (:actual-at-rest? state-y))
+     :at-rest? (and (:at-rest? state-x) (:at-rest? state-y))
+     :in-delay? (:in-delay? state-x)
+     :iteration (:iteration state-x)
+     :direction (:direction state-x)
+     :phase (:phase state-x)
+     :done? (and (:done? state-x) (:done? state-y))}))
 
 (defn spring-2d-now
   "Get 2D spring state at current time.
-   Returns {:value [x y] :velocity [vx vy] :at-rest?}"
+   Returns {:value [x y] :velocity [vx vy] :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
   [{:keys [spring-x spring-y]}]
   (let [state-x (spring/spring-now spring-x)
         state-y (spring/spring-now spring-y)]
     {:value [(:value state-x) (:value state-y)]
      :velocity [(:velocity state-x) (:velocity state-y)]
-     :at-rest? (and (:at-rest? state-x) (:at-rest? state-y))}))
+     :actual-at-rest? (and (:actual-at-rest? state-x) (:actual-at-rest? state-y))
+     :at-rest? (and (:at-rest? state-x) (:at-rest? state-y))
+     :in-delay? (:in-delay? state-x)
+     :iteration (:iteration state-x)
+     :direction (:direction state-x)
+     :phase (:phase state-x)
+     :done? (and (:done? state-x) (:done? state-y))}))
 
-(defn spring-2d-retarget
-  "Change target mid-animation, preserving current velocity.
-   Returns a new 2D spring starting from current position/velocity."
-  [{:keys [spring-x spring-y]} [tx ty]]
-  {:spring-x (spring/spring-retarget spring-x tx)
-   :spring-y (spring/spring-retarget spring-y ty)})
+(defn spring-2d-restart
+  "Restart 2D spring from now, keeping all other config.
+   Returns a new 2D spring."
+  [{:keys [spring-x spring-y]}]
+  {:spring-x (spring/spring-restart spring-x)
+   :spring-y (spring/spring-restart spring-y)})
 
 (defn spring-2d-update
-  "Update 2D spring config mid-animation (stiffness, damping, mass, etc).
+  "Update 2D spring config mid-animation.
    Preserves current position and velocity.
+   If :to is provided (as [x y] vector), changes target and clears delay.
 
    Example:
      (spring-2d-update s {:damping 20})
-     (spring-2d-update s {:stiffness 300 :mass 0.5})"
+     (spring-2d-update s {:stiffness 300 :mass 0.5})
+     (spring-2d-update s {:to [200 400]})  ;; change target"
   [{:keys [spring-x spring-y]} changes]
-  {:spring-x (spring/spring-update spring-x changes)
-   :spring-y (spring/spring-update spring-y changes)})
+  (let [;; Handle :to as vector
+        [changes-x changes-y] (if-let [[tx ty] (:to changes)]
+                                [(assoc (dissoc changes :to) :to tx)
+                                 (assoc (dissoc changes :to) :to ty)]
+                                [changes changes])]
+    {:spring-x (spring/spring-update spring-x changes-x)
+     :spring-y (spring/spring-update spring-y changes-y)}))
+
+(defn spring-2d-reverse
+  "Reverse the 2D spring direction, starting from current value.
+   Returns a new 2D spring."
+  [{:keys [spring-x spring-y]}]
+  {:spring-x (spring/spring-reverse spring-x)
+   :spring-y (spring/spring-reverse spring-y)})

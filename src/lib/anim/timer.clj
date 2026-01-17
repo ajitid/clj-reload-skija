@@ -164,21 +164,22 @@
   [timer]
   (assoc timer :start-time (time/now)))
 
-(defn timer-with-duration
-  "Create a new timer with a different duration, starting now.
-   Preserves other config (delay, loop, etc.)."
-  [timer new-duration]
-  (assoc timer
-         :start-time (time/now)
-         :duration new-duration))
-
 (defn timer-update
   "Update timer config and restart from now.
    Returns a new timer.
 
    Example:
-     (timer-update t {:loop true :alternate false})"
+     (timer-update t {:loop true :alternate false})
+     (timer-update t {:duration 3.0})  ;; change duration"
   [timer changes]
   (merge timer
          changes
          {:start-time (time/now)}))
+
+(defn timer-reverse
+  "Reverse the timer direction, toggling :reversed.
+   Returns a new timer starting from now."
+  [timer]
+  (assoc timer
+         :reversed (not (:reversed timer))
+         :start-time (time/now)))

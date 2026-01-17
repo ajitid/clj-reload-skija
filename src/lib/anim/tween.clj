@@ -175,24 +175,15 @@
   [tween]
   (assoc tween :start-time (time/now)))
 
-(defn tween-retarget
-  "Change the target value mid-animation, starting from current value.
-   Preserves easing, duration, loop settings but resets iteration.
-   Returns a new tween."
-  [tween new-to]
-  (let [{:keys [value]} (tween-now tween)]
-    (assoc tween
-           :from value
-           :to new-to
-           :start-time (time/now))))
-
 (defn tween-update
   "Update tween config mid-animation.
    Starts from current value with new settings.
+   If :to is provided in changes, resets iteration (like old tween-retarget).
    Returns a new tween.
 
    Example:
-     (tween-update t {:duration 0.5 :easing :out-bounce})"
+     (tween-update t {:duration 0.5 :easing :out-bounce})
+     (tween-update t {:to 200})  ;; changes target"
   [tween changes]
   (let [{:keys [value]} (tween-now tween)]
     (merge tween

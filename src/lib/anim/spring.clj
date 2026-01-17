@@ -7,12 +7,19 @@
      (def s (spring {:from 0 :to 100}))
      (spring-now s)  ;; => {:value 67.3 :velocity 0.42 :at-rest? false}
 
-   With delay (for stagger effects):
-     (spring {:from 0 :to 100 :delay 0.5})  ;; waits 0.5s before starting
+   With options:
+     (spring {:from 0 :to 100
+              :delay 0.5           ;; wait before starting
+              :loop 3              ;; repeat 3 times (true = infinite)
+              :loop-delay 0.2      ;; pause between loops
+              :alternate true      ;; reverse direction each loop
+              :reversed false})    ;; start playing backwards
 
    Mid-animation updates:
-     (spring-retarget s 200)           ;; change target (clears delay)
-     (spring-update s {:damping 20})   ;; change physics params (keeps delay)"
+     (spring-update s {:damping 20})      ;; change physics params
+     (spring-update s {:to 200})          ;; change target (clears delay)
+     (spring-restart s)                   ;; restart from beginning
+     (spring-reverse s)                   ;; reverse direction"
   (:require [lib.time :as time]))
 
 ;; ============================================================
@@ -26,7 +33,11 @@
    :damping 12.0                 ;; Settles in ~0.5s
    :mass 1.0
    :velocity 0.0                 ;; initial velocity (units/s)
-   :delay 0.0})                  ;; delay before spring starts (seconds)
+   :delay 0.0                    ;; delay before spring starts (seconds)
+   :loop-delay 0.0               ;; pause between loop iterations
+   :loop false                   ;; false = no loop, true = infinite, number = count
+   :alternate false              ;; reverse direction each loop
+   :reversed false})             ;; start backwards
 
 ;; Rest detection thresholds (units/s and units)
 ;; Based on human perception - motion below these values is imperceptible.
@@ -73,39 +84,16 @@
   (/ (* 2 Math/PI) (Math/sqrt (/ stiffness mass))))
 
 ;; ============================================================
-;; Core Algorithm (from wobble)
+;; Core Physics (single iteration)
 ;; ============================================================
 
-(defn- calculate-spring-state
-  "Calculate spring position and velocity at time t using closed-form solution.
-   Returns {:value :velocity :at-rest? :in-delay?}
-   Uses pre-computed :omega0 and :zeta from spring map."
-  [{:keys [from to velocity start-time omega0 zeta delay] :or {delay 0.0}} t]
-  (let [;; Elapsed time since animation start
-        raw-elapsed (- t start-time)
-
-        ;; Check if still in delay period
-        in-delay? (< raw-elapsed delay)]
-
-    ;; If in delay, return initial state
-    (if in-delay?
-      {:value from
-       :velocity 0.0
-       :at-rest? false
-       :in-delay? true}
-
-      ;; Otherwise calculate spring physics
-      (let [;; Subtract delay from elapsed time
-            elapsed (- raw-elapsed delay)
-
-            ;; Initial displacement (x0) and velocity (v0)
-            x0 (- to from)
-            v0 (- velocity)  ;; wobble uses negative velocity in equations
-
-            ;; zeta and omega0 are pre-computed in spring()
-            ;; zeta < 1: underdamped (oscillates)
-            ;; zeta = 1: critically damped (fastest non-oscillating)
-            ;; zeta > 1: overdamped (slow approach)
+(defn- calculate-single-spring
+  "Calculate spring position and velocity for a single iteration at elapsed time.
+   Returns [position velocity actual-at-rest?]"
+  [from to initial-velocity omega0 zeta elapsed]
+  (let [;; Initial displacement (x0) and velocity (v0)
+        x0 (- to from)
+        v0 (- initial-velocity)  ;; wobble uses negative velocity in equations
 
         ;; Calculate position and velocity based on damping type
         [oscillation vel]
@@ -152,14 +140,116 @@
                    (+ (* omega2 (+ v0 (* zeta omega0 x0)) cosh-val)
                       (* omega2 omega2 x0 sinh-val))))]))
 
-            ;; Check if spring is at rest
-            at-rest? (and (<= (Math/abs vel) velocity-threshold)
-                          (<= (Math/abs (- to oscillation)) displacement-threshold))]
+        ;; Check if spring is at rest
+        actual-at-rest? (and (<= (Math/abs vel) velocity-threshold)
+                             (<= (Math/abs (- to oscillation)) displacement-threshold))]
 
-        {:value (if at-rest? to oscillation)
-         :velocity (if at-rest? 0.0 vel)
-         :at-rest? at-rest?
-         :in-delay? false}))))
+    [(if actual-at-rest? to oscillation)
+     (if actual-at-rest? 0.0 vel)
+     actual-at-rest?]))
+
+;; ============================================================
+;; Core Algorithm (with loop support)
+;; ============================================================
+
+(defn- calculate-spring-state
+  "Calculate spring state at time t with loop/direction support.
+   Returns {:value :velocity :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
+  [{:keys [from to velocity start-time omega0 zeta delay loop-delay loop alternate reversed]
+    :or {delay 0.0 loop-delay 0.0 loop false alternate false reversed false}} t]
+  (let [;; Elapsed time since animation start
+        raw-elapsed (- t start-time)
+
+        ;; Check if still in initial delay period
+        in-delay? (< raw-elapsed delay)]
+
+    ;; If in initial delay, return initial state
+    (if in-delay?
+      {:value from
+       :velocity 0.0
+       :actual-at-rest? false
+       :at-rest? false
+       :in-delay? true
+       :iteration 0
+       :direction (if reversed :backward :forward)
+       :phase :delay
+       :done? false}
+
+      ;; Otherwise calculate with loop support
+      (let [;; Perceptual duration for one iteration
+            perceptual-dur (/ (* 2 Math/PI) omega0)
+
+            ;; Active time after initial delay
+            active-elapsed (- raw-elapsed delay)
+
+            ;; Single iteration duration + loop delay
+            iteration-with-delay (+ perceptual-dur loop-delay)
+
+            ;; Calculate max iterations
+            max-iterations (cond
+                             (true? loop) ##Inf
+                             (number? loop) loop
+                             :else 1)
+
+            ;; Which iteration are we in?
+            raw-iteration (if (<= active-elapsed 0)
+                            0
+                            (Math/floor (/ active-elapsed iteration-with-delay)))
+            iteration (long (min raw-iteration (dec max-iterations)))
+
+            ;; Time within current iteration
+            iteration-start (* iteration iteration-with-delay)
+            time-in-iteration (- active-elapsed iteration-start)
+
+            ;; Are we in the loop-delay portion?
+            in-loop-delay? (and (> time-in-iteration perceptual-dur)
+                                (< iteration (dec max-iterations)))
+
+            ;; Direction (forward or backward based on alternate + reversed)
+            base-forward? (if alternate
+                            (even? iteration)
+                            true)
+            direction (if reversed
+                        (if base-forward? :backward :forward)
+                        (if base-forward? :forward :backward))
+
+            ;; Effective from/to based on direction
+            [eff-from eff-to] (if (= direction :backward)
+                                [to from]
+                                [from to])
+
+            ;; Elapsed time within this iteration (clamped to perceptual duration)
+            iteration-elapsed (min time-in-iteration perceptual-dur)
+
+            ;; Calculate spring physics for this iteration
+            [value vel actual-at-rest?] (calculate-single-spring
+                                          eff-from eff-to velocity
+                                          omega0 zeta iteration-elapsed)
+
+            ;; At perceptual rest (one period elapsed)
+            at-rest? (>= iteration-elapsed perceptual-dur)
+
+            ;; Phase and done?
+            phase (cond
+                    (>= iteration max-iterations) :done
+                    (and (not (true? loop))
+                         (>= active-elapsed (* max-iterations perceptual-dur)
+                             (* (dec max-iterations) loop-delay))) :done
+                    in-loop-delay? :loop-delay
+                    :else :active)
+            done? (= phase :done)]
+
+        {:value (if done?
+                  (if (= direction :backward) eff-from eff-to)
+                  (if in-loop-delay? eff-to value))
+         :velocity (if (or done? in-loop-delay?) 0.0 vel)
+         :actual-at-rest? (or done? in-loop-delay? actual-at-rest?)
+         :at-rest? (or done? at-rest?)
+         :in-delay? false
+         :iteration iteration
+         :direction direction
+         :phase phase
+         :done? done?}))))
 
 ;; ============================================================
 ;; Public API
@@ -178,11 +268,16 @@
      :mass      - mass (default 1)
      :velocity  - initial velocity (default 0)
      :delay     - seconds to wait before starting (default 0)
+     :loop      - false (no loop), true (infinite), or number of iterations
+     :loop-delay - pause between loop iterations (default 0)
+     :alternate - reverse direction each loop (default false)
+     :reversed  - start playing backwards (default false)
 
    Example:
      (spring {:from 0 :to 100})
      (spring {:from 0 :to 100 :stiffness 300 :damping 20})
-     (spring {:from 0 :to 100 :delay 0.5})  ;; with delay"
+     (spring {:from 0 :to 100 :delay 0.5})
+     (spring {:from 0 :to 100 :loop 3 :alternate true})"
   [config]
   (let [merged (merge defaults config)
         {:keys [stiffness damping mass]} merged
@@ -195,60 +290,63 @@
 
 (defn spring-at
   "Get spring state at a specific time. Pure function.
-   Returns {:value :velocity :at-rest? :at-perceptual-rest? :in-delay?}"
+   Returns {:value :velocity :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
   [spring t]
-  (let [state (calculate-spring-state spring t)
-        delay (or (:delay spring) 0.0)
-        raw-elapsed (- t (:start-time spring))
-        ;; Active elapsed (after delay)
-        elapsed (- raw-elapsed delay)
-        ;; Calculate perceptual duration on-demand using pre-computed omega0
-        perceptual-dur (/ (* 2 Math/PI) (:omega0 spring))]
-    (assoc state :at-perceptual-rest? (>= elapsed perceptual-dur))))
+  (calculate-spring-state spring t))
 
 (defn spring-now
   "Get spring state at current time. Uses configured time source.
-   Returns {:value :velocity :at-rest?}"
+   Returns {:value :velocity :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
   [spring]
   (spring-at spring (time/now)))
 
-(defn spring-retarget
-  "Change target mid-animation, preserving current velocity.
-   Clears any remaining delay - retarget starts immediately.
-   Returns a new spring starting from current position/velocity."
-  [spring new-to]
-  (let [t (time/now)
-        {:keys [value velocity]} (spring-at spring t)]
-    (merge spring
-           {:from value
-            :to new-to
-            :velocity velocity
-            :start-time t
-            :delay 0.0})))
+(defn spring-restart
+  "Restart spring from (time/now), keeping all other config.
+   Returns a new spring."
+  [spring]
+  (assoc spring :start-time (time/now)))
 
 (defn spring-update
-  "Update spring config mid-animation (stiffness, damping, mass, to, etc).
-   Preserves current position, velocity, and remaining delay.
-   Recalculates omega0 and zeta in case physics params changed.
-   Returns a new spring with updated config.
-
-   Note: To clear delay, use spring-retarget or explicitly set :delay 0.
+  "Update spring config mid-animation.
+   Starts from current value/velocity with new settings.
+   Recalculates omega0 and zeta if physics params changed.
+   If :to is provided in changes, clears delay (starts immediately).
+   Returns a new spring.
 
    Example:
      (spring-update s {:damping 20})
-     (spring-update s {:stiffness 300 :mass 0.5})"
+     (spring-update s {:stiffness 300 :mass 0.5})
+     (spring-update s {:to 200})  ;; changes target, clears delay"
   [spring changes]
   (let [t (time/now)
         {:keys [value velocity]} (spring-at spring t)
-        updated (merge spring changes
+        ;; If :to is being changed, clear delay (old retarget behavior)
+        clear-delay? (contains? changes :to)
+        updated (merge spring
+                       changes
                        {:from value
                         :velocity velocity
-                        :start-time t})
+                        :start-time t}
+                       (when clear-delay? {:delay 0.0}))
         ;; Recalculate omega0 and zeta in case stiffness, damping, or mass changed
         {:keys [stiffness damping mass]} updated
         omega0 (Math/sqrt (/ stiffness mass))
         zeta (/ damping (* 2 omega0 mass))]
     (assoc updated :omega0 omega0 :zeta zeta)))
+
+(defn spring-reverse
+  "Reverse the spring direction, starting from current value.
+   Swaps :from and :to, toggles :reversed.
+   Returns a new spring."
+  [spring]
+  (let [{:keys [value velocity]} (spring-now spring)
+        {:keys [from to reversed]} spring]
+    (spring (assoc spring
+                   :from value
+                   :to from
+                   :velocity velocity
+                   :reversed (not reversed)
+                   :start-time (time/now)))))
 
 (defn spring-perceptual
   "Create spring using perceptual duration and bounce.
@@ -262,10 +360,14 @@
      :mass      - mass (default 1.0)
      :velocity  - initial velocity (default 0)
      :delay     - seconds to wait before starting (default 0)
+     :loop      - false (no loop), true (infinite), or number of iterations
+     :loop-delay - pause between loop iterations (default 0)
+     :alternate - reverse direction each loop (default false)
+     :reversed  - start playing backwards (default false)
 
    Example:
      (spring-perceptual {:from 0 :to 100 :duration 0.5 :bounce 0.3})
-     (spring-perceptual {:from 0 :to 100 :duration 0.5 :delay 0.2})"
+     (spring-perceptual {:from 0 :to 100 :duration 0.5 :loop 3 :alternate true})"
   [{:keys [duration bounce mass] :or {bounce 0 mass 1.0} :as opts}]
   (let [physics (perceptual->physics duration bounce mass)]
     (spring (merge (dissoc opts :duration :bounce) physics))))
