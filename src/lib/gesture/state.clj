@@ -17,12 +17,6 @@
          :state         :idle    ;; :idle | :tracking | :resolved
          :blocked-layers #{}}))  ;; Layers blocked by modal
 
-;; Recognizer type priorities (higher wins ties)
-(def recognizer-priorities
-  {:drag       50
-   :long-press 40
-   :tap        30})
-
 ;; Recognizer configs (thresholds, timing)
 (def recognizer-configs
   {:drag       {:min-distance 0}           ;; iOS: UIPanGestureRecognizer starts immediately

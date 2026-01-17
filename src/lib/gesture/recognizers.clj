@@ -27,14 +27,15 @@
    - type: :drag, :tap, or :long-press
    - target: the hit target that created this recognizer
    - pos: [x y] pointer position
-   - time: timestamp in ms"
-  [type target pos time]
+   - time: timestamp in ms
+   - index: position in gesture-recognizers list (lower = higher priority, Flutter-style)"
+  [type target pos time index]
   (let [config (get state/recognizer-configs type {})]
     {:type        type
      :target-id   (:id target)
      :target      target
      :state       :possible
-     :priority    (get state/recognizer-priorities type 0)
+     :priority    index
      :config      config
      :start-pos   pos
      :start-time  time
@@ -43,10 +44,11 @@
      :wants-to-win? false}))
 
 (defn create-recognizers-for-target
-  "Create all recognizers specified by a target."
+  "Create all recognizers specified by a target.
+   Order in :gesture-recognizers determines priority (first = highest, Flutter-style)."
   [target pos time]
-  (mapv #(create-recognizer % target pos time)
-        (:gesture-recognizers target)))
+  (vec (map-indexed (fn [idx type] (create-recognizer type target pos time idx))
+                    (:gesture-recognizers target))))
 
 ;; -----------------------------------------------------------------------------
 ;; Recognizer Updates

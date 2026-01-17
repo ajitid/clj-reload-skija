@@ -89,9 +89,16 @@ In the REPL, open the window:
 (open)
 ```
 
+or directly open using:
+
+```bash
+clj -M:dev:macos-arm64 -e "(open)"
+```
+
 The window opens and the REPL blocks (this is normal).
 
 Other REPL commands:
+
 ```clojure
 (close)   ;; Close window, reset state (can reopen)
 (reopen)  ;; Close + open new window
@@ -130,6 +137,7 @@ Changes apply immediately - no restart needed.
 If you introduce a syntax or runtime error (e.g., typo like `forma` instead of `format`), the window shows a **red screen** (`0xFFFF6B6B`) as immediate visual feedback. The error message is printed to the console.
 
 To recover:
+
 1. Fix the error in your code
 2. Call `(reload)` in the connected REPL
 3. Drawing resumes automatically
@@ -218,15 +226,16 @@ Love2D just makes it explicit, which is beginner-friendly.
 
 ## How It Works
 
-| Namespace      | Uses      | Behavior on Reload                    |
-| -------------- | --------- | ------------------------------------- |
-| `app.state`    | `defonce` | **Persists** - atoms survive reload   |
-| `app.config`   | `def`     | **Reloads** - values update           |
-| `app.controls` | `defn`    | **Reloads** - functions update        |
-| `app.core`     | `defn`    | **Reloads** - game loop updates       |
-| `user`         | -         | **Excluded** - keeps REPL stable      |
+| Namespace      | Uses      | Behavior on Reload                  |
+| -------------- | --------- | ----------------------------------- |
+| `app.state`    | `defonce` | **Persists** - atoms survive reload |
+| `app.config`   | `def`     | **Reloads** - values update         |
+| `app.controls` | `defn`    | **Reloads** - functions update      |
+| `app.core`     | `defn`    | **Reloads** - game loop updates     |
+| `user`         | -         | **Excluded** - keeps REPL stable    |
 
 Following [clj-reload](https://github.com/tonsky/clj-reload) best practices:
+
 - `defonce` for persistent state
 - `(resolve 'ns/sym)` for cross-namespace calls (vars are removed on unload)
 
@@ -261,10 +270,12 @@ bb scripts/check_state.bb path/to/state.clj
 ```
 
 The script detects:
+
 - **Unused keys**: defined in `initial-state` but no `defonce` uses them
 - **Missing keys**: used in `defonce` but not defined in `initial-state`
 
 Example output when issues are found:
+
 ```
 UNUSED keys (in initial-state but no defonce):
   - :unused-key
