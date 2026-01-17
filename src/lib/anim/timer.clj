@@ -1,4 +1,4 @@
-(ns lib.timer.core
+(ns lib.anim.timer
   "Time-based timers with loop, delay, and direction support.
 
    Timers are immutable data. Query progress at any time with timer-at.
@@ -182,4 +182,3 @@
   (merge timer
          changes
          {:start-time (time/now)}))
-
