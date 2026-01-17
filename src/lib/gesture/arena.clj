@@ -1,6 +1,10 @@
 (ns lib.gesture.arena
-  "Gesture arena resolution algorithm.
-   Determines the winner among competing recognizers.")
+  "Gesture arena resolution algorithm and pure state transitions.
+
+   All functions in this namespace are pure - data in, data out.
+   No atom access, no side effects."
+  (:require [lib.gesture.recognizers :as recognizers]
+            [lib.gesture.hit-test :as hit-test]))
 
 (defn active-recognizers
   "Filter to recognizers that can still win."
@@ -64,3 +68,129 @@
                 (assoc :state :cancelled)
                 (assoc :can-win? false))))
         recognizers))
+
+;; =============================================================================
+;; Pure Arena State Transitions
+;; =============================================================================
+;; These functions compute the next arena state + effects to execute.
+;; Effects are data descriptions, not side effects.
+
+(def ^:private idle-arena
+  "Initial/reset arena state."
+  {:pointer-id nil
+   :recognizers []
+   :winner nil
+   :state :idle
+   :blocked-layers #{}})
+
+(defn- maybe-resolve
+  "Try to resolve arena, returning updated arena + effects if winner found."
+  [arena]
+  (let [{:keys [recognizers winner]} arena]
+    (if winner
+      {:arena arena :effects []}
+      (if-let [new-winner (resolve-arena recognizers)]
+        {:arena (assoc arena
+                       :winner new-winner
+                       :recognizers (cancel-losers recognizers new-winner))
+         :effects [{:type :deliver-gesture
+                    :recognizer new-winner
+                    :event-type (:state new-winner)}]}
+        {:arena arena :effects []}))))
+
+(defn arena-on-pointer-down
+  "Pure: process pointer down event.
+
+   Arguments:
+   - arena: current arena state
+   - px, py: pointer position
+   - ctx: context for bounds-fn
+   - targets: map of target-id -> target
+   - time: timestamp in ms
+
+   Returns {:arena new-arena :effects [...]} or nil if no target hit."
+  [arena px py ctx targets time]
+  (let [blocked (:blocked-layers arena)
+        hits (hit-test/hit-test px py ctx targets blocked)]
+    (when (seq hits)
+      (let [target (:target (first hits))
+            recs (recognizers/create-recognizers-for-target target [px py] time)]
+        (when (seq recs)
+          (let [new-arena (assoc arena
+                                 :pointer-id 0
+                                 :recognizers recs
+                                 :winner nil
+                                 :state :tracking)]
+            (maybe-resolve new-arena)))))))
+
+(defn arena-on-pointer-move
+  "Pure: process pointer move event.
+
+   Returns {:arena new-arena :effects [...]}."
+  [arena pos time]
+  (let [{:keys [recognizers winner state]} arena]
+    (if (not= state :tracking)
+      {:arena arena :effects []}
+      (if winner
+        ;; Winner exists - update it and check for state transitions
+        (let [prev-state (:state winner)
+              updated (recognizers/update-recognizer-move winner pos time)
+              new-arena (assoc arena :winner updated)
+              effects (cond-> []
+                        ;; Deliver :began when transitioning from :possible
+                        (and (= prev-state :possible) (= (:state updated) :began))
+                        (conj {:type :deliver-gesture
+                               :recognizer updated
+                               :event-type :began})
+                        ;; Deliver :changed for continued movement
+                        (= (:state updated) :changed)
+                        (conj {:type :deliver-gesture
+                               :recognizer updated
+                               :event-type :changed}))]
+          {:arena new-arena :effects effects})
+        ;; No winner yet - update all recognizers and try to resolve
+        (let [updated-recs (mapv #(recognizers/update-recognizer-move % pos time)
+                                 recognizers)
+              arena-with-recs (assoc arena :recognizers updated-recs)]
+          (maybe-resolve arena-with-recs))))))
+
+(defn arena-on-pointer-up
+  "Pure: process pointer up event.
+
+   Returns {:arena new-arena :effects [...]}."
+  [arena pos time]
+  (let [{:keys [recognizers winner state]} arena]
+    (if (not= state :tracking)
+      {:arena arena :effects []}
+      (let [effects
+            (if winner
+              ;; Deliver end to winner
+              (let [updated (recognizers/update-recognizer-up winner pos time)]
+                (if (= (:state updated) :ended)
+                  [{:type :deliver-gesture :recognizer updated :event-type :ended}]
+                  []))
+              ;; No winner - update all and sweep
+              (let [updated-recs (mapv #(recognizers/update-recognizer-up % pos time)
+                                       recognizers)
+                    sweep-winner (or (resolve-arena updated-recs)
+                                     (sweep-arena updated-recs))]
+                (if sweep-winner
+                  [{:type :deliver-gesture
+                    :recognizer sweep-winner
+                    :event-type (:state sweep-winner)}]
+                  [])))]
+        ;; Always reset arena on pointer up
+        {:arena idle-arena :effects effects}))))
+
+(defn arena-check-time-thresholds
+  "Pure: check time-based thresholds (for long-press).
+
+   Returns {:arena new-arena :effects [...]}."
+  [arena time]
+  (let [{:keys [recognizers winner state]} arena]
+    (if (or (not= state :tracking) winner)
+      {:arena arena :effects []}
+      (let [updated-recs (mapv #(recognizers/check-time-threshold % time)
+                               recognizers)
+            arena-with-recs (assoc arena :recognizers updated-recs)]
+        (maybe-resolve arena-with-recs)))))

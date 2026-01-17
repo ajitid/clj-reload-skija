@@ -1,8 +1,11 @@
 (ns lib.gesture.api
-  "Public API for the gesture system."
+  "Public API for the gesture system.
+
+   Architecture: Thin impure shell over pure core.
+   - Entry points (handle-mouse-*) obtain time, read atoms
+   - Pure functions in arena.clj compute state transitions
+   - Shell applies state changes and executes effects"
   (:require [lib.gesture.state :as state]
-            [lib.gesture.hit-test :as hit-test]
-            [lib.gesture.recognizers :as recognizers]
             [lib.gesture.arena :as arena])
   (:import [io.github.humbleui.jwm EventMouseButton EventMouseMove MouseButton]))
 
@@ -55,12 +58,12 @@
   (swap! state/arena assoc :blocked-layers #{}))
 
 ;; -----------------------------------------------------------------------------
-;; Gesture Event Creation
+;; Effect Execution (impure - calls handlers)
 ;; -----------------------------------------------------------------------------
 
 (defn- make-gesture-event
   "Create a gesture event map to pass to handlers."
-  [recognizer event-type]
+  [recognizer event-type time]
   (let [{:keys [target-id target start-pos current-pos start-time]} recognizer
         [sx sy] start-pos
         [cx cy] current-pos]
@@ -69,153 +72,106 @@
      :pointer   {:x cx :y cy}
      :start     {:x sx :y sy}
      :delta     {:x (- cx sx) :y (- cy sy)}
-     :time      (- (recognizers/now-ms) start-time)
+     :time      (- time start-time)
      :target    target}))
 
-(defn- deliver-gesture!
-  "Call the appropriate handler for a gesture event.
-   Returns true if a handler was called."
-  [recognizer event-type]
-  (let [handlers (get-in recognizer [:target :handlers])
-        handler-key (case [(:type recognizer) event-type]
-                      [:drag :began]   :on-drag-start
-                      [:drag :changed] :on-drag
-                      [:drag :ended]   :on-drag-end
-                      [:tap :ended]    :on-tap
-                      [:long-press :began] :on-long-press
-                      [:long-press :ended] :on-long-press-end
-                      nil)]
-    (when-let [handler (get handlers handler-key)]
-      (handler (make-gesture-event recognizer event-type))
-      true)))
+(defn- gesture-handler-key
+  "Map recognizer type + event type to handler key."
+  [recognizer-type event-type]
+  (case [recognizer-type event-type]
+    [:drag :began]       :on-drag-start
+    [:drag :changed]     :on-drag
+    [:drag :ended]       :on-drag-end
+    [:tap :ended]        :on-tap
+    [:long-press :began] :on-long-press
+    [:long-press :ended] :on-long-press-end
+    nil))
+
+(defn- execute-effect!
+  "Execute a single effect. Effects are data descriptions of side effects."
+  [effect time]
+  (case (:type effect)
+    :deliver-gesture
+    (let [{:keys [recognizer event-type]} effect
+          handlers (get-in recognizer [:target :handlers])
+          handler-key (gesture-handler-key (:type recognizer) event-type)]
+      (when-let [handler (get handlers handler-key)]
+        (handler (make-gesture-event recognizer event-type time))))
+    ;; Unknown effect type - ignore
+    nil))
+
+(defn- execute-effects!
+  "Execute a sequence of effects."
+  [effects time]
+  (doseq [effect effects]
+    (execute-effect! effect time)))
 
 ;; -----------------------------------------------------------------------------
-;; Arena Management
+;; Event Handlers (thin impure shell)
 ;; -----------------------------------------------------------------------------
+;; Pattern: read atoms → call pure fn → write atom → execute effects
 
-(defn- reset-arena!
-  "Reset arena to idle state."
-  []
-  (swap! state/arena assoc
-         :pointer-id nil
-         :recognizers []
-         :winner nil
-         :state :idle))
+(defn- handle-pointer-down
+  "Handle pointer down event. Thin shell over pure arena-on-pointer-down."
+  [px py ctx time]
+  (let [targets @state/hit-targets
+        current-arena @state/arena]
+    (when-let [{:keys [arena effects]}
+               (arena/arena-on-pointer-down current-arena px py ctx targets time)]
+      (reset! state/arena arena)
+      (execute-effects! effects time))))
 
-(defn- try-resolve-and-deliver!
-  "Try to resolve arena. If winner found, deliver and update state.
-   Returns the winner if one was just determined, nil otherwise."
-  []
-  (let [{:keys [recognizers winner state]} @state/arena]
-    (when (and (= state :tracking) (nil? winner))
-      (when-let [new-winner (arena/resolve-arena recognizers)]
-        (swap! state/arena assoc
-               :winner new-winner
-               ;; Keep state as :tracking so moves continue to be processed
-               :recognizers (arena/cancel-losers recognizers new-winner))
-        ;; Deliver the initial gesture event (e.g., :on-drag-start for :began)
-        (deliver-gesture! new-winner (:state new-winner))
-        new-winner))))
+(defn- handle-pointer-move
+  "Handle pointer move event. Thin shell over pure arena-on-pointer-move."
+  [px py time]
+  (let [{:keys [arena effects]}
+        (arena/arena-on-pointer-move @state/arena [px py] time)]
+    (reset! state/arena arena)
+    (execute-effects! effects time)))
 
-;; -----------------------------------------------------------------------------
-;; Event Handlers
-;; -----------------------------------------------------------------------------
-
-(defn handle-pointer-down
-  "Handle pointer down event. Performs hit test and creates recognizers."
-  [px py ctx]
-  (let [time (recognizers/now-ms)
-        hits (hit-test/hit-test px py ctx)]
-    (when (seq hits)
-      ;; Take topmost target only (like Flutter)
-      (let [top-hit (first hits)
-            target (:target top-hit)
-            recs (recognizers/create-recognizers-for-target target [px py] time)]
-        (when (seq recs)
-          (swap! state/arena assoc
-                 :pointer-id 0  ;; Simple single-pointer for now
-                 :recognizers recs
-                 :winner nil
-                 :state :tracking)
-          ;; Try immediate resolution (single recognizer case)
-          (try-resolve-and-deliver!))))))
-
-(defn handle-pointer-move
-  "Handle pointer move event. Updates recognizers and checks for victory."
-  [px py ctx]
-  (let [{:keys [recognizers winner state]} @state/arena
-        time (recognizers/now-ms)]
-    (when (= state :tracking)
-      (if winner
-        ;; Winner already determined - update and deliver continued gesture
-        (let [prev-state (:state winner)
-              updated (recognizers/update-recognizer-move winner [px py] time)]
-          (swap! state/arena assoc :winner updated)
-          ;; Deliver :on-drag-start when transitioning from :possible to :began
-          (when (and (= prev-state :possible) (= (:state updated) :began))
-            (deliver-gesture! updated :began))
-          ;; Deliver :on-drag for :changed state
-          (when (= (:state updated) :changed)
-            (deliver-gesture! updated :changed)))
-        ;; No winner yet - update all and try to resolve
-        (let [updated (mapv #(recognizers/update-recognizer-move % [px py] time)
-                            recognizers)]
-          (swap! state/arena assoc :recognizers updated)
-          ;; try-resolve-and-deliver! handles delivery if winner found
-          (try-resolve-and-deliver!))))))
-
-(defn handle-pointer-up
-  "Handle pointer up event. Forces resolution and delivers end gesture."
-  [px py ctx]
-  (let [{:keys [recognizers winner state]} @state/arena
-        time (recognizers/now-ms)]
-    (when (= state :tracking)
-      (if winner
-        ;; Deliver end to winner
-        (let [updated (recognizers/update-recognizer-up winner [px py] time)]
-          (when (= (:state updated) :ended)
-            (deliver-gesture! updated :ended)))
-        ;; No winner - update all and sweep
-        (let [updated (mapv #(recognizers/update-recognizer-up % [px py] time)
-                            recognizers)
-              sweep-winner (or (arena/resolve-arena updated)
-                               (arena/sweep-arena updated))]
-          (when sweep-winner
-            (deliver-gesture! sweep-winner (:state sweep-winner)))))
-      ;; Reset arena
-      (reset-arena!))))
+(defn- handle-pointer-up
+  "Handle pointer up event. Thin shell over pure arena-on-pointer-up."
+  [px py time]
+  (let [{:keys [arena effects]}
+        (arena/arena-on-pointer-up @state/arena [px py] time)]
+    (reset! state/arena arena)
+    (execute-effects! effects time)))
 
 ;; -----------------------------------------------------------------------------
-;; JWM Event Integration
+;; JWM Event Integration (entry points - obtain time here)
 ;; -----------------------------------------------------------------------------
 
 (defn handle-mouse-button
-  "Handle JWM EventMouseButton. Entry point from core.clj."
+  "Handle JWM EventMouseButton. Entry point from core.clj.
+   Obtains time once and passes through to pure functions."
   [^EventMouseButton event ctx]
   (when (= (.getButton event) MouseButton/PRIMARY)
-    (let [scale (:scale ctx 1.0)
+    (let [time (System/currentTimeMillis)
+          scale (:scale ctx 1.0)
           px (/ (.getX event) scale)
           py (/ (.getY event) scale)]
       (if (.isPressed event)
-        (handle-pointer-down px py ctx)
-        (handle-pointer-up px py ctx)))))
+        (handle-pointer-down px py ctx time)
+        (handle-pointer-up px py time)))))
 
 (defn handle-mouse-move
-  "Handle JWM EventMouseMove. Entry point from core.clj."
+  "Handle JWM EventMouseMove. Entry point from core.clj.
+   Obtains time once and passes through to pure functions."
   [^EventMouseMove event ctx]
   (let [{:keys [state]} @state/arena]
     (when (= state :tracking)
-      (let [scale (:scale ctx 1.0)
+      (let [time (System/currentTimeMillis)
+            scale (:scale ctx 1.0)
             px (/ (.getX event) scale)
             py (/ (.getY event) scale)]
-        (handle-pointer-move px py ctx)))))
+        (handle-pointer-move px py time)))))
 
 (defn check-long-press!
-  "Check long-press timers. Call from tick loop."
+  "Check long-press timers. Call from tick loop.
+   Thin shell over pure arena-check-time-thresholds."
   []
-  (let [{:keys [recognizers winner state]} @state/arena
-        time (recognizers/now-ms)]
-    (when (and (= state :tracking) (nil? winner))
-      (let [updated (mapv #(recognizers/check-time-threshold % time) recognizers)]
-        (swap! state/arena assoc :recognizers updated)
-        (try-resolve-and-deliver!)))))
+  (let [time (System/currentTimeMillis)
+        {:keys [arena effects]}
+        (arena/arena-check-time-thresholds @state/arena time)]
+    (reset! state/arena arena)
+    (execute-effects! effects time)))
