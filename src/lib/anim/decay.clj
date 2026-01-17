@@ -17,6 +17,9 @@
      (def d (decay {:from 400 :velocity 1000}))
      (decay-now d)  ;; => {:value 580.0 :velocity 135.0 :at-rest? false}
 
+   With delay (for stagger effects):
+     (decay {:from 400 :velocity 1000 :delay 0.5})  ;; waits 0.5s before starting
+
    Sources:
      - Apple UIScrollView.decelerationRate documentation
      - pmndrs/react-spring decay implementation"
@@ -34,7 +37,8 @@
 (def defaults
   {:from 0.0
    :velocity 0.0                 ;; initial velocity (units/s)
-   :rate (:normal rate)})        ;; default to Apple normal
+   :rate (:normal rate)          ;; default to Apple normal
+   :delay 0.0})                  ;; delay before decay starts (seconds)
 
 ;; Rest detection thresholds (units/s)
 ;; Based on human perception - motion below these values is imperceptible.
@@ -77,32 +81,47 @@
 
 (defn- calculate-decay-state
   "Calculate decay position and velocity at time t using exp-based formula.
-   Returns {:value :velocity :at-rest?}"
-  [{:keys [from velocity rate start-time]} t]
+   Returns {:value :velocity :at-rest? :in-delay?}"
+  [{:keys [from velocity rate start-time delay] :or {delay 0.0}} t]
   (let [;; Elapsed time since animation start (in seconds)
-        elapsed (max 0 (- t start-time))
+        raw-elapsed (max 0 (- t start-time))
 
-        ;; Decay constant: k = (1-d) × 1000
-        k (* (- 1 rate) 1000)
+        ;; Check if still in delay period
+        in-delay? (< raw-elapsed delay)]
 
-        ;; e^(-k×t) - the decay factor
-        e (Math/exp (- (* k elapsed)))
+    ;; If in delay, return initial state
+    (if in-delay?
+      {:value from
+       :velocity 0.0
+       :at-rest? false
+       :in-delay? true}
 
-        ;; Velocity: v(t) = v₀ × e^(-k×t)
-        current-velocity (* velocity e)
+      ;; Otherwise calculate decay physics
+      (let [;; Subtract delay from elapsed time
+            elapsed (- raw-elapsed delay)
 
-        ;; Position: x(t) = x₀ + v₀/k × (1 - e^(-k×t))
-        position-delta (if (zero? k)
-                         0.0
-                         (* (/ velocity k) (- 1 e)))
-        current-position (+ from position-delta)
+            ;; Decay constant: k = (1-d) × 1000
+            k (* (- 1 rate) 1000)
 
-        ;; Check if at rest
-        at-rest? (<= (Math/abs current-velocity) velocity-threshold)]
+            ;; e^(-k×t) - the decay factor
+            e (Math/exp (- (* k elapsed)))
 
-    {:value current-position
-     :velocity (if at-rest? 0.0 current-velocity)
-     :at-rest? at-rest?}))
+            ;; Velocity: v(t) = v₀ × e^(-k×t)
+            current-velocity (* velocity e)
+
+            ;; Position: x(t) = x₀ + v₀/k × (1 - e^(-k×t))
+            position-delta (if (zero? k)
+                             0.0
+                             (* (/ velocity k) (- 1 e)))
+            current-position (+ from position-delta)
+
+            ;; Check if at rest
+            at-rest? (<= (Math/abs current-velocity) velocity-threshold)]
+
+        {:value current-position
+         :velocity (if at-rest? 0.0 current-velocity)
+         :at-rest? at-rest?
+         :in-delay? false}))))
 
 ;; ============================================================
 ;; Public API
@@ -118,11 +137,12 @@
      :rate     - deceleration rate, keyword or number (default :normal)
                  Keywords: :normal (0.998), :fast (0.99)
                  Or raw number for custom rate
+     :delay    - seconds to wait before starting (default 0)
 
    Example:
      (decay {:from 400 :velocity 1000})
      (decay {:from 400 :velocity 1000 :rate :fast})
-     (decay {:from 400 :velocity 1000 :rate 0.995})  ;; custom rate"
+     (decay {:from 400 :velocity 1000 :delay 0.5})  ;; with delay"
   [config]
   (let [;; Resolve rate if keyword, otherwise use as-is
         resolved-rate (if-let [r (:rate config)]
@@ -135,10 +155,13 @@
 
 (defn decay-at
   "Get decay state at a specific time. Pure function.
-   Returns {:value :velocity :at-rest? :at-perceptual-rest?}"
+   Returns {:value :velocity :at-rest? :at-perceptual-rest? :in-delay?}"
   [decay t]
   (let [state (calculate-decay-state decay t)
-        elapsed (- t (:start-time decay))
+        delay (or (:delay decay) 0.0)
+        raw-elapsed (- t (:start-time decay))
+        ;; Active elapsed (after delay)
+        elapsed (- raw-elapsed delay)
         ;; Calculate perceptual duration on-demand
         perceptual-dur (decay-perceptual-duration decay)]
     (assoc state :at-perceptual-rest? (>= elapsed perceptual-dur))))
@@ -151,8 +174,10 @@
 
 (defn decay-update
   "Update decay config mid-animation (rate).
-   Preserves current position and velocity.
+   Preserves current position, velocity, and remaining delay.
    Returns a new decay with updated config.
+
+   Note: To clear delay, explicitly set :delay 0 in changes.
 
    Example:
      (decay-update d {:rate 0.99})  ;; switch to faster stopping"

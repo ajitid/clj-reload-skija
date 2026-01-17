@@ -30,6 +30,16 @@
      ;;     :children [{:id :tween1 :value 80 :done? true} ...]
      ;;     :done? false}
 
+   Delay stacking:
+     Timeline position and animation :delay STACK.
+     A tween/spring/decay/timer with :delay 0.3 placed at position 0.5
+     will start animating at 0.8s (0.5 + 0.3).
+
+     Recommendation:
+     - Use timeline position for orchestrating multiple animations
+     - Use :delay for standalone animations or stagger effects
+     - Avoid combining both unless you want additive delays
+
    Sources:
      - anime.js timeline API"
   (:require [lib.time :as time]

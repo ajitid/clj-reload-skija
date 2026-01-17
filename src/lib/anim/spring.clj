@@ -7,9 +7,12 @@
      (def s (spring {:from 0 :to 100}))
      (spring-now s)  ;; => {:value 67.3 :velocity 0.42 :at-rest? false}
 
+   With delay (for stagger effects):
+     (spring {:from 0 :to 100 :delay 0.5})  ;; waits 0.5s before starting
+
    Mid-animation updates:
-     (spring-retarget s 200)           ;; change target
-     (spring-update s {:damping 20})   ;; change physics params"
+     (spring-retarget s 200)           ;; change target (clears delay)
+     (spring-update s {:damping 20})   ;; change physics params (keeps delay)"
   (:require [lib.time :as time]))
 
 ;; ============================================================
@@ -22,7 +25,8 @@
    :stiffness 180.0              ;; Apple-like bouncy feel
    :damping 12.0                 ;; Settles in ~0.5s
    :mass 1.0
-   :velocity 0.0})               ;; initial velocity (units/s)
+   :velocity 0.0                 ;; initial velocity (units/s)
+   :delay 0.0})                  ;; delay before spring starts (seconds)
 
 ;; Rest detection thresholds (units/s and units)
 ;; Based on human perception - motion below these values is imperceptible.
@@ -74,20 +78,34 @@
 
 (defn- calculate-spring-state
   "Calculate spring position and velocity at time t using closed-form solution.
-   Returns {:value :velocity :at-rest?}
+   Returns {:value :velocity :at-rest? :in-delay?}
    Uses pre-computed :omega0 and :zeta from spring map."
-  [{:keys [from to velocity start-time omega0 zeta]} t]
-  (let [;; Initial displacement (x0) and velocity (v0)
-        x0 (- to from)
-        v0 (- velocity)  ;; wobble uses negative velocity in equations
+  [{:keys [from to velocity start-time omega0 zeta delay] :or {delay 0.0}} t]
+  (let [;; Elapsed time since animation start
+        raw-elapsed (- t start-time)
 
-        ;; zeta and omega0 are pre-computed in spring()
-        ;; zeta < 1: underdamped (oscillates)
-        ;; zeta = 1: critically damped (fastest non-oscillating)
-        ;; zeta > 1: overdamped (slow approach)
+        ;; Check if still in delay period
+        in-delay? (< raw-elapsed delay)]
 
-        ;; Elapsed time since animation start
-        elapsed (- t start-time)
+    ;; If in delay, return initial state
+    (if in-delay?
+      {:value from
+       :velocity 0.0
+       :at-rest? false
+       :in-delay? true}
+
+      ;; Otherwise calculate spring physics
+      (let [;; Subtract delay from elapsed time
+            elapsed (- raw-elapsed delay)
+
+            ;; Initial displacement (x0) and velocity (v0)
+            x0 (- to from)
+            v0 (- velocity)  ;; wobble uses negative velocity in equations
+
+            ;; zeta and omega0 are pre-computed in spring()
+            ;; zeta < 1: underdamped (oscillates)
+            ;; zeta = 1: critically damped (fastest non-oscillating)
+            ;; zeta > 1: overdamped (slow approach)
 
         ;; Calculate position and velocity based on damping type
         [oscillation vel]
@@ -134,13 +152,14 @@
                    (+ (* omega2 (+ v0 (* zeta omega0 x0)) cosh-val)
                       (* omega2 omega2 x0 sinh-val))))]))
 
-        ;; Check if spring is at rest
-        at-rest? (and (<= (Math/abs vel) velocity-threshold)
-                      (<= (Math/abs (- to oscillation)) displacement-threshold))]
+            ;; Check if spring is at rest
+            at-rest? (and (<= (Math/abs vel) velocity-threshold)
+                          (<= (Math/abs (- to oscillation)) displacement-threshold))]
 
-    {:value (if at-rest? to oscillation)
-     :velocity (if at-rest? 0.0 vel)
-     :at-rest? at-rest?}))
+        {:value (if at-rest? to oscillation)
+         :velocity (if at-rest? 0.0 vel)
+         :at-rest? at-rest?
+         :in-delay? false}))))
 
 ;; ============================================================
 ;; Public API
@@ -151,9 +170,19 @@
    :start-time defaults to (now) if not provided.
    Pre-computes :omega0 and :zeta for per-frame performance.
 
+   Options:
+     :from      - start value (default 0)
+     :to        - target value (default 1)
+     :stiffness - spring stiffness (default 180)
+     :damping   - damping coefficient (default 12)
+     :mass      - mass (default 1)
+     :velocity  - initial velocity (default 0)
+     :delay     - seconds to wait before starting (default 0)
+
    Example:
      (spring {:from 0 :to 100})
-     (spring {:from 0 :to 100 :stiffness 300 :damping 20})"
+     (spring {:from 0 :to 100 :stiffness 300 :damping 20})
+     (spring {:from 0 :to 100 :delay 0.5})  ;; with delay"
   [config]
   (let [merged (merge defaults config)
         {:keys [stiffness damping mass]} merged
@@ -166,10 +195,13 @@
 
 (defn spring-at
   "Get spring state at a specific time. Pure function.
-   Returns {:value :velocity :at-rest? :at-perceptual-rest?}"
+   Returns {:value :velocity :at-rest? :at-perceptual-rest? :in-delay?}"
   [spring t]
   (let [state (calculate-spring-state spring t)
-        elapsed (- t (:start-time spring))
+        delay (or (:delay spring) 0.0)
+        raw-elapsed (- t (:start-time spring))
+        ;; Active elapsed (after delay)
+        elapsed (- raw-elapsed delay)
         ;; Calculate perceptual duration on-demand using pre-computed omega0
         perceptual-dur (/ (* 2 Math/PI) (:omega0 spring))]
     (assoc state :at-perceptual-rest? (>= elapsed perceptual-dur))))
@@ -182,6 +214,7 @@
 
 (defn spring-retarget
   "Change target mid-animation, preserving current velocity.
+   Clears any remaining delay - retarget starts immediately.
    Returns a new spring starting from current position/velocity."
   [spring new-to]
   (let [t (time/now)
@@ -190,13 +223,16 @@
            {:from value
             :to new-to
             :velocity velocity
-            :start-time t})))
+            :start-time t
+            :delay 0.0})))
 
 (defn spring-update
   "Update spring config mid-animation (stiffness, damping, mass, to, etc).
-   Preserves current position and velocity.
+   Preserves current position, velocity, and remaining delay.
    Recalculates omega0 and zeta in case physics params changed.
    Returns a new spring with updated config.
+
+   Note: To clear delay, use spring-retarget or explicitly set :delay 0.
 
    Example:
      (spring-update s {:damping 20})
@@ -225,9 +261,11 @@
      :bounce    - bounciness -1 to 1 (default 0 = critical damping)
      :mass      - mass (default 1.0)
      :velocity  - initial velocity (default 0)
+     :delay     - seconds to wait before starting (default 0)
 
    Example:
-     (spring-perceptual {:from 0 :to 100 :duration 0.5 :bounce 0.3})"
+     (spring-perceptual {:from 0 :to 100 :duration 0.5 :bounce 0.3})
+     (spring-perceptual {:from 0 :to 100 :duration 0.5 :delay 0.2})"
   [{:keys [duration bounce mass] :or {bounce 0 mass 1.0} :as opts}]
   (let [physics (perceptual->physics duration bounce mass)]
     (spring (merge (dissoc opts :duration :bounce) physics))))

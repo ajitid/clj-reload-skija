@@ -64,6 +64,38 @@
      (stagger-delay 3 10 1.0 {:ease :out-cubic})
      ;; => delay for element 3 of 10
 
+   ## Why Not Use Springs for Stagger?
+
+   Stagger controls WHEN each child STARTS. Springs control HOW each child MOVES.
+
+   Underdamped springs oscillate and overshoot:
+   - Position goes: 0 → 1.2 → 0.9 → 1.05 → 1.0 (settles)
+   - Using this for delays would cause children to appear OUT OF ORDER
+   - Child 3 might start BEFORE child 2!
+
+   For spring-like delay distribution without oscillation risk:
+   - Use :out-expo (fast approach, similar to critically damped spring)
+   - Use :out-quint (smooth deceleration)
+
+   For bouncy MOTION on each child:
+   - Use stagger for delays (with regular easings)
+   - Use springs for each child's animation
+
+   Example - stagger + springs with :delay property:
+     (let [delays (stagger-delays 10 2.0 {:ease :out-quad})]
+       (map-indexed
+         (fn [i delay]
+           (spring {:from 0 :to 100 :delay delay}))
+         delays))
+
+   Or with timeline positioning:
+     (let [delays (stagger-delays 10 2.0 {:ease :out-quad})]
+       (reduce-kv
+         (fn [tl i delay]
+           (add tl (spring {:from 0 :to 100}) delay))
+         (timeline)
+         (vec delays)))
+
    ## Sources
 
    - anime.js stagger: https://animejs.com/documentation/utilities/stagger/
