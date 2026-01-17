@@ -1,7 +1,8 @@
 (ns lib.layout.render
   "Rendering utilities for layout trees with Skija."
   (:require [lib.layout.core :as layout])
-  (:import [io.github.humbleui.skija Canvas Paint PaintMode Rect]))
+  (:import [io.github.humbleui.skija Canvas Paint PaintMode]
+           [io.github.humbleui.types Rect]))
 
 (defn walk-layout
   "Walk a laid-out tree, calling render-fn for each node.

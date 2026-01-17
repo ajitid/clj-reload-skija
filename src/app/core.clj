@@ -11,10 +11,13 @@
    - tick - called every frame with delta time (dt)
    - draw - called every frame for rendering"
   (:require [app.state :as state]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [lib.layout.core :as layout]
+            [lib.layout.render :as layout-render])
   (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventWindowResize EventFrame EventMouseButton EventMouseMove EventKey Key KeyModifier ZOrder]
            [io.github.humbleui.jwm.skija EventFrameSkija LayerGLSkija]
            [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap Font Typeface]
+           [io.github.humbleui.types Rect]
            [java.util.function Consumer]
            [java.io StringWriter PrintWriter]
            [java.awt Toolkit]
@@ -322,26 +325,79 @@
                         (.setAntiAlias true))]
       (.drawCircle canvas (float x) (float y) (float radius) paint))))
 
+;; ============================================================
+;; Layout Demo
+;; ============================================================
+
+(defn demo-ui
+  "Layout system demo."
+  []
+  {:layout {:horizontal {:size "100%"} :vertical {:size "100%"}}
+   :children-layout {:mode :stack-vertical :padding 20 :gap 12}
+   :children
+   [;; Row 1: Fixed + Spacer + Fixed
+    {:layout {:vertical {:size 50}}
+     :children-layout {:mode :stack-horizontal :gap 10}
+     :children
+     [{:layout {:horizontal {:size 100}} :fill 0xFF4A90D9 :label "100px"}
+      {:layout {:horizontal {:size "1s"}} :fill 0x20FFFFFF :label "spacer (1s)"}
+      {:layout {:horizontal {:size 100}} :fill 0xFF4A90D9 :label "100px"}]}
+
+    ;; Row 2: Stretch weights 1:2:1
+    {:layout {:vertical {:size 60}}
+     :children-layout {:mode :stack-horizontal :gap 10}
+     :children
+     [{:layout {:horizontal {:size "1s"}} :fill 0xFF44AA66 :label "1s"}
+      {:layout {:horizontal {:size "2s"}} :fill 0xFF66CC88 :label "2s"}
+      {:layout {:horizontal {:size "1s"}} :fill 0xFF44AA66 :label "1s"}]}
+
+    ;; Row 3: Percentages
+    {:layout {:vertical {:size 50}}
+     :children-layout {:mode :stack-horizontal :gap 10}
+     :children
+     [{:layout {:horizontal {:size "30%"}} :fill 0xFFD94A4A :label "30%"}
+      {:layout {:horizontal {:size "70%"}} :fill 0xFFD97A4A :label "70%"}]}
+
+    ;; Row 4: Vertical stretch (fills remaining)
+    {:layout {:vertical {:size "1s"}} :fill 0x15FFFFFF :label "stretch (1s)"}
+
+    ;; Row 5: Grid
+    {:layout {:vertical {:size 120}}
+     :fill 0x10FFFFFF
+     :label "grid 3 cols"
+     :children-layout {:mode :grid :cols 3 :gap 8 :padding 10}
+     :children
+     (vec (for [i (range 6)]
+            {:layout {:vertical {:size 45}}
+             :fill (+ 0xFF505050 (* i 0x101010))
+             :label (str "cell " i)}))}]})
+
+(defn draw-layout-demo
+  "Draw the layout demo UI."
+  [^Canvas canvas width height]
+  (with-open [fill-paint (Paint.)
+              text-paint (doto (Paint.) (.setColor (unchecked-int 0xFFFFFFFF)))
+              font (Font. (Typeface/makeDefault) (float 10))]
+    (layout-render/render-tree canvas (demo-ui) {:x 0 :y 0 :w width :h height}
+                               (fn [^Canvas c node {:keys [x y w h]}]
+                                 ;; Draw fill
+                                 (when-let [color (:fill node)]
+                                   (.setColor fill-paint (unchecked-int color))
+                                   (.setMode fill-paint PaintMode/FILL)
+                                   (.drawRect c (Rect/makeXYWH x y w h) fill-paint))
+                                 ;; Draw label only on leaf nodes (no children)
+                                 (when (and (:label node) (not (:children node)))
+                                   (.drawString c (:label node) (float (+ x 4)) (float (+ y 12)) font text-paint))))))
+
 (defn draw
   "Called every frame for rendering.
    Draw your game here."
   [^Canvas canvas width height]
   ;; Clear background
-  (.clear canvas (unchecked-int (or (cfg 'app.config/grid-bg-color) 0xFF222222)))
+  (.clear canvas (unchecked-int 0xFF222222))
 
-  ;; Only render when config is loaded
-  (when (config-loaded?)
-    ;; Draw the circle grid (uses cached positions)
-    (draw-circle-grid canvas)
-
-    ;; Draw spring demo
-    (draw-demo-anchor canvas)
-    (draw-demo-circle canvas)
-
-    ;; Draw control panel on top (at top-right) - toggled with Ctrl+`
-    (when @state/panel-visible?
-      (when-let [draw-panel-fn (requiring-resolve 'app.controls/draw-panel)]
-        (draw-panel-fn canvas width)))))
+  ;; Draw layout demo
+  (draw-layout-demo canvas width height))
 
 ;; ============================================================
 ;; Game loop infrastructure

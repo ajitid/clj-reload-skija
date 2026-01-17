@@ -332,14 +332,12 @@
 
         ;; Grid configuration
         cols (or (:cols children-layout) 1)
-        rows (or (:rows children-layout) (int (Math/ceil (/ (count children) cols))))
+        num-cols (if (vector? cols) (count cols) cols)
+        rows (or (:rows children-layout) (int (Math/ceil (/ (count children) num-cols))))
+        num-rows (if (vector? rows) (count rows) rows)
         gap (or (:gap children-layout) 0)
         gap-x (or (:gap-x children-layout) gap)
         gap-y (or (:gap-y children-layout) gap)
-
-        ;; Calculate cell sizes
-        num-cols (if (vector? cols) (count cols) cols)
-        num-rows (if (vector? rows) (count rows) rows)
 
         total-gap-x (* gap-x (max 0 (dec num-cols)))
         total-gap-y (* gap-y (max 0 (dec num-rows)))
