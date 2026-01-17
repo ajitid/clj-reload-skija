@@ -5,7 +5,7 @@
    Works with tween, timer, spring, and decay animations.
 
    Events:
-     :begin    - animation started (delay -> active)
+     :begin    - animation became active (first frame or delay ended)
      :complete - ALL loops finished (done? became true)
      :loop     - iteration changed
 
@@ -18,7 +18,7 @@
    Works with tween, timer, spring, and decay.
 
    Events:
-     :begin    - animation started (delay -> active)
+     :begin    - animation became active (first frame or delay ended)
      :complete - ALL loops finished (done? became true)
      :loop     - iteration changed
 
@@ -41,7 +41,8 @@
          (reset! state curr)))"
   [prev curr event]
   (case event
-    :begin    (and (= (:phase prev) :delay)
+    :begin    (and (or (nil? prev)
+                       (= (:phase prev) :delay))
                    (= (:phase curr) :active))
     :complete (and (not (:done? prev))
                    (:done? curr))
