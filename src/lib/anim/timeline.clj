@@ -89,14 +89,11 @@
          (* (max 0 (dec iterations)) loop-delay)))))
 
 (defn- child-duration
-  "Get the duration of a child animation in seconds.
-   Uses pre-calculated :perceptual-duration when available."
+  "Get the duration of a child animation in seconds."
   [{:keys [animation type]}]
   (case type
-    :spring (or (:perceptual-duration animation)
-                (spring/spring-perceptual-duration animation))
-    :decay (or (:perceptual-duration animation)
-               (decay/decay-perceptual-duration animation))
+    :spring (spring/spring-perceptual-duration animation)
+    :decay (decay/decay-perceptual-duration animation)
     :tween (tween-total-duration animation)
     :timer (timer-total-duration animation)
     0.0))
