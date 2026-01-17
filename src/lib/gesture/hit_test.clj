@@ -27,10 +27,10 @@
     (->> (vals targets)
          ;; Filter out targets in blocked layers
          (remove #(contains? blocked (:layer %)))
-         ;; Filter to targets that contain the point
+         ;; Filter to targets that contain the point (skip if bounds is nil)
          (filter (fn [target]
                    (when-let [bounds-fn (:bounds-fn target)]
-                     (let [bounds (bounds-fn ctx)]
+                     (when-let [bounds (bounds-fn ctx)]
                        (point-in-rect? px py bounds)))))
          ;; Sort by layer priority (lower index = higher priority)
          ;; then by z-index descending (higher z = on top)

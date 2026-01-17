@@ -27,17 +27,21 @@
    - pos: [x y] pointer position
    - time: timestamp in ms"
   [type target pos time]
-  {:type        type
-   :target-id   (:id target)
-   :target      target
-   :state       :possible
-   :priority    (get state/recognizer-priorities type 0)
-   :config      (get state/recognizer-configs type {})
-   :start-pos   pos
-   :start-time  time
-   :current-pos pos
-   :can-win?    true
-   :wants-to-win? false})
+  (let [config (get state/recognizer-configs type {})
+        ;; For drag with min-distance=0, start immediately in :began state
+        immediate-drag? (and (= type :drag)
+                             (zero? (get config :min-distance 10)))]
+    {:type        type
+     :target-id   (:id target)
+     :target      target
+     :state       (if immediate-drag? :began :possible)
+     :priority    (get state/recognizer-priorities type 0)
+     :config      config
+     :start-pos   pos
+     :start-time  time
+     :current-pos pos
+     :can-win?    true
+     :wants-to-win? immediate-drag?}))
 
 (defn create-recognizers-for-target
   "Create all recognizers specified by a target."
@@ -78,8 +82,8 @@
           (-> (assoc :state :began)
               (assoc :wants-to-win? true))
 
-          ;; Continue tracking after began
-          (= state :began)
+          ;; Continue tracking after began (transition to changed)
+          (#{:began :changed} state)
           (assoc :state :changed)))))
 
 (defmethod update-recognizer-up :drag

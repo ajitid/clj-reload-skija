@@ -73,7 +73,8 @@
      :target    target}))
 
 (defn- deliver-gesture!
-  "Call the appropriate handler for a gesture event."
+  "Call the appropriate handler for a gesture event.
+   Returns true if a handler was called."
   [recognizer event-type]
   (let [handlers (get-in recognizer [:target :handlers])
         handler-key (case [(:type recognizer) event-type]
@@ -85,7 +86,8 @@
                       [:long-press :ended] :on-long-press-end
                       nil)]
     (when-let [handler (get handlers handler-key)]
-      (handler (make-gesture-event recognizer event-type)))))
+      (handler (make-gesture-event recognizer event-type))
+      true)))
 
 ;; -----------------------------------------------------------------------------
 ;; Arena Management
@@ -101,17 +103,19 @@
          :state :idle))
 
 (defn- try-resolve-and-deliver!
-  "Try to resolve arena. If winner found, deliver and update state."
+  "Try to resolve arena. If winner found, deliver and update state.
+   Returns the winner if one was just determined, nil otherwise."
   []
   (let [{:keys [recognizers winner state]} @state/arena]
     (when (and (= state :tracking) (nil? winner))
       (when-let [new-winner (arena/resolve-arena recognizers)]
         (swap! state/arena assoc
                :winner new-winner
-               :state :resolved
+               ;; Keep state as :tracking so moves continue to be processed
                :recognizers (arena/cancel-losers recognizers new-winner))
-        ;; Deliver the initial gesture event
-        (deliver-gesture! new-winner (:state new-winner))))))
+        ;; Deliver the initial gesture event (e.g., :on-drag-start for :began)
+        (deliver-gesture! new-winner (:state new-winner))
+        new-winner))))
 
 ;; -----------------------------------------------------------------------------
 ;; Event Handlers
@@ -143,19 +147,19 @@
         time (recognizers/now-ms)]
     (when (= state :tracking)
       (if winner
-        ;; Winner already determined - deliver continued gesture
-        (let [updated (recognizers/update-recognizer-move winner [px py] time)]
+        ;; Winner already determined - update and deliver continued gesture
+        (let [prev-state (:state winner)
+              updated (recognizers/update-recognizer-move winner [px py] time)]
           (swap! state/arena assoc :winner updated)
+          ;; Deliver :on-drag for :changed state
           (when (= (:state updated) :changed)
             (deliver-gesture! updated :changed)))
         ;; No winner yet - update all and try to resolve
         (let [updated (mapv #(recognizers/update-recognizer-move % [px py] time)
                             recognizers)]
           (swap! state/arena assoc :recognizers updated)
-          (try-resolve-and-deliver!)
-          ;; Check if winner emerged and deliver
-          (when-let [w (:winner @state/arena)]
-            (deliver-gesture! w (:state w))))))))
+          ;; try-resolve-and-deliver! handles delivery if winner found
+          (try-resolve-and-deliver!))))))
 
 (defn handle-pointer-up
   "Handle pointer up event. Forces resolution and delivers end gesture."
