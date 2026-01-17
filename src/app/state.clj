@@ -28,7 +28,7 @@
    :last-reload-error nil
    :last-runtime-error nil
    ;; Game time (for animation libs)
-   :game-time 0              ;; accumulated game time in ms
+   :game-time 0.0            ;; accumulated game time in seconds
    :time-scale 1.0           ;; 1.0 = normal, 0.5 = slow-mo, 0 = paused
    ;; Spring demo state
    :demo-spring-x nil        ;; spring for X axis (or nil)

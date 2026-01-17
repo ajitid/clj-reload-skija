@@ -15,7 +15,7 @@
 ;; Configurable Time Source
 ;; ============================================================
 
-(defonce time-source (atom #(System/currentTimeMillis)))
+(defonce time-source (atom #(/ (System/currentTimeMillis) 1000.0)))
 
 (defn set-time-source!
   "Set the time source function. Call once at app startup to use game-time.
@@ -38,8 +38,8 @@
    :stiffness 180.0              ;; Apple-like bouncy feel
    :damping 12.0                 ;; Settles in ~0.5s
    :mass 1.0
-   :velocity 0.0                 ;; initial velocity (units/ms)
-   :velocity-threshold 0.001
+   :velocity 0.0                 ;; initial velocity (units/s)
+   :velocity-threshold 1.0
    :displacement-threshold 0.001})
 
 ;; ============================================================
@@ -61,8 +61,8 @@
         ;; zeta > 1: overdamped (slow approach)
         zeta (/ damping (* 2 (Math/sqrt (* stiffness mass))))
 
-        ;; Angular frequency (divide by 1000 for ms)
-        omega0 (/ (Math/sqrt (/ stiffness mass)) 1000)
+        ;; Angular frequency (rad/s)
+        omega0 (Math/sqrt (/ stiffness mass))
 
         ;; Elapsed time since animation start
         elapsed (- t start-time)

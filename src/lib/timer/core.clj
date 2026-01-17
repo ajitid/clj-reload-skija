@@ -4,8 +4,8 @@
    Timers are immutable data. Query progress at any time with timer-at.
 
    Usage:
-     (def t (timer 2000))  ;; 2 second timer
-     (timer-now t)  ;; => {:elapsed 500 :progress 0.25 :done? false}
+     (def t (timer 2.0))  ;; 2 second timer
+     (timer-now t)  ;; => {:elapsed 0.5 :progress 0.25 :done? false}
 
    Restart:
      (timer-restart t)  ;; restart from now, same duration")
@@ -14,7 +14,7 @@
 ;; Configurable Time Source
 ;; ============================================================
 
-(defonce time-source (atom #(System/currentTimeMillis)))
+(defonce time-source (atom #(/ (System/currentTimeMillis) 1000.0)))
 
 (defn set-time-source!
   "Set the time source function. Call once at app startup to use game-time.
@@ -32,11 +32,11 @@
 ;; ============================================================
 
 (defn timer
-  "Create a timer with the given duration in milliseconds.
+  "Create a timer with the given duration in seconds.
    Starts at (now)."
-  [duration-ms]
+  [duration]
   {:start-time (now)
-   :duration duration-ms})
+   :duration duration})
 
 (defn timer-at
   "Get timer state at a specific time. Pure function.

@@ -76,14 +76,14 @@ The app uses three hot-reloadable callbacks in `app.core`:
 
 **lib.timer.core** - Simple countdown timers:
 ```clojure
-(timer 2000)                             ;; 2 second timer
+(timer 2.0)                              ;; 2 second timer
 (timer-now t)                            ;; Get {:elapsed :progress :done?}
 ```
 
 ### Game-Time System
 
 For animation synchronization and slow-mo/pause support:
-- `app.state/game-time` - Accumulated time in ms (advanced in tick)
+- `app.state/game-time` - Accumulated time in seconds (advanced in tick)
 - `app.state/time-scale` - Speed multiplier (1.0 = normal, 0.5 = slow-mo, 0 = paused)
 - Libs configured in `init` via `set-time-source!`
 

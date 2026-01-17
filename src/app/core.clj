@@ -257,8 +257,8 @@
   "Called every frame with delta time in seconds.
    Update your game state here."
   [dt]
-  ;; Advance game time (dt is seconds, convert to ms, apply scale)
-  (swap! state/game-time + (* dt 1000 @state/time-scale))
+  ;; Advance game time (dt is in seconds, apply time scale)
+  (swap! state/game-time + (* dt @state/time-scale))
 
   ;; Update spring demo if not dragging
   (when-not @state/demo-dragging?

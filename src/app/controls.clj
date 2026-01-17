@@ -184,11 +184,11 @@
     ;; Calculate throw velocity from last mouse movement
     (let [now @state/game-time
           dt (- now @state/demo-last-mouse-time)
-          ;; Velocity in units per millisecond (only if we have a recent sample)
-          vx (if (and (pos? dt) (< dt 100))  ;; only use if < 100ms ago
+          ;; Velocity in units per second (only if we have a recent sample)
+          vx (if (and (pos? dt) (< dt 0.1))  ;; only use if < 0.1s ago
                (/ (- @state/demo-circle-x @state/demo-last-mouse-x) dt)
                0.0)
-          vy (if (and (pos? dt) (< dt 100))
+          vy (if (and (pos? dt) (< dt 0.1))
                (/ (- @state/demo-circle-y @state/demo-last-mouse-y) dt)
                0.0)
           ;; Get spring config from app.config
