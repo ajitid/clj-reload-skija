@@ -145,16 +145,17 @@
     (let [scale @state/scale
           ww @state/window-width
           mx (/ (.getX event) scale)
-          my (/ (.getY event) scale)]
+          my (/ (.getY event) scale)
+          panel-visible? @state/panel-visible?]
       (cond
-        ;; Check sliders first (higher z-order)
-        (point-in-rect? mx my (slider-x-bounds ww))
+        ;; Check sliders first (higher z-order) - only when panel visible
+        (and panel-visible? (point-in-rect? mx my (slider-x-bounds ww)))
         (do
           (reset! state/dragging-slider :x)
           (reset! state/circles-x (slider-value-from-x mx (slider-x-bounds ww)))
           (trigger-grid-recalc!))
 
-        (point-in-rect? mx my (slider-y-bounds ww))
+        (and panel-visible? (point-in-rect? mx my (slider-y-bounds ww)))
         (do
           (reset! state/dragging-slider :y)
           (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds ww)))

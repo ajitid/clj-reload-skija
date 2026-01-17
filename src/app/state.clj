@@ -43,7 +43,9 @@
    :demo-velocity-x 0.0      ;; tracked velocity during drag
    :demo-velocity-y 0.0
    :demo-drag-offset-x 0.0   ;; click offset from circle center
-   :demo-position-history []})
+   :demo-position-history []
+   ;; UI state
+   :panel-visible? true})
 
 ;; ============================================================
 ;; Resettable state (values from initial-state)
@@ -77,6 +79,8 @@
 (defonce demo-velocity-y (atom (:demo-velocity-y initial-state)))
 (defonce demo-drag-offset-x (atom (:demo-drag-offset-x initial-state)))
 (defonce demo-position-history (atom (:demo-position-history initial-state)))
+;; UI state
+(defonce panel-visible? (atom (:panel-visible? initial-state)))
 
 ;; ============================================================
 ;; Reset function (uses same initial-state map)

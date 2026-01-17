@@ -12,7 +12,7 @@
    - draw - called every frame for rendering"
   (:require [app.state :as state]
             [clojure.string :as str])
-  (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventWindowResize EventFrame EventMouseButton EventMouseMove EventKey Key ZOrder]
+  (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventWindowResize EventFrame EventMouseButton EventMouseMove EventKey Key KeyModifier ZOrder]
            [io.github.humbleui.jwm.skija EventFrameSkija LayerGLSkija]
            [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap Font Typeface]
            [java.util.function Consumer]
@@ -330,9 +330,10 @@
     (draw-demo-anchor canvas)
     (draw-demo-circle canvas)
 
-    ;; Draw control panel on top (at top-right)
-    (when-let [draw-panel-fn (requiring-resolve 'app.controls/draw-panel)]
-      (draw-panel-fn canvas width))))
+    ;; Draw control panel on top (at top-right) - toggled with Ctrl+`
+    (when @state/panel-visible?
+      (when-let [draw-panel-fn (requiring-resolve 'app.controls/draw-panel)]
+        (draw-panel-fn canvas width)))))
 
 ;; ============================================================
 ;; Game loop infrastructure
@@ -377,6 +378,9 @@
                              (copy-fn))
                     Key/F9 (when-let [reopen-fn (requiring-resolve 'user/reopen)]
                              (reopen-fn))
+                    ;; Ctrl+` toggles panel (all platforms)
+                    Key/BACK_QUOTE (when (.isModifierDown ke KeyModifier/CONTROL)
+                                     (swap! state/panel-visible? not))
                     nil)))
 
               EventWindowResize
