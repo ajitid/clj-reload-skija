@@ -111,7 +111,6 @@
 (defn decay
   "Create a decay animation with the given config, merged with defaults.
    :start-time defaults to (time/now) if not provided.
-   :perceptual-duration is pre-calculated for performance.
 
    Options:
      :from     - starting position (default 0.0)
@@ -128,24 +127,21 @@
   (let [;; Resolve rate if keyword, otherwise use as-is
         resolved-rate (if-let [r (:rate config)]
                         (if (keyword? r) (get rate r r) r)
-                        (:rate defaults))
-        velocity (or (:velocity config) (:velocity defaults))
-        perceptual-dur (decay-perceptual-duration {:rate resolved-rate
-                                                   :velocity velocity})]
+                        (:rate defaults))]
     (merge defaults
            config
            {:rate resolved-rate
-            :start-time (or (:start-time config) (time/now))
-            :perceptual-duration perceptual-dur})))
+            :start-time (or (:start-time config) (time/now))})))
 
 (defn decay-at
   "Get decay state at a specific time. Pure function.
    Returns {:value :velocity :at-rest? :at-perceptual-rest?}"
   [decay t]
   (let [state (calculate-decay-state decay t)
-        elapsed (- t (:start-time decay))]
-    (assoc state :at-perceptual-rest?
-           (>= elapsed (:perceptual-duration decay)))))
+        elapsed (- t (:start-time decay))
+        ;; Calculate perceptual duration on-demand
+        perceptual-dur (decay-perceptual-duration decay)]
+    (assoc state :at-perceptual-rest? (>= elapsed perceptual-dur))))
 
 (defn decay-now
   "Get decay state at current time. Uses configured time source.
@@ -156,7 +152,6 @@
 (defn decay-update
   "Update decay config mid-animation (rate).
    Preserves current position and velocity.
-   Recalculates perceptual-duration in case rate changed.
    Returns a new decay with updated config.
 
    Example:
@@ -167,13 +162,10 @@
         ;; Resolve new rate if provided
         new-rate (if-let [r (:rate changes)]
                    (if (keyword? r) (get rate r r) r)
-                   (:rate decay))
-        perceptual-dur (decay-perceptual-duration {:rate new-rate
-                                                   :velocity velocity})]
+                   (:rate decay))]
     (merge decay
            changes
            {:from value
             :velocity velocity
             :start-time t
-            :rate new-rate
-            :perceptual-duration perceptual-dur})))
+            :rate new-rate})))

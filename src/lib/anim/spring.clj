@@ -74,20 +74,17 @@
 
 (defn- calculate-spring-state
   "Calculate spring position and velocity at time t using closed-form solution.
-   Returns {:value :velocity :at-rest?}"
-  [{:keys [from to stiffness damping mass velocity start-time]} t]
+   Returns {:value :velocity :at-rest?}
+   Uses pre-computed :omega0 and :zeta from spring map."
+  [{:keys [from to velocity start-time omega0 zeta]} t]
   (let [;; Initial displacement (x0) and velocity (v0)
         x0 (- to from)
         v0 (- velocity)  ;; wobble uses negative velocity in equations
 
-        ;; Damping ratio: determines oscillation type
+        ;; zeta and omega0 are pre-computed in spring()
         ;; zeta < 1: underdamped (oscillates)
         ;; zeta = 1: critically damped (fastest non-oscillating)
         ;; zeta > 1: overdamped (slow approach)
-        zeta (/ damping (* 2 (Math/sqrt (* stiffness mass))))
-
-        ;; Angular frequency (rad/s)
-        omega0 (Math/sqrt (/ stiffness mass))
 
         ;; Elapsed time since animation start
         elapsed (- t start-time)
@@ -152,26 +149,30 @@
 (defn spring
   "Create a spring with the given config, merged with defaults.
    :start-time defaults to (now) if not provided.
-   :perceptual-duration is pre-calculated for performance.
+   Pre-computes :omega0 and :zeta for per-frame performance.
 
    Example:
      (spring {:from 0 :to 100})
      (spring {:from 0 :to 100 :stiffness 300 :damping 20})"
   [config]
   (let [merged (merge defaults config)
-        perceptual-dur (spring-perceptual-duration merged)]
+        {:keys [stiffness damping mass]} merged
+        omega0 (Math/sqrt (/ stiffness mass))
+        zeta (/ damping (* 2 omega0 mass))]
     (assoc merged
            :start-time (or (:start-time config) (time/now))
-           :perceptual-duration perceptual-dur)))
+           :omega0 omega0
+           :zeta zeta)))
 
 (defn spring-at
   "Get spring state at a specific time. Pure function.
    Returns {:value :velocity :at-rest? :at-perceptual-rest?}"
   [spring t]
   (let [state (calculate-spring-state spring t)
-        elapsed (- t (:start-time spring))]
-    (assoc state :at-perceptual-rest?
-           (>= elapsed (:perceptual-duration spring)))))
+        elapsed (- t (:start-time spring))
+        ;; Calculate perceptual duration on-demand using pre-computed omega0
+        perceptual-dur (/ (* 2 Math/PI) (:omega0 spring))]
+    (assoc state :at-perceptual-rest? (>= elapsed perceptual-dur))))
 
 (defn spring-now
   "Get spring state at current time. Uses configured time source.
@@ -194,7 +195,7 @@
 (defn spring-update
   "Update spring config mid-animation (stiffness, damping, mass, to, etc).
    Preserves current position and velocity.
-   Recalculates perceptual-duration in case stiffness or mass changed.
+   Recalculates omega0 and zeta in case physics params changed.
    Returns a new spring with updated config.
 
    Example:
@@ -207,9 +208,11 @@
                        {:from value
                         :velocity velocity
                         :start-time t})
-        ;; Recalculate in case stiffness or mass changed
-        perceptual-dur (spring-perceptual-duration updated)]
-    (assoc updated :perceptual-duration perceptual-dur)))
+        ;; Recalculate omega0 and zeta in case stiffness, damping, or mass changed
+        {:keys [stiffness damping mass]} updated
+        omega0 (Math/sqrt (/ stiffness mass))
+        zeta (/ damping (* 2 omega0 mass))]
+    (assoc updated :omega0 omega0 :zeta zeta)))
 
 (defn spring-perceptual
   "Create spring using perceptual duration and bounce.
