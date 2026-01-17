@@ -240,12 +240,8 @@
   []
   (println "Game loaded!")
   ;; Point all libs to use game-time
-  (when-let [set-spring-time (requiring-resolve 'lib.anim.spring/set-time-source!)]
-    (set-spring-time #(deref state/game-time)))
-  (when-let [set-decay-time (requiring-resolve 'lib.anim.decay/set-time-source!)]
-    (set-decay-time #(deref state/game-time)))
-  (when-let [set-timer-time (requiring-resolve 'lib.timer.core/set-time-source!)]
-    (set-timer-time #(deref state/game-time)))
+  (when-let [time-source (requiring-resolve 'lib.time/time-source)]
+    (reset! time-source #(deref state/game-time)))
 
   ;; Set initial anchor position to center of window
   (reset! state/demo-anchor-x (/ @state/window-width 2))

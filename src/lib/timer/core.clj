@@ -8,24 +8,8 @@
      (timer-now t)  ;; => {:elapsed 0.5 :progress 0.25 :done? false}
 
    Restart:
-     (timer-restart t)  ;; restart from now, same duration")
-
-;; ============================================================
-;; Configurable Time Source
-;; ============================================================
-
-(defonce time-source (atom #(/ (System/currentTimeMillis) 1000.0)))
-
-(defn set-time-source!
-  "Set the time source function. Call once at app startup to use game-time.
-   Example: (set-time-source! #(deref app.state/game-time))"
-  [f]
-  (reset! time-source f))
-
-(defn now
-  "Get current time from configured source."
-  []
-  (@time-source))
+     (timer-restart t)  ;; restart from now, same duration"
+  (:require [lib.time :as time]))
 
 ;; ============================================================
 ;; Public API
@@ -33,9 +17,9 @@
 
 (defn timer
   "Create a timer with the given duration in seconds.
-   Starts at (now)."
+   Starts at (time/now)."
   [duration]
-  {:start-time (now)
+  {:start-time (time/now)
    :duration duration})
 
 (defn timer-at
@@ -54,17 +38,17 @@
   "Get timer state at current time. Uses configured time source.
    Returns {:elapsed :progress :done?}"
   [timer]
-  (timer-at timer (now)))
+  (timer-at timer (time/now)))
 
 (defn timer-restart
-  "Restart timer from (now), keeping the same duration.
+  "Restart timer from (time/now), keeping the same duration.
    Returns a new timer."
   [{:keys [duration]}]
-  {:start-time (now)
+  {:start-time (time/now)
    :duration duration})
 
 (defn timer-with-duration
   "Create a new timer with a different duration, starting now."
   [timer new-duration]
-  {:start-time (now)
+  {:start-time (time/now)
    :duration new-duration})

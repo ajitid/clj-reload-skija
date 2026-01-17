@@ -19,7 +19,7 @@
    Sources:
      - Apple UIScrollView.decelerationRate documentation
      - Ilya Lobanov: Deceleration mechanics of UIScrollView"
-  (:require [lib.anim.time :as time]))
+  (:require [lib.time :as time]))
 
 ;; ============================================================
 ;; Default Values

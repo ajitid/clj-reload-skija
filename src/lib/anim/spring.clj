@@ -10,7 +10,7 @@
    Mid-animation updates:
      (spring-retarget s 200)           ;; change target
      (spring-update s {:damping 20})   ;; change physics params"
-  (:require [lib.anim.time :as time]))
+  (:require [lib.time :as time]))
 
 ;; ============================================================
 ;; Default Values
