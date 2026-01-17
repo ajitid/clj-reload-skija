@@ -44,8 +44,9 @@
     :begin    (and (or (nil? prev)
                        (= (:phase prev) :delay))
                    (= (:phase curr) :active))
-    :complete (and (not (:done? prev))
+    :complete (and (false? (:done? prev))
                    (:done? curr))
-    :loop     (and (some? (:iteration prev))
-                   (not= (:iteration prev) (:iteration curr)))
+    :loop     (let [pi (:iteration prev)]
+                (and (some? pi)
+                     (not= pi (:iteration curr))))
     false))
