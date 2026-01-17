@@ -231,8 +231,8 @@
             phase (cond
                     (>= iteration max-iterations) :done
                     (and (not (true? loop))
-                         (>= active-elapsed (* max-iterations perceptual-dur)
-                             (* (dec max-iterations) loop-delay))) :done
+                         (>= active-elapsed (+ (* max-iterations perceptual-dur)
+                                               (* (dec max-iterations) loop-delay)))) :done
                     in-loop-delay? :loop-delay
                     :else :active)
             done? (= phase :done)]

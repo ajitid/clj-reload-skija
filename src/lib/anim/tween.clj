@@ -113,7 +113,8 @@
         phase (cond
                 in-delay? :delay
                 (>= iteration max-iterations) :done
-                (>= active-elapsed total-duration) :done
+                (and (not (true? loop))
+                     (>= active-elapsed (- total-duration delay))) :done
                 in-loop-delay? :loop-delay
                 :else :active)
         done? (= phase :done)]

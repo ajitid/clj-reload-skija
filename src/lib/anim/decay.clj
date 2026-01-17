@@ -192,14 +192,24 @@
             ;; Elapsed time within this iteration (clamped to perceptual duration)
             iteration-elapsed (min time-in-iteration perceptual-dur)
 
-            ;; Calculate final position for this iteration (for loop continuity)
-            final-position-delta (if (zero? (* (- 1 rate) 1000))
-                                   0.0
-                                   (/ velocity (* (- 1 rate) 1000)))
-            iteration-final-pos (+ from (* iteration final-position-delta)
-                                   (if (and alternate (odd? iteration))
-                                     (- final-position-delta)
-                                     0))
+            ;; Calculate starting position for this iteration (for loop continuity)
+            ;; Distance per iteration (always positive)
+            iteration-distance (if (zero? (* (- 1 rate) 1000))
+                                 0.0
+                                 (/ (Math/abs velocity) (* (- 1 rate) 1000)))
+            ;; Direction multiplier for non-alternating movement
+            initial-dir (if reversed -1 1)
+            ;; Starting position depends on alternating mode
+            iteration-final-pos (cond
+                                  ;; Alternating, even iteration: start at 'from'
+                                  (and alternate (even? iteration))
+                                  from
+                                  ;; Alternating, odd iteration: start at end of forward movement
+                                  alternate
+                                  (+ from (* iteration-distance initial-dir))
+                                  ;; Non-alternating: accumulate position
+                                  :else
+                                  (+ from (* iteration iteration-distance initial-dir)))
 
             ;; Calculate decay physics for this iteration
             [value vel actual-at-rest?] (calculate-single-decay
@@ -220,7 +230,8 @@
             done? (= phase :done)]
 
         {:value (if (or done? in-loop-delay?)
-                  (+ iteration-final-pos final-position-delta)
+                  ;; Final position = start + distance in direction of iter-velocity
+                  (+ iteration-final-pos (* iteration-distance (if (neg? iter-velocity) -1 1)))
                   value)
          :velocity (if (or done? in-loop-delay?) 0.0 vel)
          :actual-at-rest? (or done? in-loop-delay? actual-at-rest?)
