@@ -371,9 +371,13 @@
 
               EventKey
               (let [^EventKey ke event]
-                (when (and (.isPressed ke) (= Key/F2 (.getKey ke)))
-                  (when-let [copy-fn (requiring-resolve 'app.core/copy-current-error-to-clipboard!)]
-                    (copy-fn))))
+                (when (.isPressed ke)
+                  (condp = (.getKey ke)
+                    Key/F2 (when-let [copy-fn (requiring-resolve 'app.core/copy-current-error-to-clipboard!)]
+                             (copy-fn))
+                    Key/F9 (when-let [reopen-fn (requiring-resolve 'user/reopen)]
+                             (reopen-fn))
+                    nil)))
 
               EventWindowResize
               (let [^io.github.humbleui.jwm.EventWindowResize re event
