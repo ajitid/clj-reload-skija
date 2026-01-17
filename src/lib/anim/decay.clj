@@ -134,10 +134,7 @@
         raw-elapsed (- t start-time)
 
         ;; Check if still in delay period
-        in-delay? (< raw-elapsed delay)
-
-        ;; Effective velocity based on reversed flag
-        eff-velocity (if reversed (- velocity) velocity)]
+        in-delay? (< raw-elapsed delay)]
 
     ;; If in delay, return initial state
     (if in-delay?
@@ -181,18 +178,16 @@
             in-loop-delay? (and (> time-in-iteration perceptual-dur)
                                 (< iteration (dec max-iterations)))
 
-            ;; Direction (forward or backward based on alternate + reversed)
-            base-forward? (if alternate
-                            (even? iteration)
-                            true)
-            direction (if reversed
-                        (if base-forward? :backward :forward)
-                        (if base-forward? :forward :backward))
+            ;; Preserve input velocity sign, apply modifiers for reversed/alternate
+            ;; 1. 'reversed' flips the velocity direction
+            ;; 2. For alternating loops, flip on odd iterations
+            base-velocity (if reversed (- velocity) velocity)
+            iter-velocity (if (and alternate (odd? iteration))
+                            (- base-velocity)
+                            base-velocity)
 
-            ;; Effective velocity for this iteration (alternate flips sign)
-            iter-velocity (if (= direction :backward)
-                            (- (Math/abs velocity))
-                            (Math/abs velocity))
+            ;; Direction is metadata derived from actual velocity sign
+            direction (if (neg? iter-velocity) :backward :forward)
 
             ;; Elapsed time within this iteration (clamped to perceptual duration)
             iteration-elapsed (min time-in-iteration perceptual-dur)
