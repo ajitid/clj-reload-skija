@@ -15,9 +15,9 @@
 ;; Shared Time Source
 ;; ============================================================
 
-(defonce time-source
-  "Atom holding the time source function. Returns time in seconds.
-   Default: wall-clock time. Reset to use game-time for pause/slow-mo."
+(defonce ^{:doc "Atom holding the time source function. Returns time in seconds.
+   Default: wall-clock time. Reset to use game-time for pause/slow-mo."}
+  time-source
   (atom #(/ (System/currentTimeMillis) 1000.0)))
 
 (defn now

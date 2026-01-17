@@ -241,7 +241,7 @@
   (println "Game loaded!")
   ;; Point all libs to use game-time
   (when-let [time-source (requiring-resolve 'lib.time/time-source)]
-    (reset! time-source #(deref state/game-time)))
+    (reset! @time-source #(deref state/game-time)))
 
   ;; Set initial anchor position to center of window
   (reset! state/demo-anchor-x (/ @state/window-width 2))
