@@ -96,7 +96,7 @@
         [vx vy] velocity
 
         ;; Project where the flick would land
-        projection-2d (requiring-resolve 'lib.anim.projection/projection-2d)
+        projection-2d (requiring-resolve 'lib.anim.projection-2d/projection-2d)
         projected (if projection-2d
                     (projection-2d position velocity rate)
                     position)

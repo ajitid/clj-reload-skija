@@ -10,23 +10,13 @@
 
    Usage:
      (projection 100 500 :normal)      ;; => ~349.7 (where it would land)
-     (projection-2d [100 200] [500 -300] :normal)  ;; => [~349.7 ~50.3]
 
    Sources:
      - WWDC 2018: Designing Fluid Interfaces
        https://developer.apple.com/videos/play/wwdc2018/803/
      - Ilya Lobanov: How UIScrollView works
-       https://medium.com/@esskeetit/how-uiscrollview-works-e418adc47060")
-
-;; ============================================================
-;; Deceleration Rate Constants (Apple UIScrollView)
-;; ============================================================
-
-(def rate
-  "Deceleration rate presets (Apple UIScrollView.DecelerationRate).
-   Used with projection to calculate where a flick would land."
-  {:normal 0.998   ;; UIScrollView.DecelerationRate.normal
-   :fast   0.99})  ;; UIScrollView.DecelerationRate.fast
+       https://medium.com/@esskeetit/how-uiscrollview-works-e418adc47060"
+  (:require [lib.anim.decay :as decay]))
 
 ;; ============================================================
 ;; Core Functions
@@ -48,7 +38,7 @@
      - WWDC 2018: Designing Fluid Interfaces
        https://developer.apple.com/videos/play/wwdc2018/803/"
   [from velocity r]
-  (let [resolved-rate (if (keyword? r) (get rate r r) r)
+  (let [resolved-rate (if (keyword? r) (get decay/rate r r) r)
         log-rate (Math/log resolved-rate)]
     (if (zero? log-rate)
       from
@@ -56,16 +46,3 @@
       ;;                               = from - v/(1000×ln(d))
       (- from (/ velocity (* 1000 log-rate))))))
 
-(defn projection-2d
-  "Calculate where a 2D flick would land.
-
-   Arguments:
-     position - [x y] starting position
-     velocity - [vx vy] velocity (units/second)
-     r        - deceleration rate (keyword like :normal/:fast, or number)
-
-   Example:
-     (projection-2d [100 200] [500 -300] :normal)  ;; => [~349.7 ~50.3]"
-  [[px py] [vx vy] r]
-  [(projection px vx r)
-   (projection py vy r)])

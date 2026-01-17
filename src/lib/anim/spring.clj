@@ -9,24 +9,8 @@
 
    Mid-animation updates:
      (spring-retarget s 200)           ;; change target
-     (spring-update s {:damping 20})   ;; change physics params")
-
-;; ============================================================
-;; Configurable Time Source
-;; ============================================================
-
-(defonce time-source (atom #(/ (System/currentTimeMillis) 1000.0)))
-
-(defn set-time-source!
-  "Set the time source function. Call once at app startup to use game-time.
-   Example: (set-time-source! #(deref app.state/game-time))"
-  [f]
-  (reset! time-source f))
-
-(defn now
-  "Get current time from configured source."
-  []
-  (@time-source))
+     (spring-update s {:damping 20})   ;; change physics params"
+  (:require [lib.anim.time :as time]))
 
 ;; ============================================================
 ;; Default Values
@@ -134,7 +118,7 @@
   [config]
   (merge defaults
          config
-         {:start-time (or (:start-time config) (now))}))
+         {:start-time (or (:start-time config) (time/now))}))
 
 (defn spring-at
   "Get spring state at a specific time. Pure function.
@@ -146,13 +130,13 @@
   "Get spring state at current time. Uses configured time source.
    Returns {:value :velocity :at-rest?}"
   [spring]
-  (spring-at spring (now)))
+  (spring-at spring (time/now)))
 
 (defn spring-retarget
   "Change target mid-animation, preserving current velocity.
    Returns a new spring starting from current position/velocity."
   [spring new-to]
-  (let [t (now)
+  (let [t (time/now)
         {:keys [value velocity]} (spring-at spring t)]
     (merge spring
            {:from value
@@ -169,7 +153,7 @@
      (spring-update s {:damping 20})
      (spring-update s {:stiffness 300 :mass 0.5})"
   [spring changes]
-  (let [t (now)
+  (let [t (time/now)
         {:keys [value velocity]} (spring-at spring t)]
     (merge spring
            changes

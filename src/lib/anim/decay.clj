@@ -18,24 +18,8 @@
 
    Sources:
      - Apple UIScrollView.decelerationRate documentation
-     - Ilya Lobanov: Deceleration mechanics of UIScrollView")
-
-;; ============================================================
-;; Configurable Time Source
-;; ============================================================
-
-(defonce time-source (atom #(/ (System/currentTimeMillis) 1000.0)))
-
-(defn set-time-source!
-  "Set the time source function. Call once at app startup to use game-time.
-   Example: (set-time-source! #(deref app.state/game-time))"
-  [f]
-  (reset! time-source f))
-
-(defn now
-  "Get current time from configured source."
-  []
-  (@time-source))
+     - Ilya Lobanov: Deceleration mechanics of UIScrollView"
+  (:require [lib.anim.time :as time]))
 
 ;; ============================================================
 ;; Default Values
@@ -90,7 +74,7 @@
 
 (defn decay
   "Create a decay animation with the given config, merged with defaults.
-   :start-time defaults to (now) if not provided.
+   :start-time defaults to (time/now) if not provided.
 
    Options:
      :from     - starting position (default 0.0)
@@ -112,7 +96,7 @@
     (merge defaults
            config
            {:rate resolved-rate
-            :start-time (or (:start-time config) (now))})))
+            :start-time (or (:start-time config) (time/now))})))
 
 (defn decay-at
   "Get decay state at a specific time. Pure function.
@@ -124,7 +108,7 @@
   "Get decay state at current time. Uses configured time source.
    Returns {:value :velocity :at-rest?}"
   [decay]
-  (decay-at decay (now)))
+  (decay-at decay (time/now)))
 
 (defn decay-update
   "Update decay config mid-animation (rate, velocity-threshold).
@@ -134,7 +118,7 @@
    Example:
      (decay-update d {:rate 0.99})  ;; switch to faster stopping"
   [decay changes]
-  (let [t (now)
+  (let [t (time/now)
         {:keys [value velocity]} (decay-at decay t)]
     (merge decay
            changes
