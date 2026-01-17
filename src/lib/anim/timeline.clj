@@ -2,6 +2,7 @@
   "Timeline for sequencing and parallelizing animations.
 
    Combine tweens, springs, decays, and timers with precise timing control.
+   Timelines can loop, alternate, and reverse just like individual animations.
 
    Usage:
      (-> (timeline)
@@ -11,6 +12,17 @@
          (label :section2)           ;; mark current position
          (add decay1 [:label :section2])
          (add tween3 :<<))           ;; parallel with decay1
+
+   Timeline with looping:
+     (-> (timeline {:loop 3 :alternate true})
+         (add tween1 0)
+         (add tween2 :<))
+
+   Timeline options:
+     :loop       - false (no loop), true (infinite), or iteration count
+     :loop-delay - pause between timeline iterations (seconds)
+     :alternate  - reverse direction each loop
+     :reversed   - start playing backwards
 
    Positioning syntax:
      0.5            - absolute: at 0.5s
@@ -27,8 +39,15 @@
      (timeline-now my-timeline)
      ;; => {:elapsed 1.5
      ;;     :progress 0.6
+     ;;     :iteration 0
+     ;;     :direction :forward
+     ;;     :phase :active
      ;;     :children [{:id :tween1 :value 80 :done? true} ...]
      ;;     :done? false}
+
+   Event detection (works with anim-event?):
+     (when (anim-event? prev-state curr-state :loop)
+       (println \"Timeline iteration changed!\"))
 
    Delay stacking:
      Timeline position and animation :delay STACK.
@@ -98,12 +117,42 @@
          (* iterations duration)
          (* (max 0 (dec iterations)) loop-delay)))))
 
+(defn- spring-total-duration
+  "Calculate total duration of a spring including delay and loops."
+  [animation]
+  (let [{:keys [delay loop loop-delay] :or {delay 0 loop-delay 0}} animation
+        perceptual-dur (spring/spring-perceptual-duration animation)
+        iterations (cond
+                     (true? loop) ##Inf
+                     (number? loop) loop
+                     :else 1)]
+    (if (= iterations ##Inf)
+      ##Inf
+      (+ delay
+         (* iterations perceptual-dur)
+         (* (max 0 (dec iterations)) loop-delay)))))
+
+(defn- decay-total-duration
+  "Calculate total duration of a decay including delay and loops."
+  [animation]
+  (let [{:keys [delay loop loop-delay] :or {delay 0 loop-delay 0}} animation
+        perceptual-dur (decay/decay-perceptual-duration animation)
+        iterations (cond
+                     (true? loop) ##Inf
+                     (number? loop) loop
+                     :else 1)]
+    (if (= iterations ##Inf)
+      ##Inf
+      (+ delay
+         (* iterations perceptual-dur)
+         (* (max 0 (dec iterations)) loop-delay)))))
+
 (defn- child-duration
   "Get the duration of a child animation in seconds."
   [{:keys [animation type]}]
   (case type
-    :spring (spring/spring-perceptual-duration animation)
-    :decay (decay/decay-perceptual-duration animation)
+    :spring (spring-total-duration animation)
+    :decay (decay-total-duration animation)
     :tween (tween-total-duration animation)
     :timer (timer-total-duration animation)
     0.0))
@@ -195,7 +244,9 @@
 ;; ============================================================
 
 (defn- recalc-duration
-  "Recalculate timeline duration based on children."
+  "Recalculate timeline duration based on children.
+   Note: :duration stores the iteration duration (children only).
+   Use timeline-total-duration for total including loops."
   [tl]
   (let [children (:children tl)
         max-end (reduce
@@ -206,22 +257,53 @@
                   children)]
     (assoc tl :duration max-end)))
 
+(defn- timeline-total-duration
+  "Calculate total timeline duration including loops.
+   :duration is iteration duration, this calculates total."
+  [{:keys [duration loop loop-delay] :or {loop-delay 0}}]
+  (let [iteration-dur duration
+        iterations (cond
+                     (true? loop) ##Inf
+                     (number? loop) loop
+                     :else 1)]
+    (if (= iterations ##Inf)
+      ##Inf
+      (+ (* iterations iteration-dur)
+         (* (max 0 (dec iterations)) loop-delay)))))
+
 ;; ============================================================
 ;; Public API - Building
 ;; ============================================================
 
 (defn timeline
-  "Create an empty timeline.
+  "Create a timeline with optional loop parameters.
+
+   Options:
+     :loop       - false (no loop), true (infinite), or iteration count
+     :loop-delay - pause between timeline iterations (seconds)
+     :alternate  - reverse direction each loop
+     :reversed   - start playing backwards
 
    Example:
      (-> (timeline)
          (add tween1 0)
+         (add tween2 :<))
+
+     ;; Timeline that loops 3 times with alternating direction
+     (-> (timeline {:loop 3 :alternate true})
+         (add tween1 0)
          (add tween2 :<))"
-  []
-  {:start-time (time/now)
-   :labels {}
-   :children []
-   :duration 0.0})
+  ([] (timeline {}))
+  ([opts]
+   {:start-time (time/now)
+    :labels {}
+    :children []
+    :duration 0.0
+    ;; Loop params (like anime.js Timeline extends Timer)
+    :loop (get opts :loop false)
+    :loop-delay (get opts :loop-delay 0.0)
+    :alternate (get opts :alternate false)
+    :reversed (get opts :reversed false)}))
 
 (defn add
   "Add an animation to the timeline at the specified position.
@@ -298,20 +380,71 @@
    Returns:
      {:elapsed    - seconds since timeline start
       :progress   - 0.0-1.0 overall progress
+      :iteration  - current loop iteration (0-indexed)
+      :direction  - :forward or :backward
+      :phase      - :active, :loop-delay, or :done
       :children   - vector of child states [{:id :value :done? ...}]
-      :done?      - true if all children complete}"
+      :done?      - true if all loops complete}"
   [tl t]
-  (let [{:keys [start-time duration children]} tl
-        elapsed (- t start-time)
-        progress (if (or (zero? duration) (= duration ##Inf))
-                   (if (pos? elapsed) 1.0 0.0)
-                   (min 1.0 (max 0.0 (/ elapsed duration))))
-        child-states (mapv #(query-child-state % start-time t) children)
-        all-done? (every? :done? child-states)]
-    {:elapsed elapsed
+  (let [{:keys [start-time duration children loop loop-delay alternate reversed]
+         :or {loop false loop-delay 0 alternate false reversed false}} tl
+        iteration-dur duration
+        total-dur (timeline-total-duration tl)
+        raw-elapsed (- t start-time)
+
+        ;; Calculate max iterations
+        max-iterations (cond
+                         (true? loop) ##Inf
+                         (number? loop) loop
+                         :else 1)
+
+        ;; Calculate which iteration we're in
+        iteration-with-delay (+ iteration-dur loop-delay)
+        raw-iteration (if (or (<= raw-elapsed 0) (zero? iteration-dur))
+                        0
+                        (Math/floor (/ raw-elapsed iteration-with-delay)))
+        iteration (long (min raw-iteration (max 0 (dec max-iterations))))
+
+        ;; Time within current iteration
+        iteration-start (* iteration iteration-with-delay)
+        time-in-iteration (- raw-elapsed iteration-start)
+        elapsed-in-iteration (min (max 0 time-in-iteration) iteration-dur)
+
+        ;; Direction based on alternate + reversed
+        base-forward? (if alternate (even? iteration) true)
+        direction (if reversed
+                    (if base-forward? :backward :forward)
+                    (if base-forward? :forward :backward))
+
+        ;; Phase
+        in-loop-delay? (and (> time-in-iteration iteration-dur)
+                            (< iteration (dec max-iterations)))
+        phase (cond
+                (and (not (true? loop))
+                     (>= raw-elapsed total-dur)) :done
+                in-loop-delay? :loop-delay
+                :else :active)
+        done? (= phase :done)
+
+        ;; Progress (over total duration)
+        progress (if (or (zero? total-dur) (= total-dur ##Inf))
+                   (if done? 1.0 0.0)
+                   (min 1.0 (max 0.0 (/ raw-elapsed total-dur))))
+
+        ;; Query children at effective time within iteration
+        ;; If direction is backward, reverse time within iteration
+        child-t (if (= direction :backward)
+                  (+ start-time iteration-start (- iteration-dur elapsed-in-iteration))
+                  (+ start-time iteration-start elapsed-in-iteration))
+        child-states (mapv #(query-child-state % start-time child-t) children)]
+
+    {:elapsed raw-elapsed
      :progress progress
-     :children child-states
-     :done? all-done?}))
+     :iteration iteration
+     :direction direction
+     :phase phase
+     :done? done?
+     :children child-states}))
 
 (defn timeline-now
   "Get timeline state at current time. Uses configured time source.
@@ -319,13 +452,21 @@
    Returns:
      {:elapsed    - seconds since timeline start
       :progress   - 0.0-1.0 overall progress
+      :iteration  - current loop iteration (0-indexed)
+      :direction  - :forward or :backward
+      :phase      - :active, :loop-delay, or :done
       :children   - vector of child states [{:id :value :done? ...}]
-      :done?      - true if all children complete}"
+      :done?      - true if all loops complete}"
   [tl]
   (timeline-at tl (time/now)))
 
 (defn timeline-duration
-  "Get the total duration of the timeline in seconds."
+  "Get the total duration of the timeline in seconds (including loops)."
+  [tl]
+  (timeline-total-duration tl))
+
+(defn timeline-iteration-duration
+  "Get the duration of one timeline iteration (children only, no loops)."
   [tl]
   (:duration tl))
 
