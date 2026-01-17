@@ -10,11 +10,11 @@
 (defonce running? (atom false))
 
 ;; ============================================================
-;; Reset values - SINGLE SOURCE OF TRUTH
+;; Initial state - SINGLE SOURCE OF TRUTH
 ;; ============================================================
 
-(def ^:private reset-values
-  "Initial/reset values for resettable state.
+(def ^:private initial-state
+  "Initial values for resettable state.
    Both defonce and reset-state! reference this map."
   {:scale 1.0
    :window-width 800
@@ -29,28 +29,28 @@
    :last-runtime-error nil})
 
 ;; ============================================================
-;; Resettable state (values from reset-values)
+;; Resettable state (values from initial-state)
 ;; ============================================================
 
-(defonce scale (atom (:scale reset-values)))
-(defonce window-width (atom (:window-width reset-values)))
-(defonce window-height (atom (:window-height reset-values)))
-(defonce circles-x (atom (:circles-x reset-values)))
-(defonce circles-y (atom (:circles-y reset-values)))
-(defonce dragging-slider (atom (:dragging-slider reset-values)))
-(defonce fps (atom (:fps reset-values)))
-(defonce grid-positions (atom (:grid-positions reset-values)))
-(defonce reloading? (atom (:reloading? reset-values)))
-(defonce last-reload-error (atom (:last-reload-error reset-values)))
-(defonce last-runtime-error (atom (:last-runtime-error reset-values)))
+(defonce scale (atom (:scale initial-state)))
+(defonce window-width (atom (:window-width initial-state)))
+(defonce window-height (atom (:window-height initial-state)))
+(defonce circles-x (atom (:circles-x initial-state)))
+(defonce circles-y (atom (:circles-y initial-state)))
+(defonce dragging-slider (atom (:dragging-slider initial-state)))
+(defonce fps (atom (:fps initial-state)))
+(defonce grid-positions (atom (:grid-positions initial-state)))
+(defonce reloading? (atom (:reloading? initial-state)))
+(defonce last-reload-error (atom (:last-reload-error initial-state)))
+(defonce last-runtime-error (atom (:last-runtime-error initial-state)))
 
 ;; ============================================================
-;; Reset function (uses same reset-values map)
+;; Reset function (uses same initial-state map)
 ;; ============================================================
 
 (defn reset-state!
   "Reset resettable state to initial values (for restart)."
   []
-  (doseq [[k v] reset-values]
+  (doseq [[k v] initial-state]
     (when-let [atom-var (ns-resolve 'app.state (symbol (name k)))]
       (reset! @atom-var v))))
