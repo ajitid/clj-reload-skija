@@ -1,4 +1,4 @@
-(ns lib.spring.core
+(ns lib.anim.spring
   "Spring physics library using Apple's CASpringAnimation closed-form solution.
 
    Springs are immutable data. Query position at any time with spring-at.

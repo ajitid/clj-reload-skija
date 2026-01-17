@@ -240,8 +240,10 @@
   []
   (println "Game loaded!")
   ;; Point all libs to use game-time
-  (when-let [set-spring-time (requiring-resolve 'lib.spring.core/set-time-source!)]
+  (when-let [set-spring-time (requiring-resolve 'lib.anim.spring/set-time-source!)]
     (set-spring-time #(deref state/game-time)))
+  (when-let [set-decay-time (requiring-resolve 'lib.anim.decay/set-time-source!)]
+    (set-decay-time #(deref state/game-time)))
   (when-let [set-timer-time (requiring-resolve 'lib.timer.core/set-time-source!)]
     (set-timer-time #(deref state/game-time)))
 
@@ -260,16 +262,13 @@
   ;; Advance game time (dt is in seconds, apply time scale)
   (swap! state/game-time + (* dt @state/time-scale))
 
-  ;; Update demo circle momentum (X-axis only, velocity decay)
+  ;; Update demo circle decay animation (X-axis only)
   (when-not @state/demo-dragging?
-    (let [vx @state/demo-velocity-x
-          friction 0.98]  ;; Velocity decay per frame
-      ;; Only update if velocity is significant
-      (when (> (abs vx) 0.5)
-        ;; Apply velocity to position
-        (swap! state/demo-circle-x + (* vx dt))
-        ;; Decay velocity (friction)
-        (swap! state/demo-velocity-x * friction)))))
+    (when-let [decay-x @state/demo-decay-x]
+      (when-let [decay-now (requiring-resolve 'lib.anim.decay/decay-now)]
+        (let [{:keys [value at-rest?]} (decay-now decay-x)]
+          (reset! state/demo-circle-x value)
+          (when at-rest? (reset! state/demo-decay-x nil)))))))
 
 (defn draw-demo-anchor
   "Draw the anchor/rest position for the spring demo."

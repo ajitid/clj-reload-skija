@@ -164,23 +164,27 @@
         (point-in-demo-circle? mx my)
         (do
           (reset! state/demo-dragging? true)
-          ;; Stop any running springs
-          (reset! state/demo-spring-x nil)
-          (reset! state/demo-spring-y nil)
+          ;; Stop any running decay
+          (reset! state/demo-decay-x nil)
           ;; Reset velocity tracking
           (reset! state/demo-velocity-x 0.0)
-          (reset! state/demo-velocity-y 0.0)
           (reset! state/demo-last-mouse-time @state/game-time))))))
 
 (defn handle-mouse-release
-  "Handle mouse button release - stop dragging, create springs for demo."
+  "Handle mouse button release - stop dragging, create decay for momentum."
   [^EventMouseButton event]
   ;; Handle slider release
   (reset! state/dragging-slider nil)
 
-  ;; Handle demo circle release - just stop dragging, momentum continues in tick
+  ;; Handle demo circle release - create decay animation for momentum
   (when @state/demo-dragging?
-    (reset! state/demo-dragging? false)))
+    (reset! state/demo-dragging? false)
+    ;; Create decay animation with current velocity
+    (when-let [decay-fn (requiring-resolve 'lib.anim.decay/decay)]
+      (reset! state/demo-decay-x
+              (decay-fn {:from @state/demo-circle-x
+                         :velocity @state/demo-velocity-x
+                         :rate :normal})))))
 
 (defn handle-mouse-move
   "Handle mouse move - update slider or demo circle if dragging."

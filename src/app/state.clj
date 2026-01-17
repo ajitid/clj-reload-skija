@@ -30,9 +30,8 @@
    ;; Game time (for animation libs)
    :game-time 0.0            ;; accumulated game time in seconds
    :time-scale 1.0           ;; 1.0 = normal, 0.5 = slow-mo, 0 = paused
-   ;; Spring demo state
-   :demo-spring-x nil        ;; spring for X axis (or nil)
-   :demo-spring-y nil        ;; spring for Y axis (or nil)
+   ;; Demo state
+   :demo-decay-x nil         ;; decay animation for X axis (or nil)
    :demo-circle-x 400.0      ;; current circle X position
    :demo-circle-y 300.0      ;; current circle Y position
    :demo-dragging? false     ;; is user currently dragging?
@@ -62,9 +61,8 @@
 ;; Game time
 (defonce game-time (atom (:game-time initial-state)))
 (defonce time-scale (atom (:time-scale initial-state)))
-;; Spring demo
-(defonce demo-spring-x (atom (:demo-spring-x initial-state)))
-(defonce demo-spring-y (atom (:demo-spring-y initial-state)))
+;; Demo animation
+(defonce demo-decay-x (atom (:demo-decay-x initial-state)))
 (defonce demo-circle-x (atom (:demo-circle-x initial-state)))
 (defonce demo-circle-y (atom (:demo-circle-y initial-state)))
 (defonce demo-dragging? (atom (:demo-dragging? initial-state)))
