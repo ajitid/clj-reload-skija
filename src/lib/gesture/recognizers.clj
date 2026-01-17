@@ -111,12 +111,14 @@
   (let [{:keys [start-pos start-time config]} recognizer
         {:keys [max-distance max-duration]} config
         dist (distance start-pos pos)
-        elapsed (- time start-time)]
+        elapsed (- time start-time)
+        ;; nil max-duration = no limit (iOS behavior)
+        duration-exceeded? (and max-duration (> elapsed max-duration))]
     (-> recognizer
         (assoc :current-pos pos)
         (cond->
           ;; Fail if moved too far or took too long
-          (or (> dist max-distance) (> elapsed max-duration))
+          (or (> dist max-distance) duration-exceeded?)
           (-> (assoc :state :failed)
               (assoc :can-win? false))))))
 
@@ -125,14 +127,16 @@
   (let [{:keys [start-pos start-time config state]} recognizer
         {:keys [max-distance max-duration]} config
         dist (distance start-pos pos)
-        elapsed (- time start-time)]
+        elapsed (- time start-time)
+        ;; nil max-duration = no limit (iOS behavior)
+        within-duration? (or (nil? max-duration) (<= elapsed max-duration))]
     (-> recognizer
         (assoc :current-pos pos)
         (cond->
           ;; Success if within thresholds and not already failed
           (and (= state :possible)
                (<= dist max-distance)
-               (<= elapsed max-duration))
+               within-duration?)
           (-> (assoc :state :ended)
               (assoc :wants-to-win? true))
 
@@ -144,10 +148,12 @@
   [recognizer time]
   (let [{:keys [start-time config state]} recognizer
         {:keys [max-duration]} config
-        elapsed (- time start-time)]
+        elapsed (- time start-time)
+        ;; nil max-duration = no limit (iOS behavior)
+        duration-exceeded? (and max-duration (> elapsed max-duration))]
     (cond-> recognizer
       ;; Fail if time exceeded while still possible
-      (and (= state :possible) (> elapsed max-duration))
+      (and (= state :possible) duration-exceeded?)
       (-> (assoc :state :failed)
           (assoc :can-win? false)))))
 

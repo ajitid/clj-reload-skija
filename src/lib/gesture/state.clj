@@ -28,5 +28,4 @@
   {:drag       {:min-distance 0}           ;; iOS: UIPanGestureRecognizer starts immediately
    :long-press {:min-duration 500          ;; iOS: minimumPressDuration = 0.5s
                 :max-distance 10}          ;; iOS: allowableMovement = 10pt
-   :tap        {:max-distance 10           ;; iOS: ~10pt tolerance
-                :max-duration 500}})
+   :tap        {:max-distance 10}})         ;; iOS: ~10pt tolerance, no duration limit

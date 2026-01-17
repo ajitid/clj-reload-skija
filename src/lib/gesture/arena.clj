@@ -179,8 +179,9 @@
                     :recognizer sweep-winner
                     :event-type (:state sweep-winner)}]
                   [])))]
-        ;; Always reset arena on pointer up
-        {:arena idle-arena :effects effects}))))
+        ;; Reset arena on pointer up, but preserve blocked-layers
+        {:arena (assoc idle-arena :blocked-layers (:blocked-layers arena))
+         :effects effects}))))
 
 (defn arena-check-time-thresholds
   "Pure: check time-based thresholds (for long-press).
