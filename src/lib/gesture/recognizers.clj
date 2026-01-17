@@ -20,6 +20,8 @@
 
 (defn create-recognizer
   "Create a new recognizer instance for a target.
+   All recognizers start in :possible state (iOS/Flutter behavior).
+   Victory is declared based on user action, not on pointer down.
 
    Arguments:
    - type: :drag, :tap, or :long-press
@@ -27,21 +29,18 @@
    - pos: [x y] pointer position
    - time: timestamp in ms"
   [type target pos time]
-  (let [config (get state/recognizer-configs type {})
-        ;; For drag with min-distance=0, start immediately in :began state
-        immediate-drag? (and (= type :drag)
-                             (zero? (get config :min-distance 10)))]
+  (let [config (get state/recognizer-configs type {})]
     {:type        type
      :target-id   (:id target)
      :target      target
-     :state       (if immediate-drag? :began :possible)
+     :state       :possible
      :priority    (get state/recognizer-priorities type 0)
      :config      config
      :start-pos   pos
      :start-time  time
      :current-pos pos
      :can-win?    true
-     :wants-to-win? immediate-drag?}))
+     :wants-to-win? false}))
 
 (defn create-recognizers-for-target
   "Create all recognizers specified by a target."
