@@ -167,9 +167,9 @@
           ;; Stop any running springs
           (reset! state/demo-spring-x nil)
           (reset! state/demo-spring-y nil)
-          ;; Track mouse for velocity calculation
-          (reset! state/demo-last-mouse-x mx)
-          (reset! state/demo-last-mouse-y my)
+          ;; Reset velocity tracking
+          (reset! state/demo-velocity-x 0.0)
+          (reset! state/demo-velocity-y 0.0)
           (reset! state/demo-last-mouse-time @state/game-time))))))
 
 (defn handle-mouse-release
@@ -181,16 +181,9 @@
   ;; Handle demo circle release - create springs back to anchor
   (when @state/demo-dragging?
     (reset! state/demo-dragging? false)
-    ;; Calculate throw velocity from last mouse movement
-    (let [now @state/game-time
-          dt (- now @state/demo-last-mouse-time)
-          ;; Velocity in units per second (only if we have a recent sample)
-          vx (if (and (pos? dt) (< dt 0.1))  ;; only use if < 0.1s ago
-               (/ (- @state/demo-circle-x @state/demo-last-mouse-x) dt)
-               0.0)
-          vy (if (and (pos? dt) (< dt 0.1))
-               (/ (- @state/demo-circle-y @state/demo-last-mouse-y) dt)
-               0.0)
+    ;; Use velocity that was calculated during drag
+    (let [vx @state/demo-velocity-x
+          vy @state/demo-velocity-y
           ;; Get spring config from app.config
           stiffness (or (cfg 'app.config/demo-spring-stiffness) 180)
           damping (or (cfg 'app.config/demo-spring-damping) 12)
@@ -231,10 +224,13 @@
 
     ;; Handle demo circle dragging
     (when @state/demo-dragging?
-      ;; Store previous position for velocity calculation
-      (reset! state/demo-last-mouse-x @state/demo-circle-x)
-      (reset! state/demo-last-mouse-y @state/demo-circle-y)
-      (reset! state/demo-last-mouse-time @state/game-time)
-      ;; Move circle to mouse position
-      (reset! state/demo-circle-x mx)
-      (reset! state/demo-circle-y my))))
+      (let [dt (- @state/game-time @state/demo-last-mouse-time)]
+        ;; Calculate velocity from position change (if dt is positive and reasonable)
+        (when (and (pos? dt) (< dt 0.5))
+          (reset! state/demo-velocity-x (/ (- mx @state/demo-circle-x) dt))
+          (reset! state/demo-velocity-y (/ (- my @state/demo-circle-y) dt)))
+        ;; Update tracking state
+        (reset! state/demo-last-mouse-time @state/game-time)
+        ;; Move circle to mouse position
+        (reset! state/demo-circle-x mx)
+        (reset! state/demo-circle-y my)))))

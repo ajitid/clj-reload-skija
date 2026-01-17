@@ -40,7 +40,9 @@
    :demo-anchor-y 300.0      ;; rest/anchor position Y
    :demo-last-mouse-x 0.0    ;; for velocity calculation
    :demo-last-mouse-y 0.0
-   :demo-last-mouse-time 0})
+   :demo-last-mouse-time 0
+   :demo-velocity-x 0.0      ;; tracked velocity during drag
+   :demo-velocity-y 0.0})
 
 ;; ============================================================
 ;; Resettable state (values from initial-state)
@@ -71,6 +73,8 @@
 (defonce demo-last-mouse-x (atom (:demo-last-mouse-x initial-state)))
 (defonce demo-last-mouse-y (atom (:demo-last-mouse-y initial-state)))
 (defonce demo-last-mouse-time (atom (:demo-last-mouse-time initial-state)))
+(defonce demo-velocity-x (atom (:demo-velocity-x initial-state)))
+(defonce demo-velocity-y (atom (:demo-velocity-y initial-state)))
 
 ;; ============================================================
 ;; Reset function (uses same initial-state map)
