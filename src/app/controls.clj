@@ -58,6 +58,16 @@
   (and (>= px x) (<= px (+ x w))
        (>= py y) (<= py (+ y h))))
 
+(defn point-in-demo-circle?
+  "Check if point (px, py) is inside the demo circle."
+  [px py]
+  (let [cx @state/demo-circle-x
+        cy @state/demo-circle-y
+        radius (or (cfg 'app.config/demo-circle-radius) 25)
+        dx (- px cx)
+        dy (- py cy)]
+    (<= (+ (* dx dx) (* dy dy)) (* radius radius))))
+
 (defn slider-value-from-x
   "Convert mouse x position to slider value (min-max)"
   [mouse-x [sx _ sw _]]
@@ -128,7 +138,7 @@
 ;; ============================================================
 
 (defn handle-mouse-press
-  "Handle mouse button press - start dragging if on slider."
+  "Handle mouse button press - start dragging if on slider or demo circle."
   [^EventMouseButton event]
   (when (= (.getButton event) MouseButton/PRIMARY)
     ;; Convert physical pixels to logical pixels
@@ -137,6 +147,7 @@
           mx (/ (.getX event) scale)
           my (/ (.getY event) scale)]
       (cond
+        ;; Check sliders first (higher z-order)
         (point-in-rect? mx my (slider-x-bounds ww))
         (do
           (reset! state/dragging-slider :x)
@@ -147,22 +158,83 @@
         (do
           (reset! state/dragging-slider :y)
           (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds ww)))
-          (trigger-grid-recalc!))))))
+          (trigger-grid-recalc!))
+
+        ;; Check demo circle
+        (point-in-demo-circle? mx my)
+        (do
+          (reset! state/demo-dragging? true)
+          ;; Stop any running springs
+          (reset! state/demo-spring-x nil)
+          (reset! state/demo-spring-y nil)
+          ;; Track mouse for velocity calculation
+          (reset! state/demo-last-mouse-x mx)
+          (reset! state/demo-last-mouse-y my)
+          (reset! state/demo-last-mouse-time @state/game-time))))))
 
 (defn handle-mouse-release
-  "Handle mouse button release - stop dragging."
+  "Handle mouse button release - stop dragging, create springs for demo."
   [^EventMouseButton event]
-  (reset! state/dragging-slider nil))
+  ;; Handle slider release
+  (reset! state/dragging-slider nil)
+
+  ;; Handle demo circle release - create springs back to anchor
+  (when @state/demo-dragging?
+    (reset! state/demo-dragging? false)
+    ;; Calculate throw velocity from last mouse movement
+    (let [now @state/game-time
+          dt (- now @state/demo-last-mouse-time)
+          ;; Velocity in units per millisecond (only if we have a recent sample)
+          vx (if (and (pos? dt) (< dt 100))  ;; only use if < 100ms ago
+               (/ (- @state/demo-circle-x @state/demo-last-mouse-x) dt)
+               0.0)
+          vy (if (and (pos? dt) (< dt 100))
+               (/ (- @state/demo-circle-y @state/demo-last-mouse-y) dt)
+               0.0)
+          ;; Get spring config from app.config
+          stiffness (or (cfg 'app.config/demo-spring-stiffness) 180)
+          damping (or (cfg 'app.config/demo-spring-damping) 12)
+          mass (or (cfg 'app.config/demo-spring-mass) 1.0)]
+      ;; Create X spring
+      (when-let [spring-fn (requiring-resolve 'lib.spring.core/spring)]
+        (reset! state/demo-spring-x
+                (spring-fn {:from @state/demo-circle-x
+                            :to @state/demo-anchor-x
+                            :velocity vx
+                            :stiffness stiffness
+                            :damping damping
+                            :mass mass}))
+        ;; Create Y spring
+        (reset! state/demo-spring-y
+                (spring-fn {:from @state/demo-circle-y
+                            :to @state/demo-anchor-y
+                            :velocity vy
+                            :stiffness stiffness
+                            :damping damping
+                            :mass mass}))))))
 
 (defn handle-mouse-move
-  "Handle mouse move - update slider if dragging."
+  "Handle mouse move - update slider or demo circle if dragging."
   [^EventMouseMove event]
-  (when-let [slider @state/dragging-slider]
-    ;; Convert physical pixels to logical pixels
-    (let [scale @state/scale
-          ww @state/window-width
-          mx (/ (.getX event) scale)]
+  ;; Convert physical pixels to logical pixels
+  (let [scale @state/scale
+        ww @state/window-width
+        mx (/ (.getX event) scale)
+        my (/ (.getY event) scale)]
+
+    ;; Handle slider dragging
+    (when-let [slider @state/dragging-slider]
       (case slider
         :x (reset! state/circles-x (slider-value-from-x mx (slider-x-bounds ww)))
         :y (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds ww))))
-      (trigger-grid-recalc!))))
+      (trigger-grid-recalc!))
+
+    ;; Handle demo circle dragging
+    (when @state/demo-dragging?
+      ;; Store previous position for velocity calculation
+      (reset! state/demo-last-mouse-x @state/demo-circle-x)
+      (reset! state/demo-last-mouse-y @state/demo-circle-y)
+      (reset! state/demo-last-mouse-time @state/game-time)
+      ;; Move circle to mouse position
+      (reset! state/demo-circle-x mx)
+      (reset! state/demo-circle-y my))))

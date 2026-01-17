@@ -32,6 +32,14 @@
 (def slider-width 160)
 (def font-size 18)
 
+;; Spring demo settings
+(def demo-circle-radius 25)
+(def demo-circle-color 0xFF4A90D9)     ;; Blue
+(def demo-anchor-color 0x44FFFFFF)     ;; Faint white
+(def demo-spring-stiffness 180)        ;; Apple-like bouncy
+(def demo-spring-damping 12)           ;; Light damping
+(def demo-spring-mass 1.0)
+
 ;; ============================================================
 ;; clj-reload hooks (optional - for resource cleanup/restart)
 ;; ============================================================

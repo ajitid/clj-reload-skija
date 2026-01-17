@@ -86,11 +86,11 @@
             ;; Build float array of x,y pairs
             points (float-array (mapcat (fn [{:keys [cx cy]}] [cx cy]) positions))]
         (with-open [paint (doto (Paint.)
-                           (.setColor (unchecked-int (cfg 'app.config/circle-color)))
-                           (.setMode PaintMode/STROKE)
-                           (.setStrokeWidth (float (* 2 radius)))  ; diameter
-                           (.setStrokeCap PaintStrokeCap/ROUND)
-                           (.setAntiAlias true))]
+                            (.setColor (unchecked-int (cfg 'app.config/circle-color)))
+                            (.setMode PaintMode/STROKE)
+                            (.setStrokeWidth (float (* 2 radius)))  ; diameter
+                            (.setStrokeCap PaintStrokeCap/ROUND)
+                            (.setAntiAlias true))]
           (.drawPoints canvas points paint))))))
 
 (defn get-root-cause
@@ -239,6 +239,17 @@
    Initialize your game state here."
   []
   (println "Game loaded!")
+  ;; Point all libs to use game-time
+  (when-let [set-spring-time (requiring-resolve 'lib.spring.core/set-time-source!)]
+    (set-spring-time #(deref state/game-time)))
+  (when-let [set-timer-time (requiring-resolve 'lib.timer.core/set-time-source!)]
+    (set-timer-time #(deref state/game-time)))
+
+  ;; Set initial anchor position to center of window
+  (reset! state/demo-anchor-x (/ @state/window-width 2))
+  (reset! state/demo-anchor-y (/ @state/window-height 2))
+  (reset! state/demo-circle-x (/ @state/window-width 2))
+  (reset! state/demo-circle-y (/ @state/window-height 2))
   ;; Initial grid calculation
   (recalculate-grid! @state/window-width @state/window-height))
 
@@ -246,7 +257,48 @@
   "Called every frame with delta time in seconds.
    Update your game state here."
   [dt]
-  nil)
+  ;; Advance game time (dt is seconds, convert to ms, apply scale)
+  (swap! state/game-time + (* dt 1000 @state/time-scale))
+
+  ;; Update spring demo if not dragging
+  (when-not @state/demo-dragging?
+    ;; Update X spring
+    (when-let [spring-x @state/demo-spring-x]
+      (when-let [spring-now (requiring-resolve 'lib.spring.core/spring-now)]
+        (let [{:keys [value at-rest?]} (spring-now spring-x)]
+          (reset! state/demo-circle-x value)
+          (when at-rest? (reset! state/demo-spring-x nil)))))
+    ;; Update Y spring
+    (when-let [spring-y @state/demo-spring-y]
+      (when-let [spring-now (requiring-resolve 'lib.spring.core/spring-now)]
+        (let [{:keys [value at-rest?]} (spring-now spring-y)]
+          (reset! state/demo-circle-y value)
+          (when at-rest? (reset! state/demo-spring-y nil)))))))
+
+(defn draw-demo-anchor
+  "Draw the anchor/rest position for the spring demo."
+  [^Canvas canvas]
+  (let [x @state/demo-anchor-x
+        y @state/demo-anchor-y
+        radius (or (cfg 'app.config/demo-circle-radius) 25)]
+    (with-open [paint (doto (Paint.)
+                        (.setColor (unchecked-int (or (cfg 'app.config/demo-anchor-color) 0x44FFFFFF)))
+                        (.setMode PaintMode/STROKE)
+                        (.setStrokeWidth 2.0)
+                        (.setAntiAlias true))]
+      (.drawCircle canvas (float x) (float y) (float radius) paint))))
+
+(defn draw-demo-circle
+  "Draw the draggable demo circle."
+  [^Canvas canvas]
+  (let [x @state/demo-circle-x
+        y @state/demo-circle-y
+        radius (or (cfg 'app.config/demo-circle-radius) 25)]
+    (with-open [paint (doto (Paint.)
+                        (.setColor (unchecked-int (or (cfg 'app.config/demo-circle-color) 0xFF4A90D9)))
+                        (.setMode PaintMode/FILL)
+                        (.setAntiAlias true))]
+      (.drawCircle canvas (float x) (float y) (float radius) paint))))
 
 (defn draw
   "Called every frame for rendering.
@@ -259,6 +311,10 @@
   (when (config-loaded?)
     ;; Draw the circle grid (uses cached positions)
     (draw-circle-grid canvas)
+
+    ;; Draw spring demo
+    (draw-demo-anchor canvas)
+    (draw-demo-circle canvas)
 
     ;; Draw control panel on top (at top-right)
     (when-let [draw-panel-fn (requiring-resolve 'app.controls/draw-panel)]
