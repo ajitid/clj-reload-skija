@@ -166,9 +166,13 @@
           (reset! state/demo-dragging? true)
           ;; Stop any running decay
           (reset! state/demo-decay-x nil)
-          ;; Reset velocity tracking
-          (reset! state/demo-velocity-x 0.0)
-          (reset! state/demo-last-mouse-time @state/game-time))))))
+          ;; Store click offset (so ball doesn't jump)
+          (reset! state/demo-drag-offset-x (- @state/demo-circle-x mx))
+          ;; Initialize position history for velocity tracking
+          (reset! state/demo-position-history
+                  [{:x @state/demo-circle-x :t @state/game-time}])
+          ;; Reset velocity
+          (reset! state/demo-velocity-x 0.0))))))
 
 (defn handle-mouse-release
   "Handle mouse button release - stop dragging, create decay for momentum."
@@ -204,11 +208,5 @@
 
     ;; Handle demo circle dragging (X-axis only)
     (when @state/demo-dragging?
-      (let [dt (- @state/game-time @state/demo-last-mouse-time)]
-        ;; Calculate X velocity from position change (if dt is positive and reasonable)
-        (when (and (pos? dt) (< dt 0.5))
-          (reset! state/demo-velocity-x (/ (- mx @state/demo-circle-x) dt)))
-        ;; Update tracking state
-        (reset! state/demo-last-mouse-time @state/game-time)
-        ;; Move circle only in X direction (Y stays fixed)
-        (reset! state/demo-circle-x mx)))))
+      ;; Move circle with offset (no jump!) - velocity calculated in tick
+      (reset! state/demo-circle-x (+ mx @state/demo-drag-offset-x)))))

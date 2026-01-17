@@ -258,6 +258,29 @@
   ;; Advance game time (dt is in seconds, apply time scale)
   (swap! state/game-time + (* dt @state/time-scale))
 
+  ;; Track velocity during drag (frame-based, not event-based)
+  ;; Uses a ring buffer of last 3 position samples to compute velocity.
+  ;; This captures momentum from "just before" mouse stops, solving the
+  ;; stale velocity problem where event-based sampling gives velocity ≈ 0
+  ;; when user stops moving before releasing.
+  (when @state/demo-dragging?
+    (let [history @state/demo-position-history
+          current-x @state/demo-circle-x
+          current-t @state/game-time
+          new-history (-> history
+                          (conj {:x current-x :t current-t})
+                          (->> (take-last 3))
+                          vec)]
+      (reset! state/demo-position-history new-history)
+      ;; Calculate velocity from oldest to newest sample
+      (when (>= (count new-history) 2)
+        (let [oldest (first new-history)
+              newest (last new-history)
+              dt-hist (- (:t newest) (:t oldest))]
+          (when (pos? dt-hist)
+            (reset! state/demo-velocity-x
+                    (/ (- (:x newest) (:x oldest)) dt-hist)))))))
+
   ;; Update demo circle decay animation (X-axis only)
   (when-not @state/demo-dragging?
     (when-let [decay-x @state/demo-decay-x]
