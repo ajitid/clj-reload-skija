@@ -330,45 +330,50 @@
 ;; ============================================================
 
 (defn demo-ui
-  "Layout system demo."
+  "Layout system demo using new Subform-style API."
   []
-  {:layout {:horizontal {:size "100%"} :vertical {:size "100%"}}
-   :children-layout {:mode :stack-vertical :padding 20 :gap 12}
+  {:layout {:x {:size "100%"} :y {:size "100%"}}
+   :children-layout {:mode :stack-vertical
+                     :x {:before 20 :after 20}
+                     :y {:before 20 :between 12 :after 20}}
    :children
    [;; Row 1: Fixed + Spacer + Fixed
-    {:layout {:vertical {:size 50}}
-     :children-layout {:mode :stack-horizontal :gap 10}
+    {:layout {:y {:size 50}}
+     :children-layout {:mode :stack-horizontal :x {:between 10}}
      :children
-     [{:layout {:horizontal {:size 100}} :fill 0xFF4A90D9 :label "100px"}
-      {:layout {:horizontal {:size "1s"}} :fill 0x20FFFFFF :label "spacer (1s)"}
-      {:layout {:horizontal {:size 100}} :fill 0xFF4A90D9 :label "100px"}]}
+     [{:layout {:x {:size 100}} :fill 0xFF4A90D9 :label "100px"}
+      {:layout {:x {:size "1s"}} :fill 0x20FFFFFF :label "spacer (1s)"}
+      {:layout {:x {:size 100}} :fill 0xFF4A90D9 :label "100px"}]}
 
     ;; Row 2: Stretch weights 1:2:1
-    {:layout {:vertical {:size 60}}
-     :children-layout {:mode :stack-horizontal :gap 10}
+    {:layout {:y {:size 60}}
+     :children-layout {:mode :stack-horizontal :x {:between 10}}
      :children
-     [{:layout {:horizontal {:size "1s"}} :fill 0xFF44AA66 :label "1s"}
-      {:layout {:horizontal {:size "2s"}} :fill 0xFF66CC88 :label "2s"}
-      {:layout {:horizontal {:size "1s"}} :fill 0xFF44AA66 :label "1s"}]}
+     [{:layout {:x {:size "1s"}} :fill 0xFF44AA66 :label "1s"}
+      {:layout {:x {:size "2s"}} :fill 0xFF66CC88 :label "2s"}
+      {:layout {:x {:size "1s"}} :fill 0xFF44AA66 :label "1s"}]}
 
     ;; Row 3: Percentages
-    {:layout {:vertical {:size 50}}
-     :children-layout {:mode :stack-horizontal :gap 10}
+    {:layout {:y {:size 50}}
+     :children-layout {:mode :stack-horizontal :x {:between 10}}
      :children
-     [{:layout {:horizontal {:size "30%"}} :fill 0xFFD94A4A :label "30%"}
-      {:layout {:horizontal {:size "70%"}} :fill 0xFFD97A4A :label "70%"}]}
+     [{:layout {:x {:size "30%"}} :fill 0xFFD94A4A :label "30%"}
+      {:layout {:x {:size "70%"}} :fill 0xFFD97A4A :label "70%"}]}
 
     ;; Row 4: Vertical stretch (fills remaining)
-    {:layout {:vertical {:size "1s"}} :fill 0x15FFFFFF :label "stretch (1s)"}
+    {:layout {:y {:size "1s"}} :fill 0x15FFFFFF :label "stretch (1s)"}
 
     ;; Row 5: Grid
-    {:layout {:vertical {:size 120}}
+    {:layout {:y {:size 120}}
      :fill 0x10FFFFFF
      :label "grid 3 cols"
-     :children-layout {:mode :grid :cols 3 :gap 8 :padding 10}
+     :children-layout {:mode :grid
+                       :cols 3
+                       :x {:before 10 :between 8 :after 10}
+                       :y {:before 10 :between 8 :after 10}}
      :children
      (vec (for [i (range 6)]
-            {:layout {:vertical {:size 45}}
+            {:layout {:y {:size 45}}
              :fill (+ 0xFF505050 (* i 0x101010))
              :label (str "cell " i)}))}]})
 
