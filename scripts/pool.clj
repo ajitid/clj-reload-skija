@@ -5,9 +5,8 @@
 ;; Commands:
 ;;   start [--spare N]  Start pool, keep N idle JVMs ready (default: 2)
 ;;   stop              Kill all JVMs, cleanup
-;;   open              Acquire idle JVM, run (open)
-;;   close             Kill active JVM, replenish pool
-;;   restart           Close + open (instant!)
+;;   open              Open app (restarts if already running)
+;;   close             Close app
 ;;   status            Show pool state
 ;;   connect           Print connection info for active JVM
 
@@ -425,45 +424,38 @@
   (when-let [ex (:ex result)]
     (println "Exception:" ex)))
 
-(defn- acquire-and-open!
-  "Acquire an idle JVM, send (open) command, and replenish pool.
-   Returns true on success, false on failure."
-  [pool-size]
-  (if-let [jvm (acquire-jvm!)]
-    (do
-      (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
-      (println "Sending (open) + replenishing in parallel...")
-      (let [cmd-future (future (send-nrepl-command! (:port jvm) "(open)"))
-            replenish-future (future (ensure-pool-size! pool-size))]
-        @replenish-future
-        (let [result (deref cmd-future 100 {:success true :blocking true})]
-          (print-nrepl-result result)
-          (if (:success result)
-            (do
-              (println "\nApp started successfully!")
-              (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm))
-              true)
-            (do
-              (println "\nFailed to start app:" (:error result))
-              false)))))
-    ;; Detailed error handling
-    (let [state (load-state)]
+(defn cmd-open []
+  (let [state (load-state)
+        pool-size (get-in state [:config :pool-size] 2)]
+    ;; Kill active JVM if exists (idempotent)
+    (when (:active state)
+      (let [active-id (get-in state [:active :id])]
+        (kill-jvm! active-id)
+        (update-state! assoc :active nil)))
+    ;; Ensure pool and acquire
+    (ensure-dirs!)
+    (ensure-pool-size! pool-size)
+    (if-let [jvm (acquire-jvm!)]
+      (do
+        (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
+        (println "Sending (open) + replenishing in parallel...")
+        (let [cmd-future (future (send-nrepl-command! (:port jvm) "(open)"))
+              replenish-future (future (ensure-pool-size! pool-size))]
+          @replenish-future
+          (let [result (deref cmd-future 100 {:success true :blocking true})]
+            (print-nrepl-result result)
+            (if (:success result)
+              (do
+                (println "\nApp started successfully!")
+                (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm)))
+              (println "\nFailed to start app:" (:error result))))))
+      ;; Error handling
       (cond
-        (:active state)
-        (println "Already have an active JVM. Use 'close' or 'restart' first.")
-
-        (empty? (:idle state))
+        (empty? (:idle (load-state)))
         (println "No idle JVMs available. Run 'bb scripts/pool.clj start' first.")
 
         :else
-        (println "Could not acquire JVM."))
-      false)))
-
-(defn cmd-open []
-  (ensure-dirs!)
-  (let [pool-size (get-in (load-state) [:config :pool-size] 2)]
-    (ensure-pool-size! pool-size)  ;; safety check (consistent with restart)
-    (acquire-and-open! pool-size)))
+        (println "Could not acquire JVM.")))))
 
 (defn cmd-close []
   (let [state (load-state)
@@ -475,19 +467,6 @@
         (ensure-pool-size! (inc pool-size))  ;; spare + 1 for next open
         (println "Pool ready."))
       (println "No active JVM to close."))))
-
-(defn cmd-restart []
-  (let [state (load-state)
-        pool-size (get-in state [:config :pool-size] 2)]
-    ;; Kill active JVM
-    (when (:active state)
-      (let [active-id (get-in state [:active :id])]
-        (kill-jvm! active-id)
-        (update-state! assoc :active nil)))
-    ;; Acquire new JVM and open
-    (ensure-dirs!)
-    (ensure-pool-size! pool-size)
-    (acquire-and-open! pool-size)))
 
 (defn cmd-status []
   (ensure-dirs!)
@@ -530,9 +509,8 @@
   (println "Commands:")
   (println "  start    Start pool, warm up JVMs")
   (println "  stop     Kill all JVMs, cleanup")
-  (println "  open     Acquire idle JVM, run (open)")
-  (println "  close    Kill active JVM, replenish pool")
-  (println "  restart  Close + open (instant!)")
+  (println "  open     Open app (restarts if already running)")
+  (println "  close    Close app")
   (println "  status   Show pool state")
   (println "  connect  Print connection info for active JVM")
   (println "  help     Show this help")
@@ -571,7 +549,6 @@
       "stop" (cmd-stop)
       "open" (cmd-open)
       "close" (cmd-close)
-      "restart" (cmd-restart)
       "status" (cmd-status)
       "connect" (cmd-connect)
       "help" (cmd-help)
