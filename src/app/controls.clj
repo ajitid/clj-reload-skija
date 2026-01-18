@@ -2,9 +2,9 @@
   "Control panel UI - sliders and mouse handling.
    Drawing and update logic for the control panel."
   (:require [app.state :as state])
-  (:import [io.github.humbleui.jwm EventMouseButton EventMouseMove MouseButton]
-           [io.github.humbleui.skija Canvas Paint PaintMode Font Typeface]
-           [io.github.humbleui.types Rect]))
+  (:import [io.github.humbleui.skija Canvas Paint PaintMode Font Typeface]
+           [io.github.humbleui.types Rect]
+           [lib.window.events EventMouseButton EventMouseMove]))
 
 ;; ============================================================
 ;; Helpers
@@ -139,13 +139,13 @@
 
 (defn handle-mouse-press
   "Handle mouse button press - start dragging if on slider or demo circle."
-  [^EventMouseButton event]
-  (when (= (.getButton event) MouseButton/PRIMARY)
+  [event]
+  (when (= (:button event) :primary)
     ;; Convert physical pixels to logical pixels
     (let [scale @state/scale
           ww @state/window-width
-          mx (/ (.getX event) scale)
-          my (/ (.getY event) scale)
+          mx (/ (:x event) scale)
+          my (/ (:y event) scale)
           panel-visible? @state/panel-visible?]
       (cond
         ;; Check sliders first (higher z-order) - only when panel visible
@@ -177,7 +177,7 @@
 
 (defn handle-mouse-release
   "Handle mouse button release - stop dragging, create decay for momentum."
-  [^EventMouseButton event]
+  [event]
   ;; Handle slider release
   (reset! state/dragging-slider nil)
 
@@ -193,12 +193,12 @@
 
 (defn handle-mouse-move
   "Handle mouse move - update slider or demo circle if dragging."
-  [^EventMouseMove event]
+  [event]
   ;; Convert physical pixels to logical pixels
   (let [scale @state/scale
         ww @state/window-width
-        mx (/ (.getX event) scale)
-        my (/ (.getY event) scale)]
+        mx (/ (:x event) scale)
+        my (/ (:y event) scale)]
 
     ;; Handle slider dragging
     (when-let [slider @state/dragging-slider]
