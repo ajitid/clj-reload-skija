@@ -333,13 +333,13 @@
   "Layout system demo using new Subform-style API."
   []
   {:layout {:x {:size "100%"} :y {:size "100%"}}
-   :children-layout {:mode :stack-vertical
+   :children-layout {:mode :stack-y
                      :x {:before 20 :after 20}
                      :y {:before 20 :between 12 :after 20}}
    :children
    [;; Row 1: Fixed + Spacer + Fixed
     {:layout {:y {:size 50}}
-     :children-layout {:mode :stack-horizontal :x {:between 10}}
+     :children-layout {:mode :stack-x :x {:between 10}}
      :children
      [{:layout {:x {:size 100}} :fill 0xFF4A90D9 :label "100px"}
       {:layout {:x {:size "1s"}} :fill 0x20FFFFFF :label "spacer (1s)"}
@@ -347,7 +347,7 @@
 
     ;; Row 2: Stretch weights 1:2:1
     {:layout {:y {:size 60}}
-     :children-layout {:mode :stack-horizontal :x {:between 10}}
+     :children-layout {:mode :stack-x :x {:between 10}}
      :children
      [{:layout {:x {:size "1s"}} :fill 0xFF44AA66 :label "1s"}
       {:layout {:x {:size "2s"}} :fill 0xFF66CC88 :label "2s"}
@@ -355,7 +355,7 @@
 
     ;; Row 3: Percentages
     {:layout {:y {:size 50}}
-     :children-layout {:mode :stack-horizontal :x {:between 10}}
+     :children-layout {:mode :stack-x :x {:between 10}}
      :children
      [{:layout {:x {:size "30%"}} :fill 0xFFD94A4A :label "30%"}
       {:layout {:x {:size "70%"}} :fill 0xFFD97A4A :label "70%"}]}
@@ -366,9 +366,9 @@
     ;; Row 5: Grid
     {:layout {:y {:size 120}}
      :fill 0x10FFFFFF
-     :label "grid 3 cols"
+     :label "grid 3 x-count"
      :children-layout {:mode :grid
-                       :cols 3
+                       :x-count 3
                        :x {:before 10 :between 8 :after 10}
                        :y {:before 10 :between 8 :after 10}}
      :children

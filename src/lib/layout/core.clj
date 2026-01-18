@@ -14,7 +14,7 @@
    Usage:
      (def tree
        {:layout {:x {:size 400} :y {:size 300}}
-        :children-layout {:mode :stack-horizontal
+        :children-layout {:mode :stack-x
                           :x {:between 10}
                           :y {}}
         :children [{:layout {:x {:size \"1s\"}}}
@@ -24,9 +24,9 @@
      ;; => tree with :bounds {:x :y :w :h} added to each node
 
    Parent layout modes:
-     :stack-horizontal - children flow left to right
-     :stack-vertical   - children flow top to bottom
-     :grid             - 2D grid with rows and columns")
+     :stack-x - children flow left to right
+     :stack-y - children flow top to bottom
+     :grid    - 2D grid with :x-count columns and :y-count rows")
 
 ;; ============================================================
 ;; Unit Parsing
@@ -104,9 +104,9 @@
 
 (def children-layout-defaults
   "Defaults for children-layout.
-   :mode - how children are arranged (:stack-horizontal, :stack-vertical, :grid)
+   :mode - how children are arranged (:stack-x, :stack-y, :grid)
    :x/:y - spacing on each axis with :before/:between/:after"
-  {:mode :stack-vertical
+  {:mode :stack-y
    :x children-axis-defaults
    :y children-axis-defaults})
 
@@ -356,8 +356,8 @@
 (defn layout-grid
   "Layout children in a grid.
    Grid properties:
-     :cols - number of columns or vector of column sizes
-     :rows - number of rows or vector of row sizes
+     :x-count - number of columns or vector of column sizes
+     :y-count - number of rows or vector of row sizes
    Spacing via :x/:y with :before/:between/:after"
   [children parent-bounds children-layout]
   (let [{:keys [x y w h]} parent-bounds
@@ -375,9 +375,9 @@
         flow-children (mapv second flow-indexed)
 
         ;; Grid configuration
-        cols (or (:cols children-layout) 1)
+        cols (or (:x-count children-layout) 1)
         num-cols (if (vector? cols) (count cols) cols)
-        rows (or (:rows children-layout) (int (Math/ceil (/ (count flow-children) num-cols))))
+        rows (or (:y-count children-layout) (int (Math/ceil (/ (count flow-children) num-cols))))
         num-rows (if (vector? rows) (count rows) rows)
         gap-x (:gap-x spacing)
         gap-y (:gap-y spacing)
@@ -523,9 +523,9 @@
          (when (seq children)
            (let [mode (:mode children-layout)]
              (case mode
-               :stack-horizontal (layout-stack children initial-bounds children-layout :horizontal)
-               :stack-vertical   (layout-stack children initial-bounds children-layout :vertical)
-               :grid             (layout-grid children initial-bounds children-layout)
+               :stack-x (layout-stack children initial-bounds children-layout :horizontal)
+               :stack-y (layout-stack children initial-bounds children-layout :vertical)
+               :grid    (layout-grid children initial-bounds children-layout)
                (layout-stack children initial-bounds children-layout :vertical))))
 
          ;; Calculate hug sizes if needed
@@ -569,7 +569,7 @@
 ;; ============================================================
 
 (defn hstack
-  "Create a horizontal stack container.
+  "Create a horizontal stack container (children flow along x-axis).
 
    Options (children-layout):
      :x {:before :between :after} - horizontal spacing
@@ -581,11 +581,11 @@
         {:layout {:x {:size \"2s\"}}}])"
   ([children] (hstack {} children))
   ([opts children]
-   {:children-layout (merge {:mode :stack-horizontal} opts)
+   {:children-layout (merge {:mode :stack-x} opts)
     :children children}))
 
 (defn vstack
-  "Create a vertical stack container.
+  "Create a vertical stack container (children flow along y-axis).
 
    Options (children-layout):
      :x {:before :after} - horizontal spacing
@@ -597,20 +597,20 @@
         {:layout {:y {:size \"1s\"}}}])"
   ([children] (vstack {} children))
   ([opts children]
-   {:children-layout (merge {:mode :stack-vertical} opts)
+   {:children-layout (merge {:mode :stack-y} opts)
     :children children}))
 
 (defn grid
   "Create a grid container.
 
    Options:
-     :cols - number of columns or vector of sizes [100 \"1s\" \"2s\"]
-     :rows - number of rows or vector of sizes
+     :x-count - number of columns or vector of sizes [100 \"1s\" \"2s\"]
+     :y-count - number of rows or vector of sizes
      :x {:before :between :after} - horizontal spacing
      :y {:before :between :after} - vertical spacing
 
    Example:
-     (grid {:cols 3 :x {:between 10} :y {:between 10}}
+     (grid {:x-count 3 :x {:between 10} :y {:between 10}}
        (repeat 9 {}))"
   ([opts children]
    {:children-layout (merge {:mode :grid} opts)

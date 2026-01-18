@@ -31,7 +31,7 @@ Make the layout system more Subform-like by:
 **Note:** Both have `:mode` but different meanings:
 
 - `layout.mode` → `:pop-out` (how parent positions this element)
-- `children-layout.mode` → `:stack-horizontal`, `:stack-vertical`, `:grid`
+- `children-layout.mode` → `:stack-x`, `:stack-y`, `:grid`
 
 ---
 
@@ -78,7 +78,7 @@ Make the layout system more Subform-like by:
 ### New API
 
 ```clojure
-{:children-layout {:mode :stack-horizontal
+{:children-layout {:mode :stack-x
                    :x {:before 10 :between 20 :after 20}
                    :y {:before 5 :after 15}}}
 
@@ -86,7 +86,7 @@ Make the layout system more Subform-like by:
 {:children-layout {:mode :grid
                    :x {:before 10 :between 40 :after 10}
                    :y {:before 10 :between 20 :after 10}
-                   :cols 3}}
+                   :x-count 3}}
 ```
 
 ### Implementation Steps
@@ -176,8 +176,41 @@ Make the layout system more Subform-like by:
 | `:gap 10`            | `:x {:between 10}` (hstack) or `:y {:between 10}` (vstack) |
 | `:gap-x 20`          | `:x {:between 20}`                                         |
 | `:gap-y 10`          | `:y {:between 10}`                                         |
+| `:stack-horizontal`  | `:stack-x`                                                 |
+| `:stack-vertical`    | `:stack-y`                                                 |
+| `:cols`              | `:x-count`                                                 |
+| `:rows`              | `:y-count`                                                 |
 | N/A                  | `:size "hug"`                                              |
 | N/A                  | `:mode :pop-out`                                           |
+
+## Deviations from Subform
+
+### Coordinate-based naming (x/y) instead of directional (horizontal/vertical)
+
+Subform uses directional terms for modes ("horizontal stack", "vertical stack") and
+relative terms for spacing ("main axis", "cross axis"). We chose a fully coordinate-based
+approach for consistency:
+
+| Subform                | Our API           |
+| ---------------------- | ----------------- |
+| `horizontal stack`     | `:stack-x`        |
+| `vertical stack`       | `:stack-y`        |
+| `cols`                 | `:x-count`        |
+| `rows`                 | `:y-count`        |
+| `main`/`cross` spacing | `:x`/`:y` spacing |
+
+**Rationale:** Using x/y everywhere creates a single mental model. You always think in
+terms of the coordinate system rather than switching between "direction of flow" and
+"coordinate position" depending on context.
+
+**Trade-off:** Subform's `main`/`cross` is more abstract - code works the same regardless
+of stack direction. With x/y, you need to know that `:x {:between}` is the gap in a
+`:stack-x` but padding in a `:stack-y`. In other words, in a horizontal stack you can't
+add vertical spacing using `:between`. It may be obvious when using `main`/`cross` you
+can't add `:between` in `cross` but not so when using `x`/`y`. Anyhow, in both conventions
+`:between` would be ignored for `cross`.
+
+---
 
 ## Sources
 
