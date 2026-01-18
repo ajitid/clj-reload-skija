@@ -202,24 +202,127 @@
               :active valid-active)))))
 
 ;; ============================================================================
-;; nREPL Client
+;; nREPL Client (with bencode parsing)
 ;; ============================================================================
 
+(defn- read-byte [^java.io.InputStream in]
+  (let [b (.read in)]
+    (when (neg? b) (throw (ex-info "Unexpected EOF" {})))
+    b))
+
+(defn- read-bytes [^java.io.InputStream in n]
+  (let [buf (byte-array n)
+        read (.read in buf 0 n)]
+    (when (not= read n) (throw (ex-info "Short read" {:expected n :got read})))
+    (String. buf "UTF-8")))
+
+(defn- read-until [^java.io.InputStream in terminator]
+  (loop [acc []]
+    (let [b (read-byte in)]
+      (if (= b (int terminator))
+        (apply str (map char acc))
+        (recur (conj acc b))))))
+
+(defn- parse-bencode
+  "Parse bencode from input stream. Returns [value remaining-stream]"
+  [^java.io.InputStream in]
+  (let [b (read-byte in)
+        c (char b)]
+    (cond
+      ;; Dictionary: d...e
+      (= c \d)
+      (loop [m {}]
+        (let [peek (.read in)]
+          (if (= peek (int \e))
+            m
+            (let [_ (.unread (java.io.PushbackInputStream. in) peek)
+                  ;; Bencode dict keys are always strings
+                  key-len (read-until in \:)
+                  key (read-bytes in (parse-long key-len))
+                  val (parse-bencode in)]
+              (recur (assoc m (keyword key) val))))))
+
+      ;; List: l...e
+      (= c \l)
+      (loop [l []]
+        (let [peek (.read in)]
+          (if (= peek (int \e))
+            l
+            (do
+              ;; Can't unread easily, so we handle inline
+              (let [val (if (= peek (int \e))
+                          nil
+                          (do
+                            ;; Put byte back conceptually by parsing from it
+                            (parse-bencode (java.io.SequenceInputStream.
+                                            (java.io.ByteArrayInputStream. (byte-array [peek]))
+                                            in))))]
+                (recur (conj l val)))))))
+
+      ;; Integer: i...e
+      (= c \i)
+      (parse-long (read-until in \e))
+
+      ;; String: N:...
+      (Character/isDigit c)
+      (let [len-str (str c (read-until in \:))
+            len (parse-long len-str)]
+        (read-bytes in len))
+
+      :else
+      (throw (ex-info "Unknown bencode type" {:char c})))))
+
+(defn- read-all-responses
+  "Read bencode responses until 'done' or 'error' status (blocking read, no polling)"
+  [^java.io.InputStream in]
+  (loop [responses []]
+    (let [resp (parse-bencode in)
+          status-set (set (:status resp))]
+      (if (or (status-set "done") (status-set "error"))
+        (conj responses resp)
+        (recur (conj responses resp))))))
+
 (defn send-nrepl-command!
-  "Send a command to JVM via nREPL (using raw socket protocol)"
+  "Send a command to JVM via nREPL.
+   For quick commands: waits for response and reports success/error.
+   For blocking commands (like open): sends and returns after short timeout."
   [port code]
   (try
     (let [msg (str "d4:code" (count code) ":" code "2:op4:evale")
           socket (java.net.Socket. "localhost" port)
-          out (.getOutputStream socket)]
+          _ (.setSoTimeout socket 500)  ;; short timeout - if no response, command is probably blocking
+          out (.getOutputStream socket)
+          in (.getInputStream socket)]
       (.write out (.getBytes msg))
       (.flush out)
-      ;; Fire and forget - no need to wait for response
-      (.close socket)
-      true)
+      ;; Try to read response - might timeout for blocking commands
+      (try
+        (let [responses (read-all-responses in)
+              combined (apply merge responses)
+              has-error? (some #{"error"} (:status combined))
+              stdout (:out combined)
+              stderr (:err combined)
+              value (:value combined)
+              ex (:ex combined)]
+          (.close socket)
+          ;; Print any output
+          (when (and stdout (not (str/blank? stdout)))
+            (println "Output:" (str/trim stdout)))
+          (when (and stderr (not (str/blank? stderr)))
+            (println "Error output:" (str/trim stderr)))
+          (when ex
+            (println "Exception:" ex))
+          ;; Return success/failure
+          (if has-error?
+            {:success false :error (or ex stderr "Unknown error")}
+            {:success true :value value}))
+        (catch java.net.SocketTimeoutException _
+          ;; Command sent but no quick response - probably blocking (like open)
+          (.close socket)
+          {:success true :value nil :note "Command sent (blocking command)"})))
     (catch Exception e
       (println "nREPL error:" (.getMessage e))
-      false)))
+      {:success false :error (.getMessage e)})))
 
 ;; ============================================================================
 ;; Pool Operations
@@ -303,11 +406,12 @@
     (do
       (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
       (println "Sending (open)...")
-      (if (send-nrepl-command! (:port jvm) "(open)")
-        (do
-          (println "\nApp starting!")
-          (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm)))
-        (println "Warning: Could not send (open) command")))
+      (let [result (send-nrepl-command! (:port jvm) "(open)")]
+        (if (:success result)
+          (do
+            (println "\nApp started successfully!")
+            (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm)))
+          (println "\nFailed to start app:" (:error result)))))
     (println "Hint: Run 'bb pool.clj start' first")))
 
 (defn cmd-close []
