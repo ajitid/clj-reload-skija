@@ -56,10 +56,22 @@
       (reset! @(resolve 'app.state/reloading?) false))))
 
 (defn open
-  "Open the application window."
+  "Open the application window. For interactive REPL use.
+   When window closes, returns to REPL prompt."
   []
   (require 'app.core)
-  ((resolve 'app.core/start-app)))
+  (try
+    ((resolve 'app.core/start-app))
+    (finally
+      ;; Reset running state so app can be reopened
+      (reset! @(resolve 'app.state/running?) false))))
+
+(defn open-once
+  "Open the application window and exit when closed. For one-shot mode.
+   Usage: clj -M:dev:macos-arm64 -e \"(open-once)\""
+  []
+  (open)
+  (System/exit 0))
 
 (comment
   ;; Quick REPL commands:
