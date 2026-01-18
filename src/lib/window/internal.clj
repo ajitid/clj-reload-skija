@@ -262,11 +262,18 @@
     (SDLEvents/SDL_RemoveEventWatch watcher 0)))
 
 (defn cleanup!
-  "Clean up SDL resources."
+  "Clean up SDL resources.
+   On macOS, we must pump events after destroying the window to let Cocoa
+   complete the close operation before calling SDL_Quit."
   [gl-context window]
   (reset! resize-render-fn nil)
   (when (and gl-context (not (zero? gl-context)))
     (SDLVideo/SDL_GL_DestroyContext gl-context))
   (when (and window (not (zero? window)))
     (SDLVideo/SDL_DestroyWindow window))
+  ;; Pump remaining events to let macOS process window destruction
+  (with-open [stack (MemoryStack/stackPush)]
+    (let [event (SDL_Event/malloc stack)]
+      (dotimes [_ 10]
+        (SDLEvents/SDL_PollEvent event))))
   (SDLInit/SDL_Quit))
