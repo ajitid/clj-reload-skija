@@ -119,6 +119,67 @@
            (.isAlive (.get handle))))
     (catch Exception _ false)))
 
+;; ============================================================================
+;; File Locking (for concurrent access protection)
+;; ============================================================================
+
+(def lock-dir (fs/path pool-dir "pool.lock.d"))
+
+(defn acquire-file-lock!
+  "Attempt to acquire lock using atomic mkdir. Returns true if acquired."
+  []
+  (ensure-dirs!)
+  (let [lock-path (str lock-dir)
+        pid-file (str (fs/path lock-dir "pid"))
+        my-pid (.pid (ProcessHandle/current))]
+    (try
+      ;; mkdir is atomic - only one process can create it
+      (fs/create-dir lock-path)
+      ;; We got the lock, write our PID
+      (spit pid-file (str my-pid))
+      true
+      (catch Exception _
+        ;; Directory exists - check if holder is still alive
+        (if (fs/exists? pid-file)
+          (let [holder-pid (try (parse-long (str/trim (slurp pid-file))) (catch Exception _ nil))]
+            (if (and holder-pid (process-alive? holder-pid))
+              false  ;; Lock held by another live process
+              ;; Stale lock, try to clean and re-acquire
+              (do
+                (try (fs/delete-tree lock-path) (catch Exception _))
+                (try
+                  (fs/create-dir lock-path)
+                  (spit pid-file (str my-pid))
+                  true
+                  (catch Exception _ false)))))
+          false)))))
+
+(defn release-file-lock! []
+  (try
+    (when (fs/exists? lock-dir)
+      (fs/delete-tree (str lock-dir)))
+    (catch Exception _)))
+
+(defmacro with-state-lock
+  "Execute body with an exclusive file lock on the pool state.
+   Spins until lock is acquired. Cross-platform (Windows/macOS/Linux)."
+  [& body]
+  `(do
+     (loop [attempts# 0]
+       (when-not (acquire-file-lock!)
+         (when (zero? (mod attempts# 10))
+           (safe-println "Waiting for lock..."))
+         (Thread/sleep 100)
+         (recur (inc attempts#))))
+     (try
+       ~@body
+       (finally
+         (release-file-lock!)))))
+
+;; ============================================================================
+;; JVM Spawning
+;; ============================================================================
+
 (defn spawn-jvm!
   "Spawn a new JVM, wait for nREPL, return JVM info map"
   [config]
@@ -181,9 +242,11 @@
       (let [pid (parse-long (str/trim (slurp (str pid-file))))]
         (println (str "Killing JVM " id " (pid " pid ")"))
         (kill-process-tree! pid)))
-    ;; Cleanup directory
-    (when (fs/exists? dir)
-      (fs/delete-tree dir))))
+    ;; Cleanup directory (ignore if already deleted by concurrent process)
+    (try
+      (when (fs/exists? dir)
+        (fs/delete-tree dir))
+      (catch Exception _))))
 
 (defn validate-jvm
   "Check if a JVM record is still valid (process alive)"
@@ -388,36 +451,38 @@
 ;; ============================================================================
 
 (defn cmd-start [{:keys [spare cmd]}]
-  (ensure-dirs!)
-  (let [raw-spare (or spare 2)
-        pool-size (if (< raw-spare 1)
-                    (do
-                      (println "Warning: --spare must be at least 1. Using 1.")
-                      1)
-                    raw-spare)
-        jvm-cmd (or cmd (:cmd default-config))
-        initial-count (inc pool-size)]  ;; spare + 1 for open
-    (println "Starting JVM pool with" initial-count "idle JVM(s)")
-    (println "Command:" jvm-cmd)
-    (println "Platform:" (if windows? "Windows" "Unix"))
-    (update-state! assoc-in [:config :pool-size] pool-size)
-    (update-state! assoc-in [:config :cmd] jvm-cmd)
-    (update-state! assoc-in [:config :project-dir] (str (fs/cwd)))
-    (ensure-pool-size! initial-count)
-    (println "\nPool ready. Use 'bb pool.clj open' to start your app.")))
+  (with-state-lock
+    (ensure-dirs!)
+    (let [raw-spare (or spare 2)
+          pool-size (if (< raw-spare 1)
+                      (do
+                        (println "Warning: --spare must be at least 1. Using 1.")
+                        1)
+                      raw-spare)
+          jvm-cmd (or cmd (:cmd default-config))
+          initial-count (inc pool-size)]  ;; spare + 1 for open
+      (println "Starting JVM pool with" initial-count "idle JVM(s)")
+      (println "Command:" jvm-cmd)
+      (println "Platform:" (if windows? "Windows" "Unix"))
+      (update-state! assoc-in [:config :pool-size] pool-size)
+      (update-state! assoc-in [:config :cmd] jvm-cmd)
+      (update-state! assoc-in [:config :project-dir] (str (fs/cwd)))
+      (ensure-pool-size! initial-count)
+      (println "\nPool ready. Use 'bb pool.clj open' to start your app."))))
 
 (defn cmd-stop []
-  (println "Stopping pool...")
-  (let [state (load-state)]
-    ;; Kill active
-    (when-let [jvm (:active state)]
-      (kill-jvm! (:id jvm)))
-    ;; Kill all idle
-    (doseq [jvm (:idle state)]
-      (kill-jvm! (:id jvm)))
-    ;; Reset state
-    (save-state! {:config (:config state) :idle [] :active nil})
-    (println "Pool stopped.")))
+  (with-state-lock
+    (println "Stopping pool...")
+    (let [state (load-state)]
+      ;; Kill active
+      (when-let [jvm (:active state)]
+        (kill-jvm! (:id jvm)))
+      ;; Kill all idle
+      (doseq [jvm (:idle state)]
+        (kill-jvm! (:id jvm)))
+      ;; Reset state
+      (save-state! {:config (:config state) :idle [] :active nil})
+      (println "Pool stopped."))))
 
 (defn- print-nrepl-result
   "Print nREPL command result (stdout, stderr, errors)"
@@ -432,22 +497,27 @@
     (println "Exception:" ex)))
 
 (defn cmd-open []
-  (let [state (load-state)
-        pool-size (get-in state [:config :pool-size] 2)]
-    ;; Kill active JVM if exists (idempotent)
-    (when (:active state)
-      (let [active-id (get-in state [:active :id])]
-        (kill-jvm! active-id)
-        (update-state! assoc :active nil)))
-    ;; Ensure pool and acquire
-    (ensure-dirs!)
-    (ensure-pool-size! pool-size)
-    (if-let [jvm (acquire-jvm!)]
+  ;; Critical section: kill active + acquire must be atomic
+  (let [{:keys [jvm pool-size]}
+        (with-state-lock
+          (let [state (load-state)
+                pool-size (get-in state [:config :pool-size] 2)]
+            ;; Kill active JVM if exists (idempotent)
+            (when (:active state)
+              (let [active-id (get-in state [:active :id])]
+                (kill-jvm! active-id)
+                (update-state! assoc :active nil)))
+            ;; Acquire from pool
+            (cleanup-dead-jvms!)
+            (let [jvm (acquire-jvm!)]
+              {:jvm jvm :pool-size pool-size})))]
+    ;; Outside lock: send command + replenish (can run concurrently with other processes)
+    (if jvm
       (do
         (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
         (println "Sending (open) + replenishing in parallel...")
         (let [cmd-future (future (send-nrepl-command! (:port jvm) "(open)"))
-              replenish-future (future (ensure-pool-size! pool-size))]
+              replenish-future (future (with-state-lock (ensure-pool-size! pool-size)))]
           @replenish-future
           (let [result (deref cmd-future 100 {:success true :blocking true})]
             (print-nrepl-result result)
@@ -460,15 +530,16 @@
       (println "No idle JVMs available. Run 'bb scripts/pool.clj start' first."))))
 
 (defn cmd-close []
-  (let [state (load-state)
-        pool-size (get-in state [:config :pool-size] 2)]
-    (if (:active state)
-      (do
-        (release-jvm!)
-        (println "Closed. Replenishing pool...")
-        (ensure-pool-size! (inc pool-size))  ;; spare + 1 for next open
-        (println "Pool ready."))
-      (println "No active JVM to close."))))
+  (with-state-lock
+    (let [state (load-state)
+          pool-size (get-in state [:config :pool-size] 2)]
+      (if (:active state)
+        (do
+          (release-jvm!)
+          (println "Closed. Replenishing pool...")
+          (ensure-pool-size! (inc pool-size))  ;; spare + 1 for next open
+          (println "Pool ready."))
+        (println "No active JVM to close.")))))
 
 (defn cmd-status []
   (ensure-dirs!)
