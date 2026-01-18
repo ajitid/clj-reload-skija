@@ -44,7 +44,7 @@
 
 (defn- calculate-tween-state
   "Calculate tween state at a specific time.
-   Returns {:value :progress :total-progress :iteration :direction :phase :done?}"
+   Returns {:value :progress :iteration :direction :phase :done?}"
   [{:keys [from to duration delay loop-delay loop alternate reversed easing start-time]} t]
   (let [elapsed (- t start-time)
 
@@ -100,14 +100,11 @@
         ;; Calculate value
         value (+ from (* eased-progress (- to from)))
 
-        ;; Total progress across all iterations
+        ;; Total duration (for done? check)
         total-duration (if (true? loop)
                          ##Inf
                          (+ delay (* max-iterations duration)
                             (* (dec max-iterations) loop-delay)))
-        total-progress (if (= total-duration ##Inf)
-                         0.0  ;; Can't calculate total progress for infinite
-                         (/ (min elapsed total-duration) total-duration))
 
         ;; Phase and done?
         phase (cond
@@ -123,7 +120,6 @@
               (if (= direction :backward) from to)
               value)
      :progress clamped-progress
-     :total-progress (if done? 1.0 total-progress)
      :iteration (long iteration)
      :direction direction
      :phase phase
@@ -158,13 +154,13 @@
 
 (defn tween-at
   "Get tween state at a specific time. Pure function.
-   Returns {:value :progress :total-progress :iteration :direction :phase :done?}"
+   Returns {:value :progress :iteration :direction :phase :done?}"
   [tween t]
   (calculate-tween-state tween t))
 
 (defn tween-now
   "Get tween state at current time. Uses configured time source.
-   Returns {:value :progress :total-progress :iteration :direction :phase :done?}"
+   Returns {:value :progress :iteration :direction :phase :done?}"
   [tween]
   (tween-at tween (time/now)))
 
