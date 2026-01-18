@@ -8,10 +8,6 @@
    4. In connected REPL: (reload)
    5. See changes immediately!
 
-   Other commands:
-   - (close)  - Close window, reset state (can reopen)
-   - (reopen) - close + open new window
-
    Architecture (clj-reload pattern):
    - Event listener uses (resolve ...) for ALL callbacks
    - Everything reloads except 'user' namespace and defonce values
@@ -65,40 +61,11 @@
   (require 'app.core)
   ((resolve 'app.core/start-app)))
 
-(defn close
-  "Close the application window and reset state (can reopen)."
-  []
-  (when @@(resolve 'app.state/running?)
-    (reset! @(resolve 'app.state/running?) false)
-    (io.github.humbleui.jwm.App/runOnUIThread
-     (fn []
-       (when-let [window @@(resolve 'app.state/window)]
-         (.close window))))
-    ;; Give UI thread time to close window, then reset state
-    (Thread/sleep 100)
-    ((resolve 'app.state/reset-state!))))
-
-(defn reopen
-  "Reopen the application (close + open new window)."
-  []
-  (close)
-  ;; Create new window on UI thread
-  (io.github.humbleui.jwm.App/runOnUIThread
-   (fn []
-     (require 'app.core)
-     ((resolve 'app.core/create-window)))))
-
 (comment
   ;; Quick REPL commands:
 
   ;; Open the app
   (open)
-
-  ;; Close the app (window closes, can reopen)
-  (close)
-
-  ;; Reopen the app (closes window and creates new one)
-  (reopen)
 
   ;; After editing config.clj, reload to see changes
   (reload)

@@ -24,8 +24,6 @@ clj -A:run
 **In the REPL:**
 ```clojure
 (open)    ;; Open the JWM window application (blocks this REPL)
-(close)   ;; Close window, reset state (can reopen)
-(reopen)  ;; Close + open new window
 (reload)  ;; Hot-reload changed namespaces (run from connected REPL)
 ```
 
@@ -113,7 +111,7 @@ The event listener uses `requiring-resolve` for ALL callbacks so they survive na
 - **app.config** - Plain `def` values for visual parameters
 - **lib.spring.core** - Spring physics (functional, configurable time source)
 - **lib.timer.core** - Timers (functional, configurable time source)
-- **user** (dev/) - REPL namespace with `open`, `close`, `reopen`, and `reload` functions
+- **user** (dev/) - REPL namespace with `open` and `reload` functions
 
 ### Dependencies
 

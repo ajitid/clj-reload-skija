@@ -446,8 +446,6 @@
                   (condp = (.getKey ke)
                     Key/F2 (when-let [copy-fn (requiring-resolve 'app.core/copy-current-error-to-clipboard!)]
                              (copy-fn))
-                    Key/F9 (when-let [reopen-fn (requiring-resolve 'user/reopen)]
-                             (reopen-fn))
                     ;; Ctrl+` toggles panel (all platforms)
                     Key/BACK_QUOTE (when (.isModifierDown ke KeyModifier/CONTROL)
                                      (swap! state/panel-visible? not))

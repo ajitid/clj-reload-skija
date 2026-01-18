@@ -10,6 +10,8 @@
 ;;   status            Show pool state
 ;;   connect           Print connection info for active JVM
 
+;; this is basic pool manager... an advanced one with a different use case (worker pool) is at https://deepwiki.com/ninjudd/drip
+
 (ns pool
   (:require [babashka.process :as proc]
             [babashka.fs :as fs]
