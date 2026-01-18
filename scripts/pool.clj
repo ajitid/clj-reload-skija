@@ -3,7 +3,7 @@
 ;; Usage: bb pool.clj <command>
 ;;
 ;; Commands:
-;;   start [--size N]  Start pool, warm up N JVMs (default: 3)
+;;   start [--spare N]  Start pool, keep N idle JVMs ready (default: 2)
 ;;   stop              Kill all JVMs, cleanup
 ;;   open              Acquire idle JVM, run (open)
 ;;   close             Kill active JVM, replenish pool
@@ -51,7 +51,7 @@
       :else "dev")))
 
 (def default-config
-  {:pool-size 3
+  {:pool-size 2
    :cmd (str "clj -A:" (detect-platform-alias))
    :project-dir (str (fs/cwd))
    :nrepl-timeout-ms 60000})  ;; wait up to 60s for nREPL
@@ -330,13 +330,14 @@
 ;; ============================================================================
 
 (defn ensure-pool-size!
-  "Spawn JVMs until pool reaches target size (in parallel)"
-  [target-size]
+  "Spawn JVMs until idle pool reaches target size (in parallel).
+   Target size = idle JVMs to maintain (active JVMs don't count)."
+  [target-idle]
   (cleanup-dead-jvms!)
   (let [state (load-state)
         config (:config state)
         current-idle (count (:idle state))
-        needed (- target-size current-idle)]
+        needed (- target-idle current-idle)]
     (when (pos? needed)
       (println "Spawning" needed "JVM(s) in parallel...")
       ;; Spawn all JVMs in parallel using futures
@@ -385,17 +386,18 @@
 ;; Commands
 ;; ============================================================================
 
-(defn cmd-start [{:keys [size cmd]}]
+(defn cmd-start [{:keys [spare cmd]}]
   (ensure-dirs!)
-  (let [pool-size (or size 3)
-        jvm-cmd (or cmd (:cmd default-config))]
-    (println "Starting JVM pool with size" pool-size)
+  (let [pool-size (or spare 2)
+        jvm-cmd (or cmd (:cmd default-config))
+        initial-count (inc pool-size)]  ;; spare + 1 for open
+    (println "Starting JVM pool with" initial-count "idle JVM(s)")
     (println "Command:" jvm-cmd)
     (println "Platform:" (if windows? "Windows" "Unix"))
     (update-state! assoc-in [:config :pool-size] pool-size)
     (update-state! assoc-in [:config :cmd] jvm-cmd)
     (update-state! assoc-in [:config :project-dir] (str (fs/cwd)))
-    (ensure-pool-size! pool-size)
+    (ensure-pool-size! initial-count)
     (println "\nPool ready. Use 'bb pool.clj open' to start your app.")))
 
 (defn cmd-stop []
@@ -426,7 +428,7 @@
 (defn cmd-open []
   (ensure-dirs!)
   (if-let [jvm (acquire-jvm!)]
-    (let [pool-size (get-in (load-state) [:config :pool-size] 3)]
+    (let [pool-size (get-in (load-state) [:config :pool-size] 2)]
       (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
       (println "Sending (open) + replenishing in parallel...")
       ;; Run nREPL command AND replenishment in parallel
@@ -456,25 +458,26 @@
 
 (defn cmd-close []
   (let [state (load-state)
-        pool-size (get-in state [:config :pool-size] 3)]
+        pool-size (get-in state [:config :pool-size] 2)]
     (if (:active state)
       (do
         (release-jvm!)
         (println "Closed. Replenishing pool...")
-        (ensure-pool-size! pool-size)
+        (ensure-pool-size! (inc pool-size))  ;; spare + 1 for next open
         (println "Pool ready."))
       (println "No active JVM to close."))))
 
 (defn cmd-restart []
   (let [state (load-state)
-        pool-size (get-in state [:config :pool-size] 3)]
+        pool-size (get-in state [:config :pool-size] 2)]
     ;; Kill active JVM
     (when (:active state)
       (let [active-id (get-in state [:active :id])]
         (kill-jvm! active-id)
         (update-state! assoc :active nil)))
-    ;; Acquire new JVM from pool
+    ;; Ensure we have at least one idle JVM before trying to acquire
     (ensure-dirs!)
+    (ensure-pool-size! pool-size)
     (if-let [jvm (acquire-jvm!)]
       (do
         (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
@@ -504,7 +507,7 @@
     (println "JVM Pool Status")
     (println "===============")
     (println "Project:" (get-in state [:config :project-dir] "not set"))
-    (println "Target size:" (get-in state [:config :pool-size] "not set"))
+    (println "Idle JVMs:" (get-in state [:config :pool-size] "not set"))
     (println "Total JVMs:" total (str "(" (count idle) " idle, " (if active 1 0) " active)"))
     (println)
     (when active
@@ -543,7 +546,7 @@
   (println "  help     Show this help")
   (println)
   (println "Options for 'start':")
-  (println "  --size N   Number of JVMs in pool (default: 3)")
+  (println "  --spare N  Idle JVMs to keep ready (default: 2)")
   (println "  --cmd CMD  Command to start JVM (default: auto-detected)")
   (println)
   (println "Detected platform:" (if windows? "Windows" "Unix"))
@@ -560,8 +563,8 @@
       opts
       (let [[arg & rest] args]
         (cond
-          (= "--size" arg)
-          (recur (next rest) (assoc opts :size (parse-long (first rest))))
+          (= "--spare" arg)
+          (recur (next rest) (assoc opts :spare (parse-long (first rest))))
 
           (= "--cmd" arg)
           (recur (next rest) (assoc opts :cmd (first rest)))
