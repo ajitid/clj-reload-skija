@@ -237,7 +237,9 @@
 
         ;; Three-pass size calculation
         fixed-sizes (calculate-fixed-sizes children content-w content-h)
-        percent-sizes (calculate-percent-sizes fixed-sizes content-w content-h)
+        percent-sizes (calculate-percent-sizes fixed-sizes
+                                               (if horizontal? available-main content-w)
+                                               (if horizontal? content-h available-main))
         final-sizes (calculate-stretch-sizes percent-sizes available-main available-cross main-axis)
 
         ;; Position children along main axis
