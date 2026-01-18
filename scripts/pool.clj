@@ -3,7 +3,7 @@
 ;; Usage: bb pool.clj <command>
 ;;
 ;; Commands:
-;;   start [--spare N]  Start pool, keep N idle JVMs ready (default: 2)
+;;   start [--spare N]  Start pool, keep N idle JVMs ready (default: 2, min: 1)
 ;;   stop              Kill all JVMs, cleanup
 ;;   open              Open app (restarts if already running)
 ;;   close             Close app
@@ -389,7 +389,12 @@
 
 (defn cmd-start [{:keys [spare cmd]}]
   (ensure-dirs!)
-  (let [pool-size (or spare 2)
+  (let [raw-spare (or spare 2)
+        pool-size (if (< raw-spare 1)
+                    (do
+                      (println "Warning: --spare must be at least 1. Using 1.")
+                      1)
+                    raw-spare)
         jvm-cmd (or cmd (:cmd default-config))
         initial-count (inc pool-size)]  ;; spare + 1 for open
     (println "Starting JVM pool with" initial-count "idle JVM(s)")
@@ -451,13 +456,8 @@
                 (println "\nApp started successfully!")
                 (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm)))
               (println "\nFailed to start app:" (:error result))))))
-      ;; Error handling
-      (cond
-        (empty? (:idle (load-state)))
-        (println "No idle JVMs available. Run 'bb scripts/pool.clj start' first.")
-
-        :else
-        (println "Could not acquire JVM.")))))
+      ;; No idle JVMs - user hasn't run start
+      (println "No idle JVMs available. Run 'bb scripts/pool.clj start' first."))))
 
 (defn cmd-close []
   (let [state (load-state)
@@ -518,7 +518,7 @@
   (println "  help     Show this help")
   (println)
   (println "Options for 'start':")
-  (println "  --spare N  Idle JVMs to keep ready (default: 2)")
+  (println "  --spare N  Idle JVMs to keep ready (default: 2, minimum: 1)")
   (println "  --cmd CMD  Command to start JVM (default: auto-detected)")
   (println)
   (println "Detected platform:" (if windows? "Windows" "Unix"))
