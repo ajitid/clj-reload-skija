@@ -20,11 +20,13 @@
             [nrepl.server :as nrepl]))
 
 ;; Start nREPL server for hot-reloading (connect from another terminal)
+;; Uses port 0 for random port assignment (allows multiple JVM instances)
 (defonce nrepl-server
-  (let [server (nrepl/start-server :port 7888)]
+  (let [server (nrepl/start-server :port 0)
+        port (:port server)]
     (println "")
-    (println "nREPL server running on port 7888")
-    (println "Connect from another terminal: clj -M:connect")
+    (println "nREPL server running on port" port)
+    (println "Connect: clj -M:nrepl -m nrepl.cmdline --connect --port" port)
     (println "")
     server))
 

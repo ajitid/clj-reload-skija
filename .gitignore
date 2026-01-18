@@ -2,3 +2,4 @@
 .DS_Store
 .clj-kondo/
 .lsp/
+.jvm-pool/
