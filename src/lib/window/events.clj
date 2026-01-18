@@ -9,6 +9,7 @@
 ;; Window events
 (defrecord EventResize [width height scale])
 (defrecord EventClose [])
+(defrecord EventExposed [])
 
 ;; Mouse events - coordinates in logical pixels (already scaled)
 (defrecord EventMouseButton [button x y pressed?])

@@ -7,7 +7,7 @@
             [lib.window.events :as e])
   (:import [org.lwjgl.sdl SDL_Event]
            [org.lwjgl.opengl GL11]
-           [lib.window.events EventClose EventResize EventFrameSkija]))
+           [lib.window.events EventClose EventResize EventFrameSkija EventExposed]))
 
 ;; Window record holds SDL handles (long pointers) and state atoms
 (defrecord Window [^long handle ^long gl-context event-handler
@@ -72,9 +72,14 @@
   (let [handle (:handle window)
         [pw ph] (sdl/get-window-size-in-pixels handle)
         {:keys [surface canvas flush-fn]} (layer/frame! pw ph)]
+    ;; Update viewport to match new size
+    (GL11/glViewport 0 0 pw ph)
     ;; Clear with white (or could be transparent)
     (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_STENCIL_BUFFER_BIT))
     ;; Dispatch frame event to handler
+    ;; Note: Skija Canvas API uses top-left origin (Y=0 at top, Y increases down)
+    ;; Skija internally handles transformation to OpenGL's BOTTOM_LEFT framebuffer
+    ;; SkSL shaders receive fragCoord in BOTTOM_LEFT coordinates (Y=0 at bottom)
     (dispatch-event! window (e/->EventFrameSkija surface canvas))
     ;; Flush Skija and swap buffers
     (flush-fn)
@@ -85,7 +90,29 @@
   [^Window window]
   (reset! (:running? window) true)
   (let [handle (:handle window)
-        event (SDL_Event/malloc)]
+        event (SDL_Event/malloc)
+        ;; Track last rendered size to avoid redundant renders
+        last-render-size (atom [0 0])
+        ;; Set up live resize rendering callback
+        _ (sdl/set-resize-render-fn!
+            (fn []
+              ;; Get current pixel size
+              (let [[pw ph] (sdl/get-window-size-in-pixels handle)]
+                ;; Only render if size actually changed
+                (when (not= @last-render-size [pw ph])
+                  (reset! last-render-size [pw ph])
+                  ;; Update logical dimensions and dispatch resize event
+                  (let [[w h] (sdl/get-window-size handle)
+                        scale (sdl/get-window-scale handle)]
+                    (reset! (:width window) w)
+                    (reset! (:height window) h)
+                    (reset! (:scale window) scale)
+                    ;; Dispatch resize event so app state gets updated
+                    (dispatch-event! window (e/->EventResize w h scale)))
+                  ;; Render at new size
+                  (render-frame! window)))))
+        ;; Add event watcher for live resize
+        watcher (sdl/add-event-watcher!)]
     (try
       (while @(:running? window)
         ;; Poll events
@@ -107,6 +134,10 @@
                 (layer/resize!)
                 (dispatch-event! window ev))
 
+              ;; Exposed event - handled by event watcher
+              (instance? EventExposed ev)
+              nil
+
               ;; Other events - just dispatch
               :else
               (dispatch-event! window ev))))
@@ -117,6 +148,8 @@
           (render-frame! window)))
 
       (finally
+        (sdl/remove-event-watcher! watcher)
+        (sdl/set-resize-render-fn! nil)
         (.free event)
         (layer/cleanup!)
         (sdl/cleanup! (:gl-context window) handle)))))

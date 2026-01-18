@@ -4,7 +4,7 @@
   (:require [lib.window.events :as e])
   (:import [org.lwjgl.sdl SDLInit SDLVideo SDLEvents SDLError SDL_Event
             SDL_MouseButtonEvent SDL_MouseMotionEvent SDL_WindowEvent
-            SDL_KeyboardEvent SDL_TouchFingerEvent]
+            SDL_KeyboardEvent SDL_TouchFingerEvent SDL_EventFilterI]
            [org.lwjgl.opengl GL]
            [org.lwjgl.system MemoryStack]))
 
@@ -17,6 +17,8 @@
 (def ^:private EVENT_QUIT              SDLEvents/SDL_EVENT_QUIT)
 (def ^:private EVENT_WINDOW_CLOSE      SDLEvents/SDL_EVENT_WINDOW_CLOSE_REQUESTED)
 (def ^:private EVENT_WINDOW_RESIZED    SDLEvents/SDL_EVENT_WINDOW_RESIZED)
+(def ^:private EVENT_WINDOW_EXPOSED    SDLEvents/SDL_EVENT_WINDOW_EXPOSED)
+(def ^:private EVENT_WINDOW_PIXEL_SIZE_CHANGED SDLEvents/SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
 (def ^:private EVENT_MOUSE_BUTTON_DOWN SDLEvents/SDL_EVENT_MOUSE_BUTTON_DOWN)
 (def ^:private EVENT_MOUSE_BUTTON_UP   SDLEvents/SDL_EVENT_MOUSE_BUTTON_UP)
 (def ^:private EVENT_MOUSE_MOTION      SDLEvents/SDL_EVENT_MOUSE_MOTION)
@@ -175,6 +177,14 @@
           (= event-type EVENT_WINDOW_RESIZED)
           (conj! events (convert-resize-event event window))
 
+          ;; PIXEL_SIZE_CHANGED reports physical pixels, not logical - don't use for EventResize
+          ;; The event watcher handles live resize rendering directly
+          (= event-type EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+          nil
+
+          (= event-type EVENT_WINDOW_EXPOSED)
+          (conj! events (e/->EventExposed))
+
           (= event-type EVENT_MOUSE_BUTTON_DOWN)
           (conj! events (convert-mouse-button-event event true))
 
@@ -210,9 +220,51 @@
   [window title]
   (SDLVideo/SDL_SetWindowTitle window title))
 
+;; Atom to hold render callback for live resize
+(defonce ^:private resize-render-fn (atom nil))
+
+(defn- create-event-watcher
+  "Create an SDL_EventFilterI that triggers rendering on resize/expose events."
+  []
+  (reify SDL_EventFilterI
+    (invoke [_ userdata event-ptr]
+      (let [event (SDL_Event/create event-ptr)
+            event-type (.type event)]
+        (when (or (= event-type EVENT_WINDOW_EXPOSED)
+                  (= event-type EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+                  (= event-type EVENT_WINDOW_RESIZED))
+          (when-let [render-fn @resize-render-fn]
+            (try
+              (render-fn)
+              (catch Exception e
+                (println "Resize render error:" (.getMessage e)))))))
+      ;; Return true to keep event in queue
+      true)))
+
+(defn set-resize-render-fn!
+  "Set the function to call during live resize.
+   This function will be called from the OS thread."
+  [f]
+  (reset! resize-render-fn f))
+
+(defn add-event-watcher!
+  "Add an event watcher for live resize support.
+   Returns the watcher (keep reference to prevent GC)."
+  []
+  (let [watcher (create-event-watcher)]
+    (SDLEvents/SDL_AddEventWatch watcher 0)
+    watcher))
+
+(defn remove-event-watcher!
+  "Remove the event watcher."
+  [watcher]
+  (when watcher
+    (SDLEvents/SDL_RemoveEventWatch watcher 0)))
+
 (defn cleanup!
   "Clean up SDL resources."
   [gl-context window]
+  (reset! resize-render-fn nil)
   (when (and gl-context (not (zero? gl-context)))
     (SDLVideo/SDL_GL_DestroyContext gl-context))
   (when (and window (not (zero? window)))
