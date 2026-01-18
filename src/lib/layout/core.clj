@@ -105,10 +105,12 @@
 (def children-layout-defaults
   "Defaults for children-layout.
    :mode - how children are arranged (:stack-x, :stack-y, :grid)
-   :x/:y - spacing on each axis with :before/:between/:after"
+   :x/:y - spacing on each axis with :before/:between/:after
+   :overflow - how to handle content exceeding bounds (:visible, :clip, :hidden)"
   {:mode :stack-y
    :x children-axis-defaults
-   :y children-axis-defaults})
+   :y children-axis-defaults
+   :overflow :visible})
 
 ;; ============================================================
 ;; Helpers
@@ -238,20 +240,57 @@
   [child]
   (= :pop-out (get-in child [:layout :mode])))
 
+(defn- parse-offset
+  "Parse :offset from axis layout spec. Used for pop-out positioning."
+  [axis-layout parent-size]
+  (let [offset-val (get axis-layout :offset 0)]
+    (or (resolve-unit (parse-unit offset-val) parent-size 0 0) 0)))
+
 (defn- layout-pop-out-child
-  "Position a pop-out child absolutely within parent content area."
+  "Position a pop-out child absolutely within parent content area.
+   Supports :anchor for positioning from different reference points.
+   Uses :offset (not :before) for positioning from anchor point.
+
+   Anchors: :top-left (default), :top-right, :bottom-left, :bottom-right, :center"
   [child content-x content-y content-w content-h]
   (let [layout (:layout child {})
+        anchor (get layout :anchor :top-left)
+        z-index (get layout :z 0)
+        x-axis (get layout :x {})
+        y-axis (get layout :y {})
+
+        ;; Parse offset values
+        offset-x (parse-offset x-axis content-w)
+        offset-y (parse-offset y-axis content-h)
+
+        ;; Parse size
         x-props (get-axis-props layout :x)
         y-props (get-axis-props layout :y)
-        before-x (or (resolve-unit (:before x-props) content-w 0 0) 0)
-        before-y (or (resolve-unit (:before y-props) content-h 0 0) 0)
         child-w (or (resolve-unit (:size x-props) content-w content-w 1) content-w)
-        child-h (or (resolve-unit (:size y-props) content-h content-h 1) content-h)]
-    (assoc child :bounds {:x (+ content-x before-x)
-                          :y (+ content-y before-y)
+        child-h (or (resolve-unit (:size y-props) content-h content-h 1) content-h)
+
+        ;; Calculate position based on anchor
+        [pos-x pos-y]
+        (case anchor
+          :top-left     [(+ content-x offset-x)
+                         (+ content-y offset-y)]
+          :top-right    [(+ content-x (- content-w offset-x child-w))
+                         (+ content-y offset-y)]
+          :bottom-left  [(+ content-x offset-x)
+                         (+ content-y (- content-h offset-y child-h))]
+          :bottom-right [(+ content-x (- content-w offset-x child-w))
+                         (+ content-y (- content-h offset-y child-h))]
+          :center       [(+ content-x (/ (- content-w child-w) 2) offset-x)
+                         (+ content-y (/ (- content-h child-h) 2) offset-y)]
+          ;; Default to top-left
+          [(+ content-x offset-x)
+           (+ content-y offset-y)])]
+
+    (assoc child :bounds {:x pos-x
+                          :y pos-y
                           :w child-w
-                          :h child-h})))
+                          :h child-h
+                          :z z-index})))
 
 (defn layout-stack
   "Layout children in a stack (horizontal or vertical).
@@ -314,16 +353,21 @@
                                                  (or before-y 0)
                                                  (or before-x 0))
 
+                                  ;; Get z-index from child layout
+                                  z-index (get-in child [:layout :z] 0)
+
                                   ;; Calculate bounds
                                   bounds (if horizontal?
                                            {:x main-pos
                                             :y (+ content-y cross-before)
                                             :w child-w
-                                            :h child-h}
+                                            :h child-h
+                                            :z z-index}
                                            {:x (+ content-x cross-before)
                                             :y main-pos
                                             :w child-w
-                                            :h child-h})
+                                            :h child-h
+                                            :z z-index})
 
                                   ;; Handle after margin
                                   after-x (resolve-unit (:after x-props) content-w 0 0)
@@ -429,8 +473,9 @@
                         cell-w (+ (reduce + (subvec col-sizes col-idx (min (+ col-idx col-span) num-cols)))
                                   (* gap-x (dec col-span)))
                         cell-h (+ (reduce + (subvec row-sizes row-idx (min (+ row-idx row-span) num-rows)))
-                                  (* gap-y (dec row-span)))]
-                    [orig-idx (assoc child :bounds {:x cell-x :y cell-y :w cell-w :h cell-h})]))
+                                  (* gap-y (dec row-span)))
+                        z-index (get layout :z 0)]
+                    [orig-idx (assoc child :bounds {:x cell-x :y cell-y :w cell-w :h cell-h :z z-index})]))
                 flow-indexed))]
 
     ;; Reconstruct children in original order
@@ -538,6 +583,23 @@
          w (or hug-w initial-w)
          h (or hug-h initial-h)
 
+         ;; Apply aspect ratio if specified
+         ;; :aspect = width / height ratio (e.g., 16/9 means width is 1.78x height)
+         aspect (get layout-spec :aspect)
+         has-explicit-w? (and (not hug-x?) (:size x-props))
+         has-explicit-h? (and (not hug-y?) (:size y-props))
+         [w h] (if aspect
+                 (cond
+                   ;; Width specified, derive height
+                   (and has-explicit-w? (not has-explicit-h?))
+                   [w (/ w aspect)]
+                   ;; Height specified, derive width
+                   (and has-explicit-h? (not has-explicit-w?))
+                   [(* h aspect) h]
+                   ;; Both or neither specified, use as-is
+                   :else [w h])
+                 [w h])
+
          ;; Apply min/max constraints
          min-w (resolve-unit (:min x-props) (:w parent-bounds) 0 0)
          max-w (resolve-unit (:max x-props) (:w parent-bounds) 0 0)
@@ -547,10 +609,18 @@
          final-w (clamp-size w min-w max-w)
          final-h (clamp-size h min-h max-h)
 
+         ;; Get overflow mode from children-layout
+         overflow (get children-layout :overflow :visible)
+
+         ;; Get z-index from layout
+         z-index (get layout-spec :z 0)
+
          bounds {:x (+ (:x parent-bounds) before-x)
                  :y (+ (:y parent-bounds) before-y)
                  :w final-w
-                 :h final-h}
+                 :h final-h
+                 :z z-index
+                 :overflow overflow}
 
          ;; Recursively layout grandchildren
          final-children

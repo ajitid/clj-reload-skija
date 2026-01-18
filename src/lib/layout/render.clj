@@ -6,19 +6,42 @@
 
 (defn walk-layout
   "Walk a laid-out tree, calling render-fn for each node.
-   render-fn receives (node bounds) where bounds is {:x :y :w :h}.
+   render-fn receives (node bounds canvas) where bounds is {:x :y :w :h :z :overflow}.
+   Children are sorted by :z index (lower z rendered first, higher z on top).
+   When :overflow is :clip or :hidden, children are clipped to parent bounds.
 
    Example:
-     (walk-layout tree
-       (fn [node {:keys [x y w h]}]
+     (walk-layout tree canvas
+       (fn [node {:keys [x y w h]} canvas]
          (when-let [color (:color node)]
            (.drawRect canvas (Rect/makeXYWH x y w h) paint))))"
-  [tree render-fn]
-  (when tree
-    (let [bounds (:bounds tree)]
-      (render-fn tree bounds)
-      (doseq [child (:children tree)]
-        (walk-layout child render-fn)))))
+  ([tree render-fn]
+   ;; Legacy arity without canvas - no clipping support
+   (when tree
+     (let [bounds (:bounds tree)]
+       (render-fn tree bounds)
+       (let [sorted-children (sort-by #(get-in % [:bounds :z] 0) (:children tree))]
+         (doseq [child sorted-children]
+           (walk-layout child render-fn))))))
+  ([tree ^Canvas canvas render-fn]
+   ;; With canvas - supports overflow clipping
+   (when tree
+     (let [bounds (:bounds tree)
+           overflow (get bounds :overflow :visible)
+           clip? (#{:clip :hidden} overflow)]
+       (render-fn tree bounds canvas)
+       (let [sorted-children (sort-by #(get-in % [:bounds :z] 0) (:children tree))]
+         (if (and clip? (seq sorted-children))
+           ;; Save canvas state, clip, render children, restore
+           (let [save-count (.save canvas)
+                 {:keys [x y w h]} bounds]
+             (.clipRect canvas (Rect/makeXYWH x y w h))
+             (doseq [child sorted-children]
+               (walk-layout child canvas render-fn))
+             (.restoreToCount canvas save-count))
+           ;; No clipping needed
+           (doseq [child sorted-children]
+             (walk-layout child canvas render-fn))))))))
 
 (defn draw-debug-bounds
   "Draw debug rectangles showing layout bounds.
