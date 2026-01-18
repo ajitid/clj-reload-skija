@@ -211,12 +211,10 @@
   (try
     (let [msg (str "d4:code" (count code) ":" code "2:op4:evale")
           socket (java.net.Socket. "localhost" port)
-          out (.getOutputStream socket)
-          in (.getInputStream socket)]
+          out (.getOutputStream socket)]
       (.write out (.getBytes msg))
       (.flush out)
-      ;; Read response (simplified - just drain it)
-      (Thread/sleep 500)
+      ;; Fire and forget - no need to wait for response
       (.close socket)
       true)
     (catch Exception e
@@ -330,8 +328,7 @@
       (let [active-id (get-in state [:active :id])]
         (kill-jvm! active-id)
         (update-state! assoc :active nil)))
-    ;; Small delay to ensure process is dead
-    (Thread/sleep 200)
+    ;; No delay needed - we're getting a different JVM from the pool
     (cmd-open)
     ;; Replenish pool synchronously
     (println "Replenishing pool...")
