@@ -2,7 +2,7 @@
   "Private SDL3 interop layer via LWJGL 3.4.0.
    Handles SDL initialization, window/context creation, and event polling."
   (:require [lib.window.events :as e])
-  (:import [org.lwjgl.sdl SDLInit SDLVideo SDLEvents SDLError SDL_Event
+  (:import [org.lwjgl.sdl SDLInit SDLVideo SDLMouse SDLEvents SDLError SDL_Event SDL_Rect
             SDL_MouseButtonEvent SDL_MouseMotionEvent SDL_WindowEvent
             SDL_KeyboardEvent SDL_TouchFingerEvent SDL_EventFilterI]
            [org.lwjgl.opengl GL]
@@ -12,6 +12,7 @@
 (def ^:private WINDOW_OPENGL             SDLVideo/SDL_WINDOW_OPENGL)
 (def ^:private WINDOW_RESIZABLE          SDLVideo/SDL_WINDOW_RESIZABLE)
 (def ^:private WINDOW_HIGH_PIXEL_DENSITY SDLVideo/SDL_WINDOW_HIGH_PIXEL_DENSITY)
+(def ^:private WINDOW_ALWAYS_ON_TOP      SDLVideo/SDL_WINDOW_ALWAYS_ON_TOP)
 
 ;; SDL event types (from SDLEvents)
 (def ^:private EVENT_QUIT              SDLEvents/SDL_EVENT_QUIT)
@@ -56,17 +57,93 @@
   (SDLVideo/SDL_GL_SetAttribute GL_STENCIL_SIZE 8)
   (SDLVideo/SDL_GL_SetAttribute GL_DOUBLEBUFFER 1))
 
+(defn get-displays
+  "Get all available display IDs.
+   Returns a vector of display IDs (integers)."
+  []
+  (when-let [displays-buf (SDLVideo/SDL_GetDisplays)]
+    (let [count (.remaining displays-buf)]
+      (vec (for [i (range count)]
+             (.get displays-buf i))))))
+
+(defn get-primary-display
+  "Get the primary display ID."
+  []
+  (SDLVideo/SDL_GetPrimaryDisplay))
+
+(defn get-display-bounds
+  "Get the bounds of a display.
+   Returns {:x :y :w :h} or nil if failed."
+  [display-id]
+  (with-open [stack (MemoryStack/stackPush)]
+    (let [rect (SDL_Rect/malloc stack)]
+      (when (SDLVideo/SDL_GetDisplayBounds display-id rect)
+        {:x (.x rect) :y (.y rect) :w (.w rect) :h (.h rect)}))))
+
+(defn get-display-name
+  "Get the name of a display."
+  [display-id]
+  (SDLVideo/SDL_GetDisplayName display-id))
+
+(defn get-window-position
+  "Get the window's current position in global coordinates.
+   Returns [x y]."
+  [window]
+  (with-open [stack (MemoryStack/stackPush)]
+    (let [x (.mallocInt stack 1)
+          y (.mallocInt stack 1)]
+      (SDLVideo/SDL_GetWindowPosition window x y)
+      [(.get x 0) (.get y 0)])))
+
+(defn get-global-mouse-position
+  "Get the mouse position in global screen coordinates.
+   Returns [x y]."
+  []
+  (with-open [stack (MemoryStack/stackPush)]
+    (let [x (.mallocFloat stack 1)
+          y (.mallocFloat stack 1)]
+      (SDLMouse/SDL_GetGlobalMouseState x y)
+      [(int (.get x 0)) (int (.get y 0))])))
+
 (defn create-window!
   "Create an SDL window with the given options.
+   Options:
+     :title        - Window title (default \"Window\")
+     :width        - Window width (default 800)
+     :height       - Window height (default 600)
+     :x            - Window x position (default: centered)
+     :y            - Window y position (default: centered)
+     :resizable?   - Allow resizing (default true)
+     :high-dpi?    - Enable high DPI (default true)
+     :always-on-top? - Keep window above others (default false)
+     :display      - Display index (0-based) or display ID to open on (default: primary)
+   Position precedence: explicit :x/:y > :display (centered) > default (primary, centered)
    Returns the window handle (long pointer)."
-  [{:keys [title width height resizable? high-dpi?]
-    :or {title "Window" width 800 height 600 resizable? true high-dpi? true}}]
+  [{:keys [title width height x y resizable? high-dpi? always-on-top? display]
+    :or {title "Window" width 800 height 600 resizable? true high-dpi? true always-on-top? false}}]
   (let [flags (cond-> WINDOW_OPENGL
-                resizable? (bit-or WINDOW_RESIZABLE)
-                high-dpi?  (bit-or WINDOW_HIGH_PIXEL_DENSITY))
+                resizable?     (bit-or WINDOW_RESIZABLE)
+                high-dpi?      (bit-or WINDOW_HIGH_PIXEL_DENSITY)
+                always-on-top? (bit-or WINDOW_ALWAYS_ON_TOP))
         window (SDLVideo/SDL_CreateWindow title width height flags)]
     (when (zero? window)
       (throw (ex-info "Failed to create window" {})))
+    ;; Position window: explicit x/y takes precedence, then display, then default
+    (cond
+      ;; Explicit position
+      (and x y)
+      (SDLVideo/SDL_SetWindowPosition window x y)
+
+      ;; Position on specific display (centered)
+      display
+      (let [displays (get-displays)
+            display-id (if (and (integer? display) (< display (count displays)))
+                         (nth displays display)
+                         display)]
+        (when-let [bounds (get-display-bounds display-id)]
+          (let [cx (+ (:x bounds) (quot (- (:w bounds) width) 2))
+                cy (+ (:y bounds) (quot (- (:h bounds) height) 2))]
+            (SDLVideo/SDL_SetWindowPosition window cx cy)))))
     ;; Raise window to front and give it focus
     (SDLVideo/SDL_RaiseWindow window)
     window))

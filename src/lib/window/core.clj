@@ -16,8 +16,19 @@
 
 (defn create-window
   "Create a window with the given options.
+   Options:
+     :title          - Window title (default \"Window\")
+     :width          - Window width (default 800)
+     :height         - Window height (default 600)
+     :x              - Window x position (default: centered)
+     :y              - Window y position (default: centered)
+     :resizable?     - Allow resizing (default true)
+     :high-dpi?      - Enable high DPI (default true)
+     :always-on-top? - Keep window above others (default false)
+     :display        - Display index (0-based) to open on (default: primary)
+   Position precedence: explicit :x/:y > :display (centered) > default
    Returns a Window record."
-  [{:keys [title width height resizable? high-dpi?]
+  [{:keys [title width height x y resizable? high-dpi? always-on-top? display]
     :or {title "Window" width 800 height 600 resizable? true high-dpi? true}
     :as opts}]
   ;; Initialize SDL
@@ -164,3 +175,38 @@
    Returns [width height]."
   [^Window window]
   [@(:width window) @(:height window)])
+
+;; Display/monitor functions (re-exported from internal)
+(defn get-displays
+  "Get all available display IDs.
+   Returns a vector of display IDs."
+  []
+  (sdl/get-displays))
+
+(defn get-primary-display
+  "Get the primary display ID."
+  []
+  (sdl/get-primary-display))
+
+(defn get-display-bounds
+  "Get the bounds of a display.
+   Returns {:x :y :w :h} or nil if failed."
+  [display-id]
+  (sdl/get-display-bounds display-id))
+
+(defn get-display-name
+  "Get the name of a display."
+  [display-id]
+  (sdl/get-display-name display-id))
+
+(defn get-window-position
+  "Get the window's current position in global coordinates.
+   Returns [x y]."
+  [^Window window]
+  (sdl/get-window-position (:handle window)))
+
+(defn get-global-mouse-position
+  "Get the mouse position in global screen coordinates.
+   Returns [x y]."
+  []
+  (sdl/get-global-mouse-position))
