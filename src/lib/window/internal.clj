@@ -67,6 +67,8 @@
         window (SDLVideo/SDL_CreateWindow title width height flags)]
     (when (zero? window)
       (throw (ex-info "Failed to create window" {})))
+    ;; Raise window to front and give it focus
+    (SDLVideo/SDL_RaiseWindow window)
     window))
 
 (defn create-gl-context!
