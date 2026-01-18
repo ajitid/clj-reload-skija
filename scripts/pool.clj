@@ -290,19 +290,19 @@
         (recur (conj responses resp))))))
 
 (defn send-nrepl-command!
-  "Send a command to JVM via nREPL.
-   For quick commands: waits for response and reports success/error.
-   For blocking commands (like open): sends and returns after short timeout."
+  "Send a command to JVM via nREPL (blocking, with long timeout).
+   Returns {:success bool :value ... :error ...}
+   Use inside a future for async operation."
   [port code]
   (try
     (let [msg (str "d4:code" (count code) ":" code "2:op4:evale")
           socket (java.net.Socket. "localhost" port)
-          _ (.setSoTimeout socket 500)  ;; short timeout - if no response, command is probably blocking
+          _ (.setSoTimeout socket 30000)  ;; 30s - we control wait time externally via deref timeout
           out (.getOutputStream socket)
           in (.getInputStream socket)]
       (.write out (.getBytes msg))
       (.flush out)
-      ;; Try to read response - might timeout for blocking commands
+      ;; Read response - may take a while for blocking commands
       (try
         (let [responses (read-all-responses in)
               combined (apply merge responses)
@@ -312,23 +312,17 @@
               value (:value combined)
               ex (:ex combined)]
           (.close socket)
-          ;; Print any output
-          (when (and stdout (not (str/blank? stdout)))
-            (println "Output:" (str/trim stdout)))
-          (when (and stderr (not (str/blank? stderr)))
-            (println "Error output:" (str/trim stderr)))
-          (when ex
-            (println "Exception:" ex))
-          ;; Return success/failure
-          (if has-error?
-            {:success false :error (or ex stderr "Unknown error")}
-            {:success true :value value}))
+          ;; Return result (printing happens in caller)
+          {:success (not has-error?)
+           :value value
+           :out stdout
+           :err stderr
+           :ex ex})
         (catch java.net.SocketTimeoutException _
-          ;; Command sent but no quick response - probably blocking (like open)
+          ;; Socket timeout - command is blocking (like open)
           (.close socket)
-          {:success true :value nil :note "Command sent (blocking command)"})))
+          {:success true :value nil :blocking true})))
     (catch Exception e
-      (println "nREPL error:" (.getMessage e))
       {:success false :error (.getMessage e)})))
 
 ;; ============================================================================
@@ -415,18 +409,37 @@
     (save-state! {:config (:config state) :idle [] :active nil})
     (println "Pool stopped.")))
 
+(defn- print-nrepl-result
+  "Print nREPL command result (stdout, stderr, errors)"
+  [result]
+  (when-let [out (:out result)]
+    (when-not (str/blank? out)
+      (println "Output:" (str/trim out))))
+  (when-let [err (:err result)]
+    (when-not (str/blank? err)
+      (println "Error output:" (str/trim err))))
+  (when-let [ex (:ex result)]
+    (println "Exception:" ex)))
+
 (defn cmd-open []
   (ensure-dirs!)
   (if-let [jvm (acquire-jvm!)]
-    (do
+    (let [pool-size (get-in (load-state) [:config :pool-size] 3)]
       (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
-      (println "Sending (open)...")
-      (let [result (send-nrepl-command! (:port jvm) "(open)")]
-        (if (:success result)
-          (do
-            (println "\nApp started successfully!")
-            (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm)))
-          (println "\nFailed to start app:" (:error result)))))
+      (println "Sending (open) + replenishing in parallel...")
+      ;; Run nREPL command AND replenishment in parallel
+      (let [cmd-future (future (send-nrepl-command! (:port jvm) "(open)"))
+            replenish-future (future (ensure-pool-size! pool-size))]
+        ;; Wait for replenishment to complete
+        @replenish-future
+        ;; Check nREPL result (give extra 100ms after replenishment)
+        (let [result (deref cmd-future 100 {:success true :blocking true})]
+          (print-nrepl-result result)
+          (if (:success result)
+            (do
+              (println "\nApp started successfully!")
+              (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm)))
+            (println "\nFailed to start app:" (:error result))))))
     (println "Hint: Run 'bb pool.clj start' first")))
 
 (defn cmd-close []
@@ -443,15 +456,31 @@
 (defn cmd-restart []
   (let [state (load-state)
         pool-size (get-in state [:config :pool-size] 3)]
+    ;; Kill active JVM
     (when (:active state)
       (let [active-id (get-in state [:active :id])]
         (kill-jvm! active-id)
         (update-state! assoc :active nil)))
-    ;; No delay needed - we're getting a different JVM from the pool
-    (cmd-open)
-    ;; Replenish pool synchronously
-    (println "Replenishing pool...")
-    (ensure-pool-size! pool-size)))
+    ;; Acquire new JVM from pool
+    (ensure-dirs!)
+    (if-let [jvm (acquire-jvm!)]
+      (do
+        (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
+        (println "Sending (open) + replenishing in parallel...")
+        ;; Run nREPL command AND replenishment in parallel
+        (let [cmd-future (future (send-nrepl-command! (:port jvm) "(open)"))
+              replenish-future (future (ensure-pool-size! pool-size))]
+          ;; Wait for replenishment to complete (this is the longer operation)
+          @replenish-future
+          ;; Check nREPL result (give extra 100ms after replenishment)
+          (let [result (deref cmd-future 100 {:success true :blocking true})]
+            (print-nrepl-result result)
+            (if (:success result)
+              (do
+                (println "\nApp started successfully!")
+                (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm)))
+              (println "\nFailed to start app:" (:error result))))))
+      (println "No idle JVMs available. Run 'start' first."))))
 
 (defn cmd-status []
   (ensure-dirs!)
