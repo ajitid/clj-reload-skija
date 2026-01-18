@@ -394,7 +394,7 @@
 ;; ============================================================================
 
 (defn ensure-pool-size!
-  "Spawn JVMs until idle pool reaches target size (in parallel).
+  "Adjust idle pool to target size - spawn if needed, kill excess if too many.
    Target size = idle JVMs to maintain (active JVMs don't count)."
   [target-idle]
   (cleanup-dead-jvms!)
@@ -402,19 +402,34 @@
         config (:config state)
         current-idle (count (:idle state))
         needed (- target-idle current-idle)]
-    (when (pos? needed)
-      (println "Spawning" needed "JVM(s) in parallel...")
-      ;; Spawn all JVMs in parallel using futures
-      (let [futures (doall (for [_ (range needed)]
-                             (future (spawn-jvm! config))))
-            ;; Wait for all to complete, collect successful ones
-            jvms (->> futures
-                      (map deref)
-                      (filter some?))]
-        ;; Add all to state at once
-        (when (seq jvms)
-          (update-state! update :idle into jvms)
-          (println "Pool ready:" (count jvms) "JVM(s) added"))))))
+    (cond
+      ;; Need more JVMs
+      (pos? needed)
+      (do
+        (println "Spawning" needed "JVM(s) in parallel...")
+        ;; Spawn all JVMs in parallel using futures
+        (let [futures (doall (for [_ (range needed)]
+                               (future (spawn-jvm! config))))
+              ;; Wait for all to complete, collect successful ones
+              jvms (->> futures
+                        (map deref)
+                        (filter some?))]
+          ;; Add all to state at once
+          (when (seq jvms)
+            (update-state! update :idle into jvms)
+            (println "Pool ready:" (count jvms) "JVM(s) added"))))
+
+      ;; Too many JVMs - kill excess
+      (neg? needed)
+      (let [excess (- needed)
+            idle-jvms (:idle state)
+            to-kill (take excess idle-jvms)
+            to-keep (vec (drop excess idle-jvms))]
+        (println "Killing" excess "excess JVM(s)...")
+        (doseq [jvm to-kill]
+          (kill-jvm! (:id jvm)))
+        (update-state! assoc :idle to-keep)
+        (println "Pool trimmed.")))))
 
 (defn acquire-jvm!
   "Take an idle JVM and mark it as active. Returns nil if none available or already active."
