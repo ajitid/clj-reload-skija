@@ -25,6 +25,13 @@
 
 (def windows? (str/includes? (str/lower-case (System/getProperty "os.name")) "windows"))
 
+;; Lock for thread-safe printing during parallel spawn
+(def print-lock (Object.))
+
+(defn safe-println [& args]
+  (locking print-lock
+    (apply println args)))
+
 ;; ============================================================================
 ;; Configuration
 ;; ============================================================================
@@ -119,7 +126,7 @@
         _ (fs/create-dirs dir)
         out-log (fs/file dir "out.log")
         err-log (fs/file dir "err.log")
-        _ (println "Spawning JVM" id "...")
+        _ (safe-println "Spawning JVM" id "...")
         ;; Keep stdin open with a long-running process piped to the JVM
         ;; Unix: tail -f /dev/null | cmd
         ;; Windows: PowerShell infinite wait piped to cmd
@@ -141,10 +148,10 @@
     (if-let [port (wait-for-nrepl id (:nrepl-timeout-ms config))]
       (do
         (spit (str (fs/path dir "port")) (str port))
-        (println "JVM" id "ready on port" port)
+        (safe-println "JVM" id "ready on port" port)
         {:id id :pid pid :port port :started (System/currentTimeMillis)})
       (do
-        (println "Failed to start JVM" id)
+        (safe-println "Failed to start JVM" id)
         (proc/destroy-tree process)
         (fs/delete-tree dir)
         nil))))
@@ -329,7 +336,7 @@
 ;; ============================================================================
 
 (defn ensure-pool-size!
-  "Spawn JVMs until pool reaches target size"
+  "Spawn JVMs until pool reaches target size (in parallel)"
   [target-size]
   (cleanup-dead-jvms!)
   (let [state (load-state)
@@ -337,10 +344,18 @@
         current-idle (count (:idle state))
         needed (- target-size current-idle)]
     (when (pos? needed)
-      (println "Spawning" needed "JVM(s) to reach pool size" target-size)
-      (doseq [_ (range needed)]
-        (when-let [jvm (spawn-jvm! config)]
-          (update-state! update :idle conj jvm))))))
+      (println "Spawning" needed "JVM(s) in parallel...")
+      ;; Spawn all JVMs in parallel using futures
+      (let [futures (doall (for [_ (range needed)]
+                             (future (spawn-jvm! config))))
+            ;; Wait for all to complete, collect successful ones
+            jvms (->> futures
+                      (map deref)
+                      (filter some?))]
+        ;; Add all to state at once
+        (when (seq jvms)
+          (update-state! update :idle into jvms)
+          (println "Pool ready:" (count jvms) "JVM(s) added"))))))
 
 (defn acquire-jvm!
   "Take an idle JVM and mark it as active"
