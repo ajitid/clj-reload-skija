@@ -14,22 +14,24 @@ clj -A:dev:macos-x64     # macOS Intel
 clj -A:dev:windows       # Windows
 clj -A:dev:linux         # Linux
 
+# Run directly (one-liner, no REPL)
+clj -M:dev:macos-arm64 -e "(open)"
+
 # Connect to running nREPL from another terminal (for hot-reload)
 clj -M:connect
-
-# Run application directly (without REPL)
-clj -A:run
 ```
 
 **In the REPL:**
 ```clojure
-(open)    ;; Open the JWM window application (blocks this REPL)
+(open)    ;; Open the window (blocks this REPL)
 (reload)  ;; Hot-reload changed namespaces (run from connected REPL)
+(close)   ;; Close window and reset state
+(reopen)  ;; Close + open new window
 ```
 
 ## Architecture
 
-This is a Clojure demo showcasing hot-reloading with JWM (windowing) and Skija (2D graphics), plus animation libraries.
+Clojure demo showcasing hot-reloading with LWJGL/SDL3 (windowing) and Skija (2D graphics), plus animation and gesture libraries.
 
 ### Design Pattern: clj-reload
 
@@ -45,10 +47,10 @@ Following [clj-reload](https://github.com/tonsky/clj-reload) best practices:
 |-----------|-------------|-----------------|
 | `app.state` | `defonce` | Values **persist** (window, atoms, game-time) |
 | `app.config` | `def` | Values **update** on reload |
-| `app.controls` | `defn` | Functions **update** on reload |
 | `app.core` | `defn` | Functions **update** on reload |
-| `lib.spring.core` | `defn` | Functions **update** on reload |
-| `lib.timer.core` | `defn` | Functions **update** on reload |
+| `app.controls` | `defn` | Functions **update** on reload |
+| `app.gestures` | `defn` | Functions **update** on reload |
+| All `lib.*` | `defn` | Functions **update** on reload |
 
 ### Love2D-Style Game Loop
 
@@ -60,30 +62,59 @@ The app uses three hot-reloadable callbacks in `app.core`:
 (defn draw [canvas w h] ...) ;; Called every frame for rendering
 ```
 
-### Animation Libraries (lib/)
+### Library Systems (lib/)
 
-**Time-based design**: All animation libs use a configurable time source (defaults to wall-clock, can use game-time for slow-mo/pause).
+**lib.time** - Configurable time source for all animation libs. Configure in `init` via `set-time-source!` to use game-time for slow-mo/pause.
 
-**lib.spring.core** - Apple-style spring physics (closed-form solution):
+**lib.anim/** - Animation primitives:
+- `spring` - Apple-style spring physics (closed-form CASpringAnimation)
+- `decay` - iOS-style momentum/friction (scroll flick)
+- `tween` - Keyframe animations with easing
+- `timer` - Simple countdown timers
+- `timeline` - Sequencing multiple animations
+- `stagger` - Staggered animations across items
+- `rubber-band` - iOS-style overscroll resistance
+
 ```clojure
-(spring {:from 0 :to 100})              ;; Create spring with defaults
+;; Spring example
+(spring {:from 0 :to 100})              ;; Create spring
 (spring-now s)                           ;; Get {:value :velocity :at-rest?}
-(spring-retarget s 200)                  ;; Change target mid-animation
-(spring-update s {:damping 20})          ;; Update physics params
+(spring-update s {:to 200})              ;; Retarget mid-animation
+
+;; Decay example (momentum scrolling)
+(decay {:from 100 :velocity 500})        ;; Start with velocity
+(decay-now d)                            ;; Get {:value :velocity :at-rest?}
 ```
 
-**lib.timer.core** - Simple countdown timers:
+**lib.gesture/** - Touch/mouse gesture recognition:
+- `api` - Public API: `register-target!`, `handle-mouse-*`, `handle-finger-*`
+- `arena` - Pure gesture resolution logic (hit testing, recognizer state)
+- `recognizers` - Drag, tap, long-press recognizers
+
 ```clojure
-(timer 2.0)                              ;; 2 second timer
-(timer-now t)                            ;; Get {:elapsed :progress :done?}
+(register-target! {:id :my-button
+                   :bounds-fn (fn [ctx] [x y w h])
+                   :gesture-recognizers [:tap :drag]
+                   :handlers {:on-tap handle-tap
+                              :on-drag-start handle-drag-start}})
 ```
+
+**lib.layout/** - Subform-style constraint layout:
+- Sizes: fixed (`100`), percentage (`"50%"`), stretch (`"1s"`, `"2s"`)
+- Modes: `:stack-x`, `:stack-y`, `:grid`
+- Spacing: `:before`, `:between`, `:after`
+
+**lib.window/** - SDL3/OpenGL windowing layer:
+- `core` - `create-window`, `run!`, `request-frame!`, `close!`
+- `events` - Event records (EventFrameSkija, EventMouseButton, etc.)
+- `layer` - Skija surface management
 
 ### Game-Time System
 
 For animation synchronization and slow-mo/pause support:
 - `app.state/game-time` - Accumulated time in seconds (advanced in tick)
 - `app.state/time-scale` - Speed multiplier (1.0 = normal, 0.5 = slow-mo, 0 = paused)
-- Libs configured in `init` via `set-time-source!`
+- `lib.time/time-source` - Atom containing time function, configured in `init`
 
 ### Dynamic Dispatch Pattern
 
@@ -105,16 +136,20 @@ The event listener uses `requiring-resolve` for ALL callbacks so they survive na
 
 ### Namespace Responsibilities
 
-- **app.core** - Game loop callbacks (init/tick/draw), event listener with dynamic dispatch
-- **app.state** - Atoms wrapped in `defonce` for persistent state (including game-time)
-- **app.controls** - UI drawing and mouse handling (fully reloadable)
+- **app.core** - Game loop callbacks (init/tick/draw), event handler with dynamic dispatch
+- **app.state** - Atoms wrapped in `defonce` for persistent state
 - **app.config** - Plain `def` values for visual parameters
-- **lib.spring.core** - Spring physics (functional, configurable time source)
-- **lib.timer.core** - Timers (functional, configurable time source)
+- **app.controls** - UI drawing and slider/mouse handling
+- **app.gestures** - Gesture target registration and handlers
+- **lib.window.*** - SDL3/OpenGL windowing and Skija surface management
+- **lib.anim.*** - Animation primitives (spring, decay, tween, timer, etc.)
+- **lib.gesture.*** - Gesture recognition system
+- **lib.layout.*** - Constraint-based layout engine
+- **lib.time** - Configurable time source for animations
 - **user** (dev/) - REPL namespace with `open` and `reload` functions
 
 ### Dependencies
 
-- **JWM** (io.github.humbleui/jwm) - Cross-platform windowing
+- **LWJGL 3.4.0** - Cross-platform windowing via SDL3 + OpenGL bindings
 - **Skija** (platform-specific) - Skia bindings for 2D graphics
 - **clj-reload** - Hot-reloading without losing state

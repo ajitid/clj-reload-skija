@@ -1,5 +1,5 @@
 (ns app.core
-  "Main application - Love2D style game loop with JWM/Skija.
+  "Main application - Love2D style game loop with SDL3/Skija.
 
    Architecture (clj-reload pattern):
    - ALL callbacks use (resolve ...) for dynamic dispatch
@@ -13,15 +13,16 @@
   (:require [app.state :as state]
             [clojure.string :as str]
             [lib.layout.core :as layout]
-            [lib.layout.render :as layout-render])
-  (:import [io.github.humbleui.jwm App Window EventWindowCloseRequest EventWindowResize EventFrame EventMouseButton EventMouseMove EventKey Key KeyModifier ZOrder]
-           [io.github.humbleui.jwm.skija EventFrameSkija LayerGLSkija]
-           [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap Font Typeface]
+            [lib.layout.render :as layout-render]
+            [lib.window.core :as window]
+            [lib.window.events :as e])
+  (:import [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap Font Typeface]
            [io.github.humbleui.types Rect]
-           [java.util.function Consumer]
            [java.io StringWriter PrintWriter]
            [java.awt Toolkit]
-           [java.awt.datatransfer StringSelection]))
+           [java.awt.datatransfer StringSelection]
+           [lib.window.events EventClose EventResize EventMouseButton EventMouseMove
+            EventKey EventFrameSkija EventFingerDown EventFingerMove EventFingerUp]))
 
 ;; ============================================================
 ;; Helpers
@@ -177,7 +178,7 @@
   "Truncate string to max-len, adding ellipsis if truncated."
   [s max-len]
   (if (> (count s) max-len)
-    (str (subs s 0 max-len) "…›")
+    (str (subs s 0 max-len) "...")
     s))
 
 (defn copy-current-error-to-clipboard!
@@ -408,130 +409,131 @@
 ;; Game loop infrastructure
 ;; ============================================================
 
-(defn create-event-listener
-  "Create an event listener for the window.
+(defn create-event-handler
+  "Create an event handler for the window.
    Uses state/reloading? guard to skip event handling during namespace reload."
-  [^Window window layer]
+  [win]
   (let [last-time (atom (System/nanoTime))]
-    (reify Consumer
-      (accept [_ event]
-        (condp instance? event
-          ;; Always handle close - no resolve needed
-          EventWindowCloseRequest
-          (do
-            (reset! state/running? false)
-            (.close window)
-            (App/terminate))
+    (fn [event]
+      (cond
+        ;; Close event
+        (instance? EventClose event)
+        (do
+          (reset! state/running? false)
+          (window/close! win))
 
-          ;; Always request frames - keeps render loop alive during reload
-          EventFrame
-          (.requestFrame window)
+        ;; Skip other events during reload (vars not available)
+        @state/reloading?
+        nil
 
-          ;; Skip other events during reload (vars not available)
-          (when-not @state/reloading?
-            (condp instance? event
-              EventMouseButton
-              (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
-                (handle-fn event {:scale @state/scale
-                                  :window-width @state/window-width}))
+        ;; Resize event
+        (instance? EventResize event)
+        (let [{:keys [width height scale]} event]
+          (reset! state/window-width width)
+          (reset! state/window-height height)
+          (reset! state/scale scale)
+          ((requiring-resolve 'app.core/recalculate-grid!) width height))
 
-              EventMouseMove
-              (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-move)]
-                (handle-fn event {:scale @state/scale
-                                  :window-width @state/window-width}))
+        ;; Mouse button event
+        (instance? EventMouseButton event)
+        (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
+          (handle-fn event {:scale @state/scale
+                            :window-width @state/window-width}))
 
-              EventKey
-              (let [^EventKey ke event]
-                (when (.isPressed ke)
-                  (condp = (.getKey ke)
-                    Key/F2 (when-let [copy-fn (requiring-resolve 'app.core/copy-current-error-to-clipboard!)]
-                             (copy-fn))
-                    ;; Ctrl+` toggles panel (all platforms)
-                    Key/BACK_QUOTE (when (.isModifierDown ke KeyModifier/CONTROL)
-                                     (swap! state/panel-visible? not))
-                    nil)))
+        ;; Mouse move event
+        (instance? EventMouseMove event)
+        (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-move)]
+          (handle-fn event {:scale @state/scale
+                            :window-width @state/window-width}))
 
-              EventWindowResize
-              (let [^io.github.humbleui.jwm.EventWindowResize re event
-                    scale @state/scale
-                    w (/ (.getContentWidth re) scale)
-                    h (/ (.getContentHeight re) scale)]
-                (reset! state/window-width w)
-                (reset! state/window-height h)
-                ((requiring-resolve 'app.core/recalculate-grid!) w h))
+        ;; Touch/finger events
+        (instance? EventFingerDown event)
+        (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-finger-down)]
+          (handle-fn event {:scale @state/scale
+                            :window-width @state/window-width}))
 
-              EventFrameSkija
-              (let [^EventFrameSkija frame-event event
-                    surface (.getSurface frame-event)
-                    canvas (.getCanvas surface)
-                    scale (if-let [screen (.getScreen window)]
-                            (.getScale screen)
-                            1.0)
-                    _ (reset! state/scale scale)
-                    pw (.getWidth surface)
-                    ph (.getHeight surface)
-                    w (/ pw scale)
-                    h (/ ph scale)
-                    _ (reset! state/window-width w)
-                    _ (reset! state/window-height h)
-                    now (System/nanoTime)
-                    dt (/ (- now @last-time) 1e9)]
-                (reset! last-time now)
-                (when (pos? dt)
-                  (let [current-fps (/ 1.0 dt)
-                        smoothing 0.9]
-                    (reset! state/fps (+ (* smoothing @state/fps)
-                                         (* (- 1.0 smoothing) current-fps)))))
-                (try
-                  (.save canvas)
-                  (.scale canvas (float scale) (float scale))
-                  ;; Check for pending reload error (e.g., parse errors where old code still works)
-                  (if-let [reload-err @state/last-reload-error]
-                    (draw-error canvas reload-err)
-                    (do
-                      (reset! state/last-runtime-error nil) ;; Clear runtime error on success
-                      (when-let [tick-fn (requiring-resolve 'app.core/tick)]
-                        (tick-fn dt))
-                      (when-let [draw-fn (requiring-resolve 'app.core/draw)]
-                        (draw-fn canvas w h))))
-                  (catch Exception e
-                    ;; Store runtime error for F2 copy-to-clipboard
-                    (reset! state/last-runtime-error e)
-                    ;; Show reload error (root cause) if available, otherwise runtime error
-                    (let [error-to-show (or @state/last-reload-error e)]
-                      (draw-error canvas error-to-show))
-                    (println "Render error:" (.getMessage e)))
-                  (finally
-                    (.restore canvas)))
-                (.requestFrame window))
+        (instance? EventFingerMove event)
+        (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-finger-move)]
+          (handle-fn event {:scale @state/scale
+                            :window-width @state/window-width}))
 
-              nil)))))))
+        (instance? EventFingerUp event)
+        (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-finger-up)]
+          (handle-fn event {:scale @state/scale
+                            :window-width @state/window-width}))
 
-(defn create-window
-  "Create a new window. Can be called from UI thread after App/start."
+        ;; Keyboard event
+        (instance? EventKey event)
+        (let [{:keys [key pressed? modifiers]} event]
+          (when pressed?
+            ;; F2 copies error to clipboard
+            ;; Ctrl+` toggles panel
+            ;; Note: key codes differ from JWM, may need adjustment
+            nil))
+
+        ;; Frame event - render
+        (instance? EventFrameSkija event)
+        (let [{:keys [canvas]} event
+              scale @state/scale
+              w @state/window-width
+              h @state/window-height
+              now (System/nanoTime)
+              dt (/ (- now @last-time) 1e9)]
+          (reset! last-time now)
+          (when (pos? dt)
+            (let [current-fps (/ 1.0 dt)
+                  smoothing 0.9]
+              (reset! state/fps (+ (* smoothing @state/fps)
+                                   (* (- 1.0 smoothing) current-fps)))))
+          (try
+            (.save canvas)
+            (.scale canvas (float scale) (float scale))
+            ;; Check for pending reload error
+            (if-let [reload-err @state/last-reload-error]
+              (draw-error canvas reload-err)
+              (do
+                (reset! state/last-runtime-error nil)
+                (when-let [tick-fn (requiring-resolve 'app.core/tick)]
+                  (tick-fn dt))
+                (when-let [draw-fn (requiring-resolve 'app.core/draw)]
+                  (draw-fn canvas w h))))
+            (catch Exception e
+              (reset! state/last-runtime-error e)
+              (let [error-to-show (or @state/last-reload-error e)]
+                (draw-error canvas error-to-show))
+              (println "Render error:" (.getMessage e)))
+            (finally
+              (.restore canvas)))
+          ;; Request next frame
+          (window/request-frame! win))
+
+        ;; Unknown event - ignore
+        :else nil))))
+
+(defn start-app
+  "Start the application - creates window and runs event loop."
   []
   (when-not @state/running?
     (reset! state/running? true)
-    (let [window (App/makeWindow)
-          layer (LayerGLSkija.)]
-      (reset! state/window window)
-      ;; Call init once at startup (via resolve for consistency)
+    (let [win (window/create-window {:title "Skija Demo - Hot Reload with clj-reload"
+                                     :width 800
+                                     :height 600
+                                     :resizable? true
+                                     :high-dpi? true})]
+      (reset! state/window win)
+      ;; Initialize scale and dimensions from window
+      (reset! state/scale (window/get-scale win))
+      (let [[w h] (window/get-size win)]
+        (reset! state/window-width w)
+        (reset! state/window-height h))
+      ;; Call init once at startup
       (when-let [init-fn (resolve 'app.core/init)]
         (init-fn))
-      (doto window
-        (.setTitle "Skija Demo - Hot Reload with clj-reload")
-        (.setLayer layer)
-        (.setEventListener (create-event-listener window layer))
-        (.setContentSize 800 600)
-        (.setZOrder ZOrder/FLOATING)
-        (.setVisible true))
-      (.requestFrame window))))
-
-(defn start-app
-  "Start the application - starts event loop and creates window."
-  []
-  (when-not @state/running?
-    (App/start create-window)))
+      ;; Set up event handler and request first frame
+      (window/set-event-handler! win (create-event-handler win))
+      (window/request-frame! win)
+      ;; Run event loop (blocks)
+      (window/run! win))))
 
 (defn -main
   "Entry point for running the application."

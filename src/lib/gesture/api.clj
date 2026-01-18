@@ -6,8 +6,8 @@
    - Pure functions in arena.clj compute state transitions
    - Shell applies state changes and executes effects"
   (:require [lib.gesture.state :as state]
-            [lib.gesture.arena :as arena])
-  (:import [io.github.humbleui.jwm EventMouseButton EventMouseMove MouseButton]))
+            [lib.gesture.arena :as arena]
+            [lib.window.events :as e]))
 
 ;; -----------------------------------------------------------------------------
 ;; Target Registration
@@ -138,33 +138,66 @@
     (execute-effects! effects time)))
 
 ;; -----------------------------------------------------------------------------
-;; JWM Event Integration (entry points - obtain time here)
+;; SDL3 Event Integration (entry points - obtain time here)
 ;; -----------------------------------------------------------------------------
 
 (defn handle-mouse-button
-  "Handle JWM EventMouseButton. Entry point from core.clj.
+  "Handle lib.window EventMouseButton. Entry point from core.clj.
    Obtains time once and passes through to pure functions."
-  [^EventMouseButton event ctx]
-  (when (= (.getButton event) MouseButton/PRIMARY)
+  [event ctx]
+  (when (= (:button event) :primary)
     (let [time (System/currentTimeMillis)
           scale (:scale ctx 1.0)
-          px (/ (.getX event) scale)
-          py (/ (.getY event) scale)]
-      (if (.isPressed event)
+          ;; Coordinates are already in logical pixels from SDL
+          px (:x event)
+          py (:y event)]
+      (if (:pressed? event)
         (handle-pointer-down px py ctx time)
         (handle-pointer-up px py time)))))
 
 (defn handle-mouse-move
-  "Handle JWM EventMouseMove. Entry point from core.clj.
+  "Handle lib.window EventMouseMove. Entry point from core.clj.
    Obtains time once and passes through to pure functions."
-  [^EventMouseMove event ctx]
+  [event ctx]
   (let [{:keys [state]} @state/arena]
     (when (= state :tracking)
       (let [time (System/currentTimeMillis)
-            scale (:scale ctx 1.0)
-            px (/ (.getX event) scale)
-            py (/ (.getY event) scale)]
+            ;; Coordinates are already in logical pixels from SDL
+            px (:x event)
+            py (:y event)]
         (handle-pointer-move px py time)))))
+
+;; -----------------------------------------------------------------------------
+;; Touch/Finger Event Handlers (multitouch support)
+;; -----------------------------------------------------------------------------
+
+(defn handle-finger-down
+  "Handle lib.window EventFingerDown. Entry point from core.clj.
+   Touch events work the same as mouse for single-finger gestures."
+  [event ctx]
+  (let [time (System/currentTimeMillis)
+        ;; Coordinates are already converted to logical pixels
+        px (:x event)
+        py (:y event)]
+    (handle-pointer-down px py ctx time)))
+
+(defn handle-finger-move
+  "Handle lib.window EventFingerMove. Entry point from core.clj."
+  [event ctx]
+  (let [{:keys [state]} @state/arena]
+    (when (= state :tracking)
+      (let [time (System/currentTimeMillis)
+            px (:x event)
+            py (:y event)]
+        (handle-pointer-move px py time)))))
+
+(defn handle-finger-up
+  "Handle lib.window EventFingerUp. Entry point from core.clj."
+  [event ctx]
+  (let [time (System/currentTimeMillis)
+        px (:x event)
+        py (:y event)]
+    (handle-pointer-up px py time)))
 
 (defn check-long-press!
   "Check long-press timers. Call from tick loop.

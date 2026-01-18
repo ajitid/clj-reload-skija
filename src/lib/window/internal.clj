@@ -1,0 +1,220 @@
+(ns lib.window.internal
+  "Private SDL3 interop layer via LWJGL 3.4.0.
+   Handles SDL initialization, window/context creation, and event polling."
+  (:require [lib.window.events :as e])
+  (:import [org.lwjgl.sdl SDLInit SDLVideo SDLEvents SDLError SDL_Event
+            SDL_MouseButtonEvent SDL_MouseMotionEvent SDL_WindowEvent
+            SDL_KeyboardEvent SDL_TouchFingerEvent]
+           [org.lwjgl.opengl GL]
+           [org.lwjgl.system MemoryStack]))
+
+;; SDL window flags (from SDLVideo)
+(def ^:private WINDOW_OPENGL             SDLVideo/SDL_WINDOW_OPENGL)
+(def ^:private WINDOW_RESIZABLE          SDLVideo/SDL_WINDOW_RESIZABLE)
+(def ^:private WINDOW_HIGH_PIXEL_DENSITY SDLVideo/SDL_WINDOW_HIGH_PIXEL_DENSITY)
+
+;; SDL event types (from SDLEvents)
+(def ^:private EVENT_QUIT              SDLEvents/SDL_EVENT_QUIT)
+(def ^:private EVENT_WINDOW_CLOSE      SDLEvents/SDL_EVENT_WINDOW_CLOSE_REQUESTED)
+(def ^:private EVENT_WINDOW_RESIZED    SDLEvents/SDL_EVENT_WINDOW_RESIZED)
+(def ^:private EVENT_MOUSE_BUTTON_DOWN SDLEvents/SDL_EVENT_MOUSE_BUTTON_DOWN)
+(def ^:private EVENT_MOUSE_BUTTON_UP   SDLEvents/SDL_EVENT_MOUSE_BUTTON_UP)
+(def ^:private EVENT_MOUSE_MOTION      SDLEvents/SDL_EVENT_MOUSE_MOTION)
+(def ^:private EVENT_KEY_DOWN          SDLEvents/SDL_EVENT_KEY_DOWN)
+(def ^:private EVENT_KEY_UP            SDLEvents/SDL_EVENT_KEY_UP)
+(def ^:private EVENT_FINGER_DOWN       SDLEvents/SDL_EVENT_FINGER_DOWN)
+(def ^:private EVENT_FINGER_MOTION     SDLEvents/SDL_EVENT_FINGER_MOTION)
+(def ^:private EVENT_FINGER_UP         SDLEvents/SDL_EVENT_FINGER_UP)
+
+;; Mouse button mapping (SDL uses 1=left, 2=middle, 3=right)
+(def ^:private BUTTON_LEFT   1)
+(def ^:private BUTTON_MIDDLE 2)
+(def ^:private BUTTON_RIGHT  3)
+
+;; GL attribute constants (from SDLVideo)
+(def ^:private GL_CONTEXT_MAJOR_VERSION SDLVideo/SDL_GL_CONTEXT_MAJOR_VERSION)
+(def ^:private GL_CONTEXT_MINOR_VERSION SDLVideo/SDL_GL_CONTEXT_MINOR_VERSION)
+(def ^:private GL_CONTEXT_PROFILE_MASK  SDLVideo/SDL_GL_CONTEXT_PROFILE_MASK)
+(def ^:private GL_CONTEXT_PROFILE_CORE  SDLVideo/SDL_GL_CONTEXT_PROFILE_CORE)
+(def ^:private GL_STENCIL_SIZE          SDLVideo/SDL_GL_STENCIL_SIZE)
+(def ^:private GL_DOUBLEBUFFER          SDLVideo/SDL_GL_DOUBLEBUFFER)
+
+(defn init-sdl!
+  "Initialize SDL with video subsystem."
+  []
+  (when-not (SDLInit/SDL_Init SDLInit/SDL_INIT_VIDEO)
+    (throw (ex-info "Failed to initialize SDL" {:error (SDLError/SDL_GetError)}))))
+
+(defn set-gl-attributes!
+  "Set OpenGL context attributes before window creation."
+  []
+  (SDLVideo/SDL_GL_SetAttribute GL_CONTEXT_MAJOR_VERSION 3)
+  (SDLVideo/SDL_GL_SetAttribute GL_CONTEXT_MINOR_VERSION 3)
+  (SDLVideo/SDL_GL_SetAttribute GL_CONTEXT_PROFILE_MASK GL_CONTEXT_PROFILE_CORE)
+  (SDLVideo/SDL_GL_SetAttribute GL_STENCIL_SIZE 8)
+  (SDLVideo/SDL_GL_SetAttribute GL_DOUBLEBUFFER 1))
+
+(defn create-window!
+  "Create an SDL window with the given options.
+   Returns the window handle (long pointer)."
+  [{:keys [title width height resizable? high-dpi?]
+    :or {title "Window" width 800 height 600 resizable? true high-dpi? true}}]
+  (let [flags (cond-> WINDOW_OPENGL
+                resizable? (bit-or WINDOW_RESIZABLE)
+                high-dpi?  (bit-or WINDOW_HIGH_PIXEL_DENSITY))
+        window (SDLVideo/SDL_CreateWindow title width height flags)]
+    (when (zero? window)
+      (throw (ex-info "Failed to create window" {})))
+    window))
+
+(defn create-gl-context!
+  "Create OpenGL context for the window and make it current.
+   Returns the GL context handle (long pointer)."
+  [window]
+  (let [ctx (SDLVideo/SDL_GL_CreateContext window)]
+    (when (zero? ctx)
+      (throw (ex-info "Failed to create GL context" {})))
+    (SDLVideo/SDL_GL_MakeCurrent window ctx)
+    ;; Initialize LWJGL's GL bindings
+    (GL/createCapabilities)
+    ;; Enable vsync (1 = on, 0 = off, -1 = adaptive)
+    (SDLVideo/SDL_GL_SetSwapInterval 1)
+    ctx))
+
+(defn get-window-scale
+  "Get the display scale factor for the window."
+  [window]
+  (SDLVideo/SDL_GetWindowDisplayScale window))
+
+(defn get-window-size
+  "Get the window size in logical pixels.
+   Returns [width height]."
+  [window]
+  (with-open [stack (MemoryStack/stackPush)]
+    (let [w (.mallocInt stack 1)
+          h (.mallocInt stack 1)]
+      (SDLVideo/SDL_GetWindowSize window w h)
+      [(.get w 0) (.get h 0)])))
+
+(defn get-window-size-in-pixels
+  "Get the window size in physical pixels.
+   Returns [width height]."
+  [window]
+  (with-open [stack (MemoryStack/stackPush)]
+    (let [w (.mallocInt stack 1)
+          h (.mallocInt stack 1)]
+      (SDLVideo/SDL_GetWindowSizeInPixels window w h)
+      [(.get w 0) (.get h 0)])))
+
+(defn- button-keyword
+  "Convert SDL mouse button to keyword."
+  [button]
+  (condp = (int button)
+    BUTTON_LEFT   :primary
+    BUTTON_MIDDLE :middle
+    BUTTON_RIGHT  :secondary
+    :unknown))
+
+(defn- convert-mouse-button-event
+  "Convert SDL mouse button event to EventMouseButton."
+  [^SDL_Event event pressed?]
+  (let [mb (SDL_MouseButtonEvent/create (.address (.button event)))]
+    (e/->EventMouseButton
+      (button-keyword (.button mb))
+      (.x mb)
+      (.y mb)
+      pressed?)))
+
+(defn- convert-mouse-motion-event
+  "Convert SDL mouse motion event to EventMouseMove."
+  [^SDL_Event event]
+  (let [mm (SDL_MouseMotionEvent/create (.address (.motion event)))]
+    (e/->EventMouseMove (.x mm) (.y mm))))
+
+(defn- convert-finger-event
+  "Convert SDL finger event to touch event.
+   Note: SDL finger coords are normalized 0..1, we convert to logical pixels."
+  [^SDL_Event event event-type window-width window-height]
+  (let [tf (SDL_TouchFingerEvent/create (.address (.tfinger event)))
+        x (* (.x tf) window-width)
+        y (* (.y tf) window-height)
+        id (.fingerID tf)
+        pressure (.pressure tf)]
+    (condp = event-type
+      EVENT_FINGER_DOWN   (e/->EventFingerDown id x y pressure)
+      EVENT_FINGER_MOTION (e/->EventFingerMove id x y pressure)
+      EVENT_FINGER_UP     (e/->EventFingerUp id x y))))
+
+(defn- convert-key-event
+  "Convert SDL key event to EventKey."
+  [^SDL_Event event pressed?]
+  (let [kb (SDL_KeyboardEvent/create (.address (.key event)))
+        key (.key kb)
+        mod (.mod kb)]
+    (e/->EventKey key pressed? mod)))
+
+(defn- convert-resize-event
+  "Convert SDL resize event to EventResize."
+  [^SDL_Event event window]
+  (let [we (SDL_WindowEvent/create (.address (.window event)))
+        scale (get-window-scale window)]
+    (e/->EventResize (.data1 we) (.data2 we) scale)))
+
+(defn poll-events!
+  "Poll all pending SDL events.
+   Returns a vector of event records."
+  [^SDL_Event event window window-width window-height]
+  (let [events (transient [])]
+    (while (SDLEvents/SDL_PollEvent event)
+      (let [event-type (.type event)]
+        (cond
+          (or (= event-type EVENT_QUIT)
+              (= event-type EVENT_WINDOW_CLOSE))
+          (conj! events (e/->EventClose))
+
+          (= event-type EVENT_WINDOW_RESIZED)
+          (conj! events (convert-resize-event event window))
+
+          (= event-type EVENT_MOUSE_BUTTON_DOWN)
+          (conj! events (convert-mouse-button-event event true))
+
+          (= event-type EVENT_MOUSE_BUTTON_UP)
+          (conj! events (convert-mouse-button-event event false))
+
+          (= event-type EVENT_MOUSE_MOTION)
+          (conj! events (convert-mouse-motion-event event))
+
+          (= event-type EVENT_KEY_DOWN)
+          (conj! events (convert-key-event event true))
+
+          (= event-type EVENT_KEY_UP)
+          (conj! events (convert-key-event event false))
+
+          (= event-type EVENT_FINGER_DOWN)
+          (conj! events (convert-finger-event event event-type window-width window-height))
+
+          (= event-type EVENT_FINGER_MOTION)
+          (conj! events (convert-finger-event event event-type window-width window-height))
+
+          (= event-type EVENT_FINGER_UP)
+          (conj! events (convert-finger-event event event-type window-width window-height)))))
+    (persistent! events)))
+
+(defn swap-buffers!
+  "Swap the window's OpenGL buffers."
+  [window]
+  (SDLVideo/SDL_GL_SwapWindow window))
+
+(defn set-window-title!
+  "Set the window title."
+  [window title]
+  (SDLVideo/SDL_SetWindowTitle window title))
+
+(defn cleanup!
+  "Clean up SDL resources."
+  [gl-context window]
+  (when (and gl-context (not (zero? gl-context)))
+    (SDLVideo/SDL_GL_DestroyContext gl-context))
+  (when (and window (not (zero? window)))
+    (SDLVideo/SDL_DestroyWindow window))
+  (SDLInit/SDL_Quit))

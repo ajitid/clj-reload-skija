@@ -1,25 +1,45 @@
 {:paths ["src" "resources"]
 
  :deps
- {;; Types - core classes shared by JWM and Skija
+ {;; Types - core classes shared by Skija
   io.github.humbleui/types {:mvn/version "0.2.0"}
 
-  ;; JWM for windowing
-  io.github.humbleui/jwm {:mvn/version "0.4.18" :exclusions [io.github.humbleui/types]}}
+  ;; LWJGL 3.4.0 with SDL3 and OpenGL
+  org.lwjgl/lwjgl {:mvn/version "3.4.0"}
+  org.lwjgl/lwjgl-sdl {:mvn/version "3.4.0"}
+  org.lwjgl/lwjgl-opengl {:mvn/version "3.4.0"}}
 
  :aliases
- {;; Platform-specific Skija dependencies
+ {;; Platform-specific Skija + LWJGL natives
   :macos-arm64
-  {:extra-deps {io.github.humbleui/skija-macos-arm64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}}}
+  {:jvm-opts ["-XstartOnFirstThread"]
+   :extra-deps
+   {io.github.humbleui/skija-macos-arm64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}
+    org.lwjgl/lwjgl$natives-macos-arm64 {:mvn/version "3.4.0"}
+    org.lwjgl/lwjgl-sdl$natives-macos-arm64 {:mvn/version "3.4.0"}
+    org.lwjgl/lwjgl-opengl$natives-macos-arm64 {:mvn/version "3.4.0"}}}
 
   :macos-x64
-  {:extra-deps {io.github.humbleui/skija-macos-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}}}
+  {:jvm-opts ["-XstartOnFirstThread"]
+   :extra-deps
+   {io.github.humbleui/skija-macos-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}
+    org.lwjgl/lwjgl$natives-macos {:mvn/version "3.4.0"}
+    org.lwjgl/lwjgl-sdl$natives-macos {:mvn/version "3.4.0"}
+    org.lwjgl/lwjgl-opengl$natives-macos {:mvn/version "3.4.0"}}}
 
   :windows
-  {:extra-deps {io.github.humbleui/skija-windows-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}}}
+  {:extra-deps
+   {io.github.humbleui/skija-windows-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}
+    org.lwjgl/lwjgl$natives-windows {:mvn/version "3.4.0"}
+    org.lwjgl/lwjgl-sdl$natives-windows {:mvn/version "3.4.0"}
+    org.lwjgl/lwjgl-opengl$natives-windows {:mvn/version "3.4.0"}}}
 
   :linux
-  {:extra-deps {io.github.humbleui/skija-linux-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}}}
+  {:extra-deps
+   {io.github.humbleui/skija-linux-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}
+    org.lwjgl/lwjgl$natives-linux {:mvn/version "3.4.0"}
+    org.lwjgl/lwjgl-sdl$natives-linux {:mvn/version "3.4.0"}
+    org.lwjgl/lwjgl-opengl$natives-linux {:mvn/version "3.4.0"}}}
 
   :dev
   {:extra-paths ["dev"]
