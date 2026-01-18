@@ -352,24 +352,26 @@
           (println "Pool ready:" (count jvms) "JVM(s) added"))))))
 
 (defn acquire-jvm!
-  "Take an idle JVM and mark it as active"
+  "Take an idle JVM and mark it as active. Returns nil if none available or already active."
   []
   (cleanup-dead-jvms!)
   (let [state (load-state)]
-    (if (:active state)
-      (do
-        (println "Already have an active JVM. Use 'close' or 'restart' first.")
-        nil)
-      (if-let [jvm (first (:idle state))]
-        (do
-          (update-state! (fn [s]
-                           (-> s
-                               (assoc :active jvm)
-                               (update :idle #(vec (rest %))))))
-          jvm)
-        (do
-          (println "No idle JVMs available. Run 'start' first.")
-          nil)))))
+    (cond
+      ;; Already have an active JVM
+      (:active state)
+      nil
+
+      ;; Take first idle JVM
+      (first (:idle state))
+      (let [jvm (first (:idle state))]
+        (update-state! (fn [s]
+                         (-> s
+                             (assoc :active jvm)
+                             (update :idle #(vec (rest %))))))
+        jvm)
+
+      ;; No idle JVMs
+      :else nil)))
 
 (defn release-jvm!
   "Kill active JVM"
@@ -440,7 +442,17 @@
               (println "\nApp started successfully!")
               (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm)))
             (println "\nFailed to start app:" (:error result))))))
-    (println "Hint: Run 'bb pool.clj start' first")))
+    ;; Check why we couldn't acquire
+    (let [state (load-state)]
+      (cond
+        (:active state)
+        (println "Already have an active JVM. Use 'close' or 'restart' first.")
+
+        (empty? (:idle state))
+        (println "No idle JVMs available. Run 'bb scripts/pool.clj start' first.")
+
+        :else
+        (println "Could not acquire JVM.")))))
 
 (defn cmd-close []
   (let [state (load-state)
@@ -480,7 +492,7 @@
                 (println "\nApp started successfully!")
                 (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm)))
               (println "\nFailed to start app:" (:error result))))))
-      (println "No idle JVMs available. Run 'start' first."))))
+      (println "No idle JVMs available. Run 'bb scripts/pool.clj start' first."))))
 
 (defn cmd-status []
   (ensure-dirs!)
