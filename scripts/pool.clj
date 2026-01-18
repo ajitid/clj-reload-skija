@@ -425,26 +425,28 @@
   (when-let [ex (:ex result)]
     (println "Exception:" ex)))
 
-(defn cmd-open []
-  (ensure-dirs!)
+(defn- acquire-and-open!
+  "Acquire an idle JVM, send (open) command, and replenish pool.
+   Returns true on success, false on failure."
+  [pool-size]
   (if-let [jvm (acquire-jvm!)]
-    (let [pool-size (get-in (load-state) [:config :pool-size] 2)]
+    (do
       (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
       (println "Sending (open) + replenishing in parallel...")
-      ;; Run nREPL command AND replenishment in parallel
       (let [cmd-future (future (send-nrepl-command! (:port jvm) "(open)"))
             replenish-future (future (ensure-pool-size! pool-size))]
-        ;; Wait for replenishment to complete
         @replenish-future
-        ;; Check nREPL result (give extra 100ms after replenishment)
         (let [result (deref cmd-future 100 {:success true :blocking true})]
           (print-nrepl-result result)
           (if (:success result)
             (do
               (println "\nApp started successfully!")
-              (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm)))
-            (println "\nFailed to start app:" (:error result))))))
-    ;; Check why we couldn't acquire
+              (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm))
+              true)
+            (do
+              (println "\nFailed to start app:" (:error result))
+              false)))))
+    ;; Detailed error handling
     (let [state (load-state)]
       (cond
         (:active state)
@@ -454,7 +456,14 @@
         (println "No idle JVMs available. Run 'bb scripts/pool.clj start' first.")
 
         :else
-        (println "Could not acquire JVM.")))))
+        (println "Could not acquire JVM."))
+      false)))
+
+(defn cmd-open []
+  (ensure-dirs!)
+  (let [pool-size (get-in (load-state) [:config :pool-size] 2)]
+    (ensure-pool-size! pool-size)  ;; safety check (consistent with restart)
+    (acquire-and-open! pool-size)))
 
 (defn cmd-close []
   (let [state (load-state)
@@ -475,27 +484,10 @@
       (let [active-id (get-in state [:active :id])]
         (kill-jvm! active-id)
         (update-state! assoc :active nil)))
-    ;; Ensure we have at least one idle JVM before trying to acquire
+    ;; Acquire new JVM and open
     (ensure-dirs!)
     (ensure-pool-size! pool-size)
-    (if-let [jvm (acquire-jvm!)]
-      (do
-        (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
-        (println "Sending (open) + replenishing in parallel...")
-        ;; Run nREPL command AND replenishment in parallel
-        (let [cmd-future (future (send-nrepl-command! (:port jvm) "(open)"))
-              replenish-future (future (ensure-pool-size! pool-size))]
-          ;; Wait for replenishment to complete (this is the longer operation)
-          @replenish-future
-          ;; Check nREPL result (give extra 100ms after replenishment)
-          (let [result (deref cmd-future 100 {:success true :blocking true})]
-            (print-nrepl-result result)
-            (if (:success result)
-              (do
-                (println "\nApp started successfully!")
-                (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm)))
-              (println "\nFailed to start app:" (:error result))))))
-      (println "No idle JVMs available. Run 'bb scripts/pool.clj start' first."))))
+    (acquire-and-open! pool-size)))
 
 (defn cmd-status []
   (ensure-dirs!)
