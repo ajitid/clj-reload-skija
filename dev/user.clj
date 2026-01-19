@@ -22,7 +22,7 @@
         port (:port server)]
     (println "")
     (println "nREPL server running on port" port)
-    (println "Connect: clj -M:nrepl -m nrepl.cmdline --connect --port" port)
+    (println "Connect: clj -M:connect --port" port)
     (println "")
     server))
 

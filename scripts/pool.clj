@@ -539,7 +539,7 @@
             (if (:success result)
               (do
                 (println "\nApp started successfully!")
-                (println "Connect REPL: clj -M:nrepl -m nrepl.cmdline --connect --port" (:port jvm)))
+                (println "Connect REPL: clj -M:connect --port" (:port jvm)))
               (println "\nFailed to start app:" (:error result))))))
       ;; No idle JVMs - user hasn't run start
       (println "No idle JVMs available. Run 'bb scripts/pool.clj start' first."))))
@@ -585,7 +585,7 @@
     (if active
       (do
         (println "Connect to active JVM:")
-        (println "  clj -M:nrepl -m nrepl.cmdline --connect --port" (:port active))
+        (println "  clj -M:connect --port" (:port active))
         (println "\nOr with your editor's nREPL client on port" (:port active)))
       (println "No active JVM. Use 'bb pool.clj open' first."))))
 
