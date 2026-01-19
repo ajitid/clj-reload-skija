@@ -94,6 +94,9 @@
     (dispatch-event! window (e/->EventFrameSkija surface canvas))
     ;; Flush Skija and swap buffers
     (flush-fn)
+    ;; Process frame capture (PBO async read) - hot-reloadable
+    (when-let [capture-fn (requiring-resolve 'lib.window.capture/process-frame!)]
+      (capture-fn pw ph))
     (sdl/swap-buffers! handle)))
 
 (defn run!
@@ -162,6 +165,9 @@
         (sdl/remove-event-watcher! watcher)
         (sdl/set-resize-render-fn! nil)
         (.free event)
+        ;; Cleanup capture resources (hot-reloadable)
+        (when-let [cleanup-fn (requiring-resolve 'lib.window.capture/cleanup!)]
+          (cleanup-fn))
         (layer/cleanup!)
         (sdl/cleanup! (:gl-context window) handle)))))
 
