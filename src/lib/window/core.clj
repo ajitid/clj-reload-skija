@@ -9,6 +9,10 @@
            [org.lwjgl.opengl GL11]
            [lib.window.events EventClose EventResize EventFrameSkija EventExposed]))
 
+;; Shared flag for capture module - set by lib.window.capture when active
+;; This allows zero overhead when capture is not in use
+(defonce capture-active? (atom false))
+
 ;; Window record holds SDL handles (long pointers) and state atoms
 (defrecord Window [^long handle ^long gl-context event-handler
                    frame-requested? running?
@@ -94,9 +98,11 @@
     (dispatch-event! window (e/->EventFrameSkija surface canvas))
     ;; Flush Skija and swap buffers
     (flush-fn)
-    ;; Process frame capture (PBO async read) - hot-reloadable
-    (when-let [capture-fn (requiring-resolve 'lib.window.capture/process-frame!)]
-      (capture-fn pw ph))
+    ;; Process frame capture (PBO async read) - only if capture is active
+    ;; Zero overhead when not capturing (just an atom deref)
+    (when @capture-active?
+      (when-let [capture-fn (resolve 'lib.window.capture/process-frame!)]
+        (capture-fn pw ph)))
     (sdl/swap-buffers! handle)))
 
 (defn run!
@@ -165,8 +171,8 @@
         (sdl/remove-event-watcher! watcher)
         (sdl/set-resize-render-fn! nil)
         (.free event)
-        ;; Cleanup capture resources (hot-reloadable)
-        (when-let [cleanup-fn (requiring-resolve 'lib.window.capture/cleanup!)]
+        ;; Cleanup capture resources (only if namespace was loaded)
+        (when-let [cleanup-fn (resolve 'lib.window.capture/cleanup!)]
           (cleanup-fn))
         (layer/cleanup!)
         (sdl/cleanup! (:gl-context window) handle)))))

@@ -27,11 +27,32 @@
 
 (defonce capture-state
   (atom {:mode              nil    ; :screenshot | :video | nil
+         ;; Screenshot state
          :screenshot-path   nil    ; Output path for screenshot
          :screenshot-format nil    ; :png | :jpeg
+         :screenshot-opts   nil    ; Scaling options
+         ;; Video recording state
+         :recording-path    nil    ; Output path for video
+         :recording-fps     nil    ; Frame rate
+         :recording-format  nil    ; :mp4 | :png
+         :recording-opts    nil    ; Scaling options {:width :height}
+         :recording-dims    nil    ; [width height] FFmpeg was started with
+         ;; FFmpeg process (shared)
          :ffmpeg-process    nil    ; FFmpeg Process object
          :ffmpeg-stdin      nil    ; FFmpeg stdin OutputStream
-         :recording?        false}))
+         :recording?        false})) ; FFmpeg actually running?
+
+;; ============================================================
+;; Core Integration (zero-overhead when inactive)
+;; ============================================================
+
+(defn- set-capture-active!
+  "Set the capture-active? flag in core.clj.
+   This enables the capture hook in the render loop.
+   Once enabled, stays enabled (namespace is loaded anyway)."
+  []
+  (when-let [flag (resolve 'lib.window.core/capture-active?)]
+    (reset! @flag true)))
 
 ;; ============================================================
 ;; PBO Management
@@ -82,12 +103,12 @@
 
 (defn- resize-pbos!
   "Recreate PBOs if dimensions changed."
-  [width height]
-  (let [{:keys [width w height h initialized?]} @pbo-state]
+  [new-width new-height]
+  (let [{:keys [width height initialized?]} @pbo-state]
     (when (and initialized?
-               (or (not= width w) (not= height h)))
+               (or (not= new-width width) (not= new-height height)))
       (destroy-pbos!)
-      (init-pbos! width height))))
+      (init-pbos! new-width new-height))))
 
 (defn- ensure-pbos!
   "Ensure PBOs exist and match dimensions."
@@ -187,45 +208,31 @@
     (Image/makeFromBitmap (.setImmutable bitmap))))
 
 ;; ============================================================
-;; Screenshot API
+;; FFmpeg Helpers
 ;; ============================================================
 
-(defn- save-screenshot!
-  "Save pixels as PNG or JPEG."
-  [^ByteBuffer pixels width height path format]
-  (try
-    (let [image (pixels->image pixels width height)
-          fmt (case format
-                :png  EncodedImageFormat/PNG
-                :jpeg EncodedImageFormat/JPEG
-                EncodedImageFormat/PNG)
-          quality (case format
-                    :jpeg 90
-                    100)
-          data (.encodeToData image fmt quality)]
-      (when data
-        (with-open [os (FileOutputStream. (io/file path))]
-          (.write os (.getBytes data)))
-        (println "[capture] Screenshot saved:" path))
-      (.close image))
-    (catch Exception e
-      (println "[capture] Screenshot error:" (.getMessage e)))
-    (finally
-      (MemoryUtil/memFree pixels))))
+(defn- build-vf-filter
+  "Build FFmpeg -vf filter string with optional scaling.
+   Preserves aspect ratio in all cases."
+  [{:keys [width height]}]
+  (cond
+    ;; Both: fit within bounds, pad to exact size with black bars
+    (and width height)
+    (str "vflip,scale=" width ":" height
+         ":force_original_aspect_ratio=decrease,"
+         "pad=" width ":" height ":(ow-iw)/2:(oh-ih)/2")
 
-(defn screenshot!
-  "Request a screenshot to be saved on the next frame.
-   Format: :png or :jpeg"
-  [path format]
-  (swap! capture-state assoc
-         :mode :screenshot
-         :screenshot-path path
-         :screenshot-format (or format :png))
-  (println "[capture] Screenshot requested:" path))
+    ;; Width only: scale to width, auto height (preserve aspect ratio)
+    width
+    (str "vflip,scale=" width ":-2")
 
-;; ============================================================
-;; Video Recording API
-;; ============================================================
+    ;; Height only: scale to height, auto width (preserve aspect ratio)
+    height
+    (str "vflip,scale=-2:" height)
+
+    ;; Neither: just flip
+    :else
+    "vflip"))
 
 (defn- check-ffmpeg!
   "Verify FFmpeg is available in PATH."
@@ -239,55 +246,197 @@
                       {:exit (:exit result)
                        :err (:err result)})))))
 
+;; ============================================================
+;; Screenshot API
+;; ============================================================
+
+(defn- save-screenshot!
+  "Save pixels as PNG or JPEG using FFmpeg (supports scaling)."
+  [^ByteBuffer pixels src-width src-height path format opts]
+  (try
+    (let [{:keys [width height]} opts
+          vf (build-vf-filter {:width width :height height})
+          fmt-args (case format
+                     :jpeg ["-q:v" "2"]  ;; High quality JPEG
+                     [])                  ;; PNG needs no extra args
+          cmd (into ["ffmpeg" "-y"
+                     "-f" "rawvideo"
+                     "-pix_fmt" "rgba"
+                     "-s" (str src-width "x" src-height)
+                     "-i" "-"
+                     "-vf" vf
+                     "-frames:v" "1"]
+                    (concat fmt-args [path]))
+          pb (ProcessBuilder. ^java.util.List cmd)
+          _ (.redirectErrorStream pb true)
+          process (.start pb)
+          stdin (.getOutputStream process)
+          bytes (byte-array (* src-width src-height 4))]
+      (.get pixels bytes)
+      (.write stdin bytes)
+      (.close stdin)
+      (.waitFor process)
+      (if (zero? (.exitValue process))
+        (println "[capture] Screenshot saved:" path)
+        (println "[capture] Screenshot failed, FFmpeg exit code:" (.exitValue process))))
+    (catch Exception e
+      (println "[capture] Screenshot error:" (.getMessage e)))
+    (finally
+      (MemoryUtil/memFree pixels))))
+
+(defn screenshot!
+  "Request a screenshot to be saved on the next frame.
+   Format: :png or :jpeg
+   Options:
+     :width  - Scale to this width, preserve aspect ratio (auto height)
+     :height - Scale to this height, preserve aspect ratio (auto width)
+               If both specified, fits within bounds with black bars.
+
+   Examples:
+     (screenshot! \"out.png\" :png)                            ; native size
+     (screenshot! \"out.png\" :png {:width 1920})              ; scale to 1920 wide
+     (screenshot! \"out.jpg\" :jpeg {:height 1080})            ; scale to 1080 tall
+     (screenshot! \"out.png\" :png {:width 1920 :height 1080}) ; fit in 1920x1080"
+  ([path format] (screenshot! path format {}))
+  ([path format opts]
+   (if (= :video (:mode @capture-state))
+     (println "[capture] WARNING: Cannot take screenshot while recording is in progress")
+     (do
+       (check-ffmpeg!)
+       (swap! capture-state assoc
+              :mode :screenshot
+              :screenshot-path path
+              :screenshot-format (or format :png)
+              :screenshot-opts opts)
+       (set-capture-active!)
+       (println "[capture] Screenshot requested:" path)))))
+
+;; ============================================================
+;; Video Recording API
+;; ============================================================
+
+(defn- spawn-ffmpeg-recording!
+  "Spawn FFmpeg process for video recording. Called on first frame.
+   Returns true if successful, false otherwise."
+  [src-width src-height]
+  (let [{:keys [recording-path recording-fps recording-format recording-opts]} @capture-state
+        {:keys [width height]} recording-opts
+        vf (build-vf-filter {:width width :height height})
+        cmd (case recording-format
+              :png
+              ["ffmpeg" "-y"
+               "-f" "rawvideo"
+               "-pix_fmt" "rgba"
+               "-s" (str src-width "x" src-height)
+               "-r" (str recording-fps)
+               "-i" "-"
+               "-vf" vf
+               recording-path]
+
+              ;; Default: MP4 video
+              ["ffmpeg" "-y"
+               "-f" "rawvideo"
+               "-pix_fmt" "rgba"
+               "-s" (str src-width "x" src-height)
+               "-r" (str recording-fps)
+               "-i" "-"
+               "-vf" vf
+               "-c:v" "libx264"
+               "-preset" "fast"
+               "-pix_fmt" "yuv420p"
+               recording-path])]
+    (try
+      (let [pb (ProcessBuilder. ^java.util.List cmd)
+            _ (.redirectErrorStream pb true)
+            process (.start pb)
+            stdin (.getOutputStream process)]
+        (swap! capture-state assoc
+               :ffmpeg-process process
+               :ffmpeg-stdin stdin
+               :recording-dims [src-width src-height]
+               :recording? true)
+        (println "[capture] Recording started:" recording-path
+                 (if (= recording-format :png) "(PNG sequence)" "(MP4)")
+                 "at" recording-fps "fps," src-width "x" src-height)
+        true)
+      (catch Exception e
+        (println "[capture] Failed to start FFmpeg:" (.getMessage e))
+        (swap! capture-state assoc :mode nil)
+        false))))
+
 (defn start-recording!
-  "Start video recording to the given path.
+  "Start recording frames to the given path.
+   Recording begins on the next rendered frame (dimensions determined automatically).
+
    Options:
      :fps    - Frame rate (default 60)
-     :width  - Override width (default: current framebuffer)
-     :height - Override height (default: current framebuffer)"
-  [path {:keys [fps] :or {fps 60}}]
-  (check-ffmpeg!)
-  (let [{:keys [width height]} @pbo-state
-        cmd ["ffmpeg" "-y"
-             "-f" "rawvideo"
-             "-pix_fmt" "rgba"
-             "-s" (str width "x" height)
-             "-r" (str fps)
-             "-i" "-"
-             "-vf" "vflip"
-             "-c:v" "libx264"
-             "-preset" "fast"
-             "-pix_fmt" "yuv420p"
-             path]
-        pb (ProcessBuilder. ^java.util.List cmd)
-        _ (.redirectErrorStream pb true)
-        process (.start pb)
-        stdin (.getOutputStream process)]
-    (swap! capture-state assoc
-           :mode :video
-           :ffmpeg-process process
-           :ffmpeg-stdin stdin
-           :recording? true)
-    (println "[capture] Recording started:" path "at" fps "fps")))
+     :format - Output format: :mp4 (default) or :png (lossless image sequence)
+     :width  - Scale to this width, preserve aspect ratio (auto height)
+     :height - Scale to this height, preserve aspect ratio (auto width)
+               If both width and height specified, fits within bounds with black bars.
+
+   For :png format, path should include %d or %04d for frame numbers:
+     (start-recording! \"frames/frame-%04d.png\" {:format :png})
+
+   Examples:
+     (start-recording! \"out.mp4\" {:fps 60})                      ; native size
+     (start-recording! \"out.mp4\" {:fps 60 :width 1920})          ; scale to 1920 wide
+     (start-recording! \"out.mp4\" {:fps 60 :height 1080})         ; scale to 1080 tall
+     (start-recording! \"out.mp4\" {:fps 60 :width 1920 :height 1080}) ; fit in 1920x1080"
+  [path {:keys [fps format width height] :or {fps 60 format :mp4} :as opts}]
+  (let [{:keys [mode]} @capture-state]
+    (cond
+      (= mode :video)
+      (println "[capture] WARNING: Recording already in progress")
+
+      (= mode :screenshot)
+      (println "[capture] WARNING: Cannot start recording while screenshot is pending")
+
+      :else
+      (do
+        (check-ffmpeg!)
+        ;; Just set state - FFmpeg will be spawned on first frame in process-frame!
+        (swap! capture-state assoc
+               :mode :video
+               :recording-path path
+               :recording-fps fps
+               :recording-format format
+               :recording-opts {:width width :height height}
+               :recording-dims nil
+               :recording? false)  ; Not actually recording until FFmpeg starts
+        (set-capture-active!)
+        (println "[capture] Recording requested:" path
+                 "(will start on next frame)"))))))
 
 (defn stop-recording!
   "Stop video recording."
-  []
-  (let [{:keys [ffmpeg-process ffmpeg-stdin recording?]} @capture-state]
-    (when recording?
-      (try
-        (when ffmpeg-stdin
-          (.close ^OutputStream ffmpeg-stdin))
-        (when ffmpeg-process
-          (.waitFor ^Process ffmpeg-process))
-        (println "[capture] Recording stopped")
-        (catch Exception e
-          (println "[capture] Error stopping recording:" (.getMessage e))))
-      (swap! capture-state assoc
-             :mode nil
-             :ffmpeg-process nil
-             :ffmpeg-stdin nil
-             :recording? false))))
+  ([] (stop-recording! nil))
+  ([reason]
+   (let [{:keys [ffmpeg-process ffmpeg-stdin recording? mode]} @capture-state]
+     ;; Stop if actually recording OR if mode is :video (requested but not started)
+     (if (or recording? (= mode :video))
+       (do
+         (try
+           (when ffmpeg-stdin
+             (.close ^OutputStream ffmpeg-stdin))
+           (when ffmpeg-process
+             (.waitFor ^Process ffmpeg-process))
+           (if reason
+             (println "[capture] Recording stopped:" reason)
+             (println "[capture] Recording stopped"))
+           (catch Exception e
+             (println "[capture] Error stopping recording:" (.getMessage e))))
+         (swap! capture-state assoc
+                :mode nil
+                :recording-path nil
+                :recording-fps nil
+                :recording-format nil
+                :recording-opts nil
+                :recording-dims nil
+                :ffmpeg-process nil
+                :ffmpeg-stdin nil
+                :recording? false))
+       (println "[capture] Nothing to stop (no recording in progress)")))))
 
 (defn recording?
   "Check if currently recording."
@@ -328,12 +477,31 @@
         (when-let [pixels (get-previous-frame width height)]
           (case mode
             :screenshot
-            (let [{:keys [screenshot-path screenshot-format]} @capture-state]
-              (save-screenshot! pixels width height screenshot-path screenshot-format)
+            (let [{:keys [screenshot-path screenshot-format screenshot-opts]} @capture-state]
+              (save-screenshot! pixels width height screenshot-path screenshot-format screenshot-opts)
               (swap! capture-state assoc :mode nil))
 
             :video
-            (write-frame-to-ffmpeg! pixels width height)
+            (let [{:keys [recording? recording-dims]} @capture-state]
+              (cond
+                ;; First frame: spawn FFmpeg with actual dimensions
+                (not recording?)
+                (if (spawn-ffmpeg-recording! width height)
+                  (write-frame-to-ffmpeg! pixels width height)
+                  ;; FFmpeg failed to start, free pixels
+                  (MemoryUtil/memFree pixels))
+
+                ;; Resize detected: stop recording with warning
+                (not= recording-dims [width height])
+                (do
+                  (println "[capture] WARNING: Window resized during recording"
+                           recording-dims "->" [width height])
+                  (MemoryUtil/memFree pixels)
+                  (stop-recording! "window resized"))
+
+                ;; Normal frame: write to FFmpeg
+                :else
+                (write-frame-to-ffmpeg! pixels width height)))
 
             nil))
 
