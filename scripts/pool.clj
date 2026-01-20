@@ -40,6 +40,7 @@
 (def pool-dir (fs/path (fs/cwd) ".jvm-pool"))
 (def state-file (fs/path pool-dir "state.edn"))
 (def jvms-dir (fs/path pool-dir "jvms"))
+(def active-port-file (fs/path pool-dir "active-port"))
 
 (defn detect-platform-alias []
   (let [os (str/lower-case (System/getProperty "os.name"))
@@ -495,6 +496,9 @@
       ;; Kill all idle
       (doseq [jvm (:idle state)]
         (kill-jvm! (:id jvm)))
+      ;; Remove active port file
+      (when (fs/exists? active-port-file)
+        (fs/delete active-port-file))
       ;; Reset state
       (save-state! {:config (:config state) :idle [] :active nil})
       (println "Pool stopped."))))
@@ -538,8 +542,11 @@
             (print-nrepl-result result)
             (if (:success result)
               (do
+                ;; Write active port for watchexec/scripts to read
+                (spit (str active-port-file) (str (:port jvm)))
                 (println "\nApp started successfully!")
-                (println "Connect REPL: clj -M:connect --port" (:port jvm)))
+                (println "Connect REPL: clj -M:connect --port" (:port jvm))
+                (println "Active port written to:" (str active-port-file)))
               (println "\nFailed to start app:" (:error result))))))
       ;; No idle JVMs - user hasn't run start
       (println "No idle JVMs available. Run 'bb scripts/pool.clj start' first."))))
@@ -551,6 +558,9 @@
       (if (:active state)
         (do
           (release-jvm!)
+          ;; Remove active port file
+          (when (fs/exists? active-port-file)
+            (fs/delete active-port-file))
           (println "Closed. Replenishing pool...")
           (ensure-pool-size! (inc pool-size))  ;; spare + 1 for next open
           (println "Pool ready."))
@@ -586,7 +596,9 @@
       (do
         (println "Connect to active JVM:")
         (println "  clj -M:connect --port" (:port active))
-        (println "\nOr with your editor's nREPL client on port" (:port active)))
+        (println "\nOr with your editor's nREPL client on port" (:port active))
+        (println "\nFor watchexec auto-reload:")
+        (println "  watchexec -qnrc -e clj -w src -w dev -- rep -p $(cat .jvm-pool/active-port) \"(reload)\""))
       (println "No active JVM. Use 'bb pool.clj open' first."))))
 
 (defn cmd-help []

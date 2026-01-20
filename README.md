@@ -185,8 +185,17 @@ brew install eraserhd/rep/rep # or directly grab the binary from https://github.
 Then run in a separate terminal:
 
 ```bash
+# If using fixed port (NREPL_PORT=7888):
 watchexec -qnrc -e clj -w src -w dev -- rep -p 7888 "(reload)"
+
+# If using JVM pool (macOS/Linux):
+watchexec -qrc -e clj -w src -w dev -- rep -p $(cat .jvm-pool/active-port) "(reload)"
+
+# If using JVM pool (Windows PowerShell):
+watchexec -qrc -e clj -w src -w dev -- rep -p $(Get-Content .jvm-pool\active-port) "(reload)"
 ```
+
+The pool version reads the port from `.jvm-pool/active-port`, which is updated each time you run `bb scripts/pool.clj open`. This means watchexec automatically uses the correct port even after restarting the app.
 
 **Flags explained:**
 - `-q` — quiet mode
@@ -195,7 +204,7 @@ watchexec -qnrc -e clj -w src -w dev -- rep -p 7888 "(reload)"
 - `-c` — clear screen
 - `-e clj` — watch only `.clj` files
 - `-w src -w dev` — watch directories
-- `-p 7888` — nREPL port (must match your `NREPL_PORT`)
+- `-p <port>` — nREPL port
 
 Now every time you save a `.clj` file, reload happens automatically.
 
