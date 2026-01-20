@@ -179,7 +179,7 @@
   "Truncate string to max-len, adding ellipsis if truncated."
   [s max-len]
   (if (> (count s) max-len)
-    (str (subs s 0 max-len) "⇢")
+    (str (subs s 0 max-len) "…")
     s))
 
 (defn copy-current-error-to-clipboard!
