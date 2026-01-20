@@ -83,19 +83,33 @@ Then start the REPL with your platform alias:
 
 ```bash
 # macOS Apple Silicon (M1/M2/M3/M4)
-clj -A:dev:macos-arm64
+clj -M:dev:macos-arm64
 
 # macOS Intel
-clj -A:dev:macos-x64
+clj -M:dev:macos-x64
 
 # Windows
-clj -A:dev:windows
+clj -M:dev:windows
 
 # Linux
-clj -A:dev:linux
+clj -M:dev:linux
 ```
 
-An nREPL server will automatically start on port 7888.
+An nREPL server will automatically start (port shown in console).
+
+### Specifying nREPL Port
+
+By default, nREPL uses a random available port. To use a specific port (e.g., 7888):
+
+```bash
+# Option 1: Environment variable
+NREPL_PORT=7888 clj -M:dev:macos-arm64
+
+# Option 2: System property
+clj -J-Dnrepl.port=7888 -M:dev:macos-arm64
+```
+
+The `:connect` alias defaults to port 7888, so using that port simplifies connecting.
 
 In the REPL, open the window:
 
@@ -111,7 +125,15 @@ clj -M:dev:macos-arm64 -e "(open)"
 
 The window opens and the REPL blocks (this is normal).
 
-Other REPL commands:
+### One-Shot Mode
+
+For demos or quick testing without keeping the REPL alive, use `open-once` which exits when the window closes:
+
+```bash
+clj -M:dev:macos-arm64 -e "(open-once)"
+```
+
+### Other REPL Commands
 
 ```clojure
 (close)   ;; Close window, reset state (can reopen)
@@ -123,7 +145,11 @@ Other REPL commands:
 To hot-reload changes, connect to the running nREPL from another terminal:
 
 ```bash
+# If you started with NREPL_PORT=7888:
 clj -M:connect
+
+# Or specify the port shown in the console:
+clj -M:connect --port <port>
 ```
 
 Now edit ANY source file - `config.clj`, `controls.clj`, or even `core.clj`:
@@ -146,6 +172,33 @@ Then in the connected REPL:
 
 Changes apply immediately - no restart needed.
 
+### Auto-Reload with watchexec
+
+For automatic reload on file save, use [watchexec](https://github.com/watchexec/watchexec) with [rep](https://github.com/eraserhd/rep) (a simple nREPL client):
+
+```bash
+# Install (macOS)
+brew install watchexec
+brew install eraserhd/rep/rep # or directly grab the binary from https://github.com/eraserhd/rep
+```
+
+Then run in a separate terminal:
+
+```bash
+watchexec -qnrc -e clj -w src -w dev -- rep -p 7888 "(reload)"
+```
+
+**Flags explained:**
+- `-q` — quiet mode
+- `-n` — no shell
+- `-r` — restart on change
+- `-c` — clear screen
+- `-e clj` — watch only `.clj` files
+- `-w src -w dev` — watch directories
+- `-p 7888` — nREPL port (must match your `NREPL_PORT`)
+
+Now every time you save a `.clj` file, reload happens automatically.
+
 ### Error Recovery
 
 If you introduce a syntax or runtime error (e.g., typo like `forma` instead of `format`), the window shows a **red screen** (`0xFFFF6B6B`) as immediate visual feedback. The error message is printed to the console.
@@ -162,8 +215,8 @@ To recover:
 
 ### Option 1: Connect to Running REPL
 
-1. Start the REPL from terminal: `clj -A:dev:macos-arm64` (or your platform)
-2. Run `(start)` to launch the window
+1. Start the REPL from terminal: `NREPL_PORT=7888 clj -M:dev:macos-arm64` (or your platform)
+2. Run `(open)` to launch the window
 3. In VS Code, run **Calva: Connect to a Running REPL Server in the Project** (`Ctrl+Alt+C Ctrl+Alt+C`)
 4. Select "deps.edn" → "localhost:7888"
 

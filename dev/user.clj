@@ -16,9 +16,16 @@
             [nrepl.server :as nrepl]))
 
 ;; Start nREPL server for hot-reloading (connect from another terminal)
-;; Uses port 0 for random port assignment (allows multiple JVM instances)
+;; Port can be specified via:
+;;   - NREPL_PORT env var: NREPL_PORT=7888 clj -M:dev:macos-arm64
+;;   - nrepl.port system property: clj -J-Dnrepl.port=7888 -M:dev:macos-arm64
+;; Note: These are custom properties read by THIS code, not built-in nREPL features.
+;; Default: port 0 (random available port, allows multiple JVM instances)
 (defonce nrepl-server
-  (let [server (nrepl/start-server :port 0)
+  (let [configured-port (or (some-> (System/getenv "NREPL_PORT") parse-long)
+                            (some-> (System/getProperty "nrepl.port") parse-long)
+                            0)
+        server (nrepl/start-server :port configured-port)
         port (:port server)]
     (println "")
     (println "nREPL server running on port" port)
