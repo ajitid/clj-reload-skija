@@ -73,9 +73,9 @@
       ;; Reset running state so app can be reopened
       (reset! @(resolve 'app.state/running?) false))))
 
-(defn open-once
-  "Open the application window and exit when closed. For one-shot mode.
-   Usage: clj -M:dev:macos-arm64 -e \"(open-once)\""
+(defn quick-open
+  "Open the application window and exit when closed. For quick demos/testing.
+   Usage: clj -M:dev:macos-arm64 -e \"(quick-open)\""
   []
   (open)
   (System/exit 0))

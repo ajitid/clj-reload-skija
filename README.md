@@ -125,12 +125,12 @@ clj -M:dev:macos-arm64 -e "(open)"
 
 The window opens and the REPL blocks (this is normal).
 
-### One-Shot Mode
+### Quick Open Mode
 
-For demos or quick testing without keeping the REPL alive, use `open-once` which exits when the window closes:
+For demos or quick testing without keeping the REPL alive, use `quick-open` which exits when the window closes:
 
 ```bash
-clj -M:dev:macos-arm64 -e "(open-once)"
+clj -M:dev:macos-arm64 -e "(quick-open)"
 ```
 
 ### Other REPL Commands

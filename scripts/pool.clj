@@ -53,7 +53,7 @@
 
 (def default-config
   {:pool-size 2
-   :cmd (str "clj -A:" (detect-platform-alias))
+   :cmd (str "clj -M:" (detect-platform-alias))
    :project-dir (str (fs/cwd))
    :nrepl-timeout-ms 60000})  ;; wait up to 60s for nREPL
 
