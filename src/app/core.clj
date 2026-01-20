@@ -423,6 +423,46 @@
           (reset! state/running? false)
           (window/close! win))
 
+        ;; Frame event - always request next frame, draw only when not reloading
+        ;; This keeps the render loop alive during hot-reload
+        (instance? EventFrameSkija event)
+        (do
+          ;; Always request next frame - keeps render loop alive during reload
+          (window/request-frame! win)
+          ;; Only draw when not reloading
+          (when-not @state/reloading?
+            (let [{:keys [canvas]} event
+                  scale @state/scale
+                  w @state/window-width
+                  h @state/window-height
+                  now (System/nanoTime)
+                  dt (/ (- now @last-time) 1e9)]
+              (reset! last-time now)
+              (when (pos? dt)
+                (let [current-fps (/ 1.0 dt)
+                      smoothing 0.9]
+                  (reset! state/fps (+ (* smoothing @state/fps)
+                                       (* (- 1.0 smoothing) current-fps)))))
+              (try
+                (.save canvas)
+                (.scale canvas (float scale) (float scale))
+                ;; Check for pending reload error
+                (if-let [reload-err @state/last-reload-error]
+                  (draw-error canvas reload-err)
+                  (do
+                    (reset! state/last-runtime-error nil)
+                    (when-let [tick-fn (requiring-resolve 'app.core/tick)]
+                      (tick-fn dt))
+                    (when-let [draw-fn (requiring-resolve 'app.core/draw)]
+                      (draw-fn canvas w h))))
+                (catch Exception e
+                  (reset! state/last-runtime-error e)
+                  (let [error-to-show (or @state/last-reload-error e)]
+                    (draw-error canvas error-to-show))
+                  (println "Render error:" (.getMessage e)))
+                (finally
+                  (.restore canvas))))))
+
         ;; Skip other events during reload (vars not available)
         @state/reloading?
         nil
@@ -471,42 +511,6 @@
             ;; Ctrl+` toggles panel
             ;; Note: key codes differ from JWM, may need adjustment
             nil))
-
-        ;; Frame event - render
-        (instance? EventFrameSkija event)
-        (let [{:keys [canvas]} event
-              scale @state/scale
-              w @state/window-width
-              h @state/window-height
-              now (System/nanoTime)
-              dt (/ (- now @last-time) 1e9)]
-          (reset! last-time now)
-          (when (pos? dt)
-            (let [current-fps (/ 1.0 dt)
-                  smoothing 0.9]
-              (reset! state/fps (+ (* smoothing @state/fps)
-                                   (* (- 1.0 smoothing) current-fps)))))
-          (try
-            (.save canvas)
-            (.scale canvas (float scale) (float scale))
-            ;; Check for pending reload error
-            (if-let [reload-err @state/last-reload-error]
-              (draw-error canvas reload-err)
-              (do
-                (reset! state/last-runtime-error nil)
-                (when-let [tick-fn (requiring-resolve 'app.core/tick)]
-                  (tick-fn dt))
-                (when-let [draw-fn (requiring-resolve 'app.core/draw)]
-                  (draw-fn canvas w h))))
-            (catch Exception e
-              (reset! state/last-runtime-error e)
-              (let [error-to-show (or @state/last-reload-error e)]
-                (draw-error canvas error-to-show))
-              (println "Render error:" (.getMessage e)))
-            (finally
-              (.restore canvas)))
-          ;; Request next frame
-          (window/request-frame! win))
 
         ;; Unknown event - ignore
         :else nil))))
