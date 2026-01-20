@@ -1,4 +1,4 @@
-{:paths ["src" "resources"]
+{:paths ["src" "classes" "resources"]
 
  :deps
  {;; Types - core classes shared by Skija
@@ -12,16 +12,14 @@
  :aliases
  {;; Platform-specific Skija + LWJGL natives
   :macos-arm64
-  {:jvm-opts ["-XstartOnFirstThread"]
-   :extra-deps
+  {:extra-deps
    {io.github.humbleui/skija-macos-arm64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}
     org.lwjgl/lwjgl$natives-macos-arm64 {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-sdl$natives-macos-arm64 {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-opengl$natives-macos-arm64 {:mvn/version "3.4.0"}}}
 
   :macos-x64
-  {:jvm-opts ["-XstartOnFirstThread"]
-   :extra-deps
+  {:extra-deps
    {io.github.humbleui/skija-macos-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}
     org.lwjgl/lwjgl$natives-macos {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-sdl$natives-macos {:mvn/version "3.4.0"}

@@ -1,6 +1,6 @@
 # Clojure Hot-Reloadable Skija Demo
 
-A Clojure demo showcasing hot-reloading with [JWM](https://github.com/HumbleUI/JWM) (windowing) and [Skija](https://github.com/HumbleUI/Skija) (2D graphics).
+A Clojure demo showcasing hot-reloading with LWJGL/SDL3 (windowing) and [Skija](https://github.com/HumbleUI/Skija) (2D graphics).
 
 ## Project Structure
 
@@ -31,6 +31,20 @@ clj-reloadable-skija-on-window/
 ```bash
 brew install openjdk@11 clojure/tools/clojure
 ```
+
+**Build native library (required for macOS):**
+
+SDL3 requires window operations to run on macOS's main thread (thread 0). This project includes a native library to handle this. Build it once after cloning:
+
+```bash
+./scripts/build-native.sh
+```
+
+This compiles:
+- `native/libmacos_main.dylib` - Native dispatch to main thread
+- `classes/lib/window/macos/MainThread.class` - JNI wrapper
+
+**Build requirement:** `clang` compiler (included in Xcode Command Line Tools: `xcode-select --install`)
 
 ### Windows
 
@@ -287,4 +301,5 @@ Exits with code 0 if synchronized, code 1 if issues found.
 
 - [clj-reload](https://github.com/tonsky/clj-reload)
 - [Skija](https://github.com/HumbleUI/Skija)
-- [JWM](https://github.com/HumbleUI/JWM)
+- [LWJGL](https://www.lwjgl.org/) (SDL3 bindings)
+- [SDL3](https://www.libsdl.org/)

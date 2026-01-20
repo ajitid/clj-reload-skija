@@ -15,7 +15,8 @@
             [lib.layout.core :as layout]
             [lib.layout.render :as layout-render]
             [lib.window.core :as window]
-            [lib.window.events :as e])
+            [lib.window.events :as e]
+            [lib.window.macos :as macos])
   (:import [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap Font Typeface]
            [io.github.humbleui.types Rect]
            [java.io StringWriter PrintWriter]
@@ -510,30 +511,46 @@
         ;; Unknown event - ignore
         :else nil))))
 
+(defn- macos?
+  "Check if running on macOS."
+  []
+  (str/includes? (str/lower-case (System/getProperty "os.name" "")) "mac"))
+
+(defn- start-app-impl
+  "Internal: Start the application - creates window and runs event loop.
+   Must be called on macOS main thread for SDL3 compatibility."
+  []
+  (reset! state/running? true)
+  (let [win (window/create-window {:title "Skija Demo - Hot Reload with clj-reload"
+                                   :width 800
+                                   :height 600
+                                   :resizable? true
+                                   :high-dpi? true})]
+    (reset! state/window win)
+    ;; Initialize scale and dimensions from window
+    (reset! state/scale (window/get-scale win))
+    (let [[w h] (window/get-size win)]
+      (reset! state/window-width w)
+      (reset! state/window-height h))
+    ;; Call init once at startup
+    (when-let [init-fn (resolve 'app.core/init)]
+      (init-fn))
+    ;; Set up event handler and request first frame
+    (window/set-event-handler! win (create-event-handler win))
+    (window/request-frame! win)
+    ;; Run event loop (blocks)
+    (window/run! win)))
+
 (defn start-app
-  "Start the application - creates window and runs event loop."
+  "Start the application - creates window and runs event loop.
+   On macOS, dispatches SDL operations to the main thread (thread 0)."
   []
   (when-not @state/running?
-    (reset! state/running? true)
-    (let [win (window/create-window {:title "Skija Demo - Hot Reload with clj-reload"
-                                     :width 800
-                                     :height 600
-                                     :resizable? true
-                                     :high-dpi? true})]
-      (reset! state/window win)
-      ;; Initialize scale and dimensions from window
-      (reset! state/scale (window/get-scale win))
-      (let [[w h] (window/get-size win)]
-        (reset! state/window-width w)
-        (reset! state/window-height h))
-      ;; Call init once at startup
-      (when-let [init-fn (resolve 'app.core/init)]
-        (init-fn))
-      ;; Set up event handler and request first frame
-      (window/set-event-handler! win (create-event-handler win))
-      (window/request-frame! win)
-      ;; Run event loop (blocks)
-      (window/run! win))))
+    (if (macos?)
+      ;; macOS: dispatch to main thread for SDL3/Cocoa compatibility
+      (macos/run-on-main-thread-sync! start-app-impl)
+      ;; Other platforms: run directly
+      (start-app-impl))))
 
 (defn -main
   "Entry point for running the application."

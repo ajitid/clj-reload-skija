@@ -3,3 +3,7 @@
 .clj-kondo/
 .lsp/
 .jvm-pool/
+
+# Build artifacts
+classes/
+native/*.dylib
