@@ -82,7 +82,9 @@
         (println "Event handler error:" (.getMessage ex))))))
 
 (defn- render-frame!
-  "Render a frame using the Skija layer."
+  "Render a frame using the Skija layer.
+   Handler should return truthy if it drew content, falsy to skip buffer swap
+   (preserves previous frame - useful for hot-reload without flicker)."
   [^Window window]
   (let [handle (:handle window)
         [pw ph] (sdl/get-window-size-in-pixels handle)
@@ -95,15 +97,16 @@
     ;; Note: Skija Canvas API uses top-left origin (Y=0 at top, Y increases down)
     ;; Skija internally handles transformation to OpenGL's BOTTOM_LEFT framebuffer
     ;; SkSL shaders receive fragCoord in BOTTOM_LEFT coordinates (Y=0 at bottom)
-    (dispatch-event! window (e/->EventFrameSkija surface canvas))
-    ;; Flush Skija and swap buffers
-    (flush-fn)
-    ;; Process frame capture (PBO async read) - only if capture is active
-    ;; Zero overhead when not capturing (just an atom deref)
-    (when @capture-active?
-      (when-let [capture-fn (resolve 'lib.window.capture/process-frame!)]
-        (capture-fn pw ph)))
-    (sdl/swap-buffers! handle)))
+    ;; Handler returns truthy if it drew, falsy to skip swap (preserve previous frame)
+    (when (dispatch-event! window (e/->EventFrameSkija surface canvas))
+      ;; Flush Skija and swap buffers only if handler drew something
+      (flush-fn)
+      ;; Process frame capture (PBO async read) - only if capture is active
+      ;; Zero overhead when not capturing (just an atom deref)
+      (when @capture-active?
+        (when-let [capture-fn (resolve 'lib.window.capture/process-frame!)]
+          (capture-fn pw ph)))
+      (sdl/swap-buffers! handle))))
 
 (defn run!
   "Run the event loop. Blocks until window closes."

@@ -425,6 +425,8 @@
 
         ;; Frame event - always request next frame, draw only when not reloading
         ;; This keeps the render loop alive during hot-reload
+        ;; Returns true if drew (signals render-frame! to swap buffers)
+        ;; Returns nil if skipped (preserves previous frame - no flicker)
         (instance? EventFrameSkija event)
         (do
           ;; Always request next frame - keeps render loop alive during reload
@@ -461,7 +463,9 @@
                     (draw-error canvas error-to-show))
                   (println "Render error:" (.getMessage e)))
                 (finally
-                  (.restore canvas))))))
+                  (.restore canvas)))
+              ;; Return true to signal that we drew - render-frame! will swap buffers
+              true)))
 
         ;; Skip other events during reload (vars not available)
         @state/reloading?
