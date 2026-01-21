@@ -189,13 +189,13 @@ Then run in a separate terminal:
 watchexec -qnrc -e clj -w src -w dev -- rep -p 7888 "(reload)"
 
 # If using JVM pool (macOS/Linux):
-watchexec -qrc -e clj -w src -w dev -- rep -p $(cat .jvm-pool/active-port) "(reload)"
+watchexec -qnrc -e clj -w src -w dev -- ./scripts/reload.sh
 
-# If using JVM pool (Windows PowerShell):
-watchexec -qrc -e clj -w src -w dev -- rep -p $(Get-Content .jvm-pool\active-port) "(reload)"
+# If using JVM pool (Windows):
+watchexec -qnrc -e clj -w src -w dev -- scripts\reload.cmd
 ```
 
-The pool version reads the port from `.jvm-pool/active-port`, which is updated each time you run `bb scripts/pool.clj open`. This means watchexec automatically uses the correct port even after restarting the app.
+The reload scripts read the port from `.jvm-pool/active-port` fresh on each reload. This means if you restart the app with `bb scripts/pool.clj open` (which assigns a new port), the next reload automatically uses the new port - no need to restart watchexec.
 
 **Flags explained:**
 - `-q` — quiet mode
