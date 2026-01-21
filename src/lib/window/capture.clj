@@ -149,6 +149,8 @@
       (GL32/glDeleteSync old-fence))
     ;; Bind PBO and issue async read
     (GL15/glBindBuffer GL21/GL_PIXEL_PACK_BUFFER current-pbo)
+    ;; Ensure tight packing (no row padding) for correct vflip in FFmpeg
+    (GL11/glPixelStorei GL11/GL_PACK_ALIGNMENT 1)
     ;; Read framebuffer into PBO (returns immediately - async DMA)
     (GL11/glReadPixels 0 0 width height
                        GL11/GL_RGBA GL11/GL_UNSIGNED_BYTE
@@ -179,6 +181,8 @@
           ;; Map buffer to CPU memory
           (let [mapped (GL15/glMapBuffer GL21/GL_PIXEL_PACK_BUFFER GL15/GL_READ_ONLY)]
             (when mapped
+              ;; Ensure buffer position is at start
+              (.rewind mapped)
               ;; Copy data to our own buffer (so we can unmap immediately)
               (let [result (MemoryUtil/memAlloc size)]
                 (.put result (.asReadOnlyBuffer mapped))
