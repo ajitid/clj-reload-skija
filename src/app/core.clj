@@ -529,7 +529,7 @@
             (when (and (= key 0x73) (pos? (bit-and modifiers 0x00C0)))
               (when-let [screenshot! (requiring-resolve 'lib.window.capture/screenshot!)]
                 (let [timestamp (java.time.LocalDateTime/now)
-                      formatter (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd_HH-mm-ss")
+                      formatter (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd_HH-mm-ss-SSS")
                       filename (str "screenshot_" (.format timestamp formatter) ".png")]
                   (screenshot! filename :png)
                   (println "[keybind] Screenshot captured:" filename))))
