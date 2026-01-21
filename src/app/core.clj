@@ -416,6 +416,11 @@
         ;; Close event
         (instance? EventClose event)
         (do
+          ;; Stop recording if active
+          (when @state/recording-active?
+            (when-let [stop-recording! (requiring-resolve 'lib.window.capture/stop-recording!)]
+              (stop-recording!))
+            (reset! state/recording-active? false))
           (reset! state/running? false)
           (window/close! win))
 
@@ -517,7 +522,42 @@
             ;; SDL3 'e' keycode = 0x65, CTRL modifier = 0x00C0 (LCTRL | RCTRL)
             (when (and (= key 0x65) (pos? (bit-and modifiers 0x00C0))
                        (or @state/last-reload-error @state/last-runtime-error))
-              (copy-current-error-to-clipboard!))))
+              (copy-current-error-to-clipboard!))
+            
+            ;; Ctrl+S captures screenshot
+            ;; SDL3 's' keycode = 0x73
+            (when (and (= key 0x73) (pos? (bit-and modifiers 0x00C0)))
+              (when-let [screenshot! (requiring-resolve 'lib.window.capture/screenshot!)]
+                (let [timestamp (java.time.LocalDateTime/now)
+                      formatter (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd_HH-mm-ss")
+                      filename (str "screenshot_" (.format timestamp formatter) ".png")]
+                  (screenshot! filename :png)
+                  (println "[keybind] Screenshot captured:" filename))))
+            
+            ;; Ctrl+R toggles recording
+            ;; SDL3 'r' keycode = 0x72
+            (when (and (= key 0x72) (pos? (bit-and modifiers 0x00C0)))
+              (if @state/recording-active?
+                ;; Stop recording
+                (do
+                  (when-let [stop-recording! (requiring-resolve 'lib.window.capture/stop-recording!)]
+                    (stop-recording!))
+                  (reset! state/recording-active? false)
+                  ;; Restore original title
+                  (window/set-window-title! @state/window @state/window-title)
+                  (println "[keybind] Recording stopped"))
+                ;; Start recording
+                (do
+                  (when-let [start-recording! (requiring-resolve 'lib.window.capture/start-recording!)]
+                    (let [timestamp (java.time.LocalDateTime/now)
+                          formatter (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd_HH-mm-ss")
+                          filename (str "recording_" (.format timestamp formatter) ".mp4")]
+                      (start-recording! filename {:fps 60})
+                      (reset! state/recording-active? true)
+                      ;; Update title with [Recording] indicator
+                      (window/set-window-title! @state/window 
+                                               (str @state/window-title " [Recording]"))
+                      (println "[keybind] Recording started:" filename))))))))
 
         ;; Unknown event - ignore
         :else nil))))
@@ -538,6 +578,8 @@
                                    :resizable? true
                                    :high-dpi? true})]
     (reset! state/window win)
+    ;; Initialize window title state for recording indicator
+    (reset! state/window-title "Skija Demo - Hot Reload with clj-reload")
     ;; Initialize scale and dimensions from window
     (reset! state/scale (window/get-scale win))
     (let [[w h] (window/get-size win)]

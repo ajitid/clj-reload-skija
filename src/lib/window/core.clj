@@ -226,6 +226,12 @@
   []
   (sdl/get-global-mouse-position))
 
+;; Window title functions (re-exported from internal)
+(defn set-window-title!
+  "Set the window title."
+  [^Window window title]
+  (sdl/set-window-title! (:handle window) title))
+
 ;; Clipboard functions (re-exported from internal)
 (defn set-clipboard-text!
   "Set UTF-8 text to system clipboard.

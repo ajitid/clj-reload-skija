@@ -46,3 +46,7 @@
 (defonce demo-velocity-y (atom 0.0))
 (defonce demo-drag-offset-x (atom 0.0))
 (defonce demo-position-history (atom []))
+
+;; Window title management
+(defonce window-title (atom "Skija Demo - Hot Reload with clj-reload"))
+(defonce recording-active? (atom false))
