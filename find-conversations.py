@@ -3,10 +3,13 @@
 Find and search through Claude Code conversations.
 
 Usage:
-    ./find-conversations.py list                    # List all conversations
-    ./find-conversations.py recent [N]              # List N most recent (default 10)
-    ./find-conversations.py search "scroll"         # Search for keyword
-    ./find-conversations.py export SESSION_ID       # Export specific conversation
+    ./find-conversations.py list [--project PATH]           # List all conversations
+    ./find-conversations.py recent [N] [--project PATH]     # List N most recent (default 10)
+    ./find-conversations.py search "scroll" [--project PATH]  # Search for keyword
+    ./find-conversations.py export SESSION_ID               # Export specific conversation
+
+Options:
+    --project PATH    Filter by project path (e.g., --project ~/myproject or --project .)
 """
 
 import json
@@ -18,6 +21,11 @@ from collections import defaultdict
 
 CLAUDE_DIR = Path.home() / ".claude"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
+
+def normalize_path(path_str):
+    """Normalize a path string to absolute path."""
+    path = Path(path_str).expanduser().resolve()
+    return str(path)
 
 def is_meaningful(text):
     """Filter out system/meta messages."""
@@ -108,8 +116,8 @@ def parse_conversation(jsonl_path):
         'messages': messages
     }
 
-def get_all_conversations():
-    """Scan and return all conversations."""
+def get_all_conversations(project_path=None):
+    """Scan and return all conversations, optionally filtered by project."""
     conversations = []
 
     # Find all .jsonl files
@@ -123,18 +131,29 @@ def get_all_conversations():
                 continue
 
             conv = parse_conversation(jsonl_file)
-            if conv:
-                conversations.append(conv)
+            if not conv:
+                continue
+
+            # Filter by project if specified
+            if project_path and conv['project']:
+                conv_project = normalize_path(conv['project'])
+                if conv_project != project_path:
+                    continue
+
+            conversations.append(conv)
 
     # Sort by timestamp (most recent first)
     conversations.sort(key=lambda c: c['last_timestamp'] or '', reverse=True)
     return conversations
 
-def list_conversations():
+def list_conversations(project_path=None):
     """List all conversations with metadata."""
-    print("Scanning conversations in ~/.claude/projects/...\n")
+    if project_path:
+        print(f"Scanning conversations for project: {project_path}\n")
+    else:
+        print("Scanning conversations in ~/.claude/projects/...\n")
 
-    conversations = get_all_conversations()
+    conversations = get_all_conversations(project_path)
 
     # Display
     print(f"Found {len(conversations)} conversations\n")
@@ -151,11 +170,14 @@ def list_conversations():
         print(f"   Session: {conv['session_id']}")
         print(f"   Path: {conv['path']}")
 
-def recent_conversations(limit=10):
+def recent_conversations(limit=10, project_path=None):
     """List N most recent conversations."""
-    print(f"Scanning for {limit} most recent conversations...\n")
+    if project_path:
+        print(f"Scanning for {limit} most recent conversations in project: {project_path}\n")
+    else:
+        print(f"Scanning for {limit} most recent conversations...\n")
 
-    conversations = get_all_conversations()[:limit]
+    conversations = get_all_conversations(project_path)[:limit]
 
     print(f"Showing {len(conversations)} most recent conversations\n")
     print("=" * 100)
@@ -171,9 +193,12 @@ def recent_conversations(limit=10):
         print(f"   Session: {conv['session_id']}")
         print(f"\n   To export: ./find-conversations.py export {conv['session_id']}")
 
-def search_conversations(keyword):
+def search_conversations(keyword, project_path=None):
     """Search all conversations for a keyword."""
-    print(f"Searching for '{keyword}' in ~/.claude/projects/...\n")
+    if project_path:
+        print(f"Searching for '{keyword}' in project: {project_path}\n")
+    else:
+        print(f"Searching for '{keyword}' in ~/.claude/projects/...\n")
 
     results = []
 
@@ -188,6 +213,12 @@ def search_conversations(keyword):
             conv = parse_conversation(jsonl_file)
             if not conv:
                 continue
+
+            # Filter by project if specified
+            if project_path and conv['project']:
+                conv_project = normalize_path(conv['project'])
+                if conv_project != project_path:
+                    continue
 
             # Search in messages
             matches = []
@@ -312,22 +343,36 @@ def main():
 
     command = sys.argv[1]
 
-    if command == "list":
-        list_conversations()
-    elif command == "recent":
-        limit = int(sys.argv[2]) if len(sys.argv) > 2 else 10
-        recent_conversations(limit)
-    elif command == "search":
-        if len(sys.argv) < 3:
-            print("Usage: ./find-conversations.py search KEYWORD")
+    # Parse --project flag
+    project_path = None
+    args = sys.argv[2:]
+    if '--project' in args:
+        idx = args.index('--project')
+        if idx + 1 < len(args):
+            project_path = normalize_path(args[idx + 1])
+            # Remove --project and its value from args
+            args = args[:idx] + args[idx+2:]
+        else:
+            print("Error: --project requires a path argument")
             sys.exit(1)
-        search_conversations(sys.argv[2])
+
+    if command == "list":
+        list_conversations(project_path)
+    elif command == "recent":
+        limit = int(args[0]) if args and args[0].isdigit() else 10
+        recent_conversations(limit, project_path)
+    elif command == "search":
+        if not args or args[0].startswith('--'):
+            print("Usage: ./find-conversations.py search KEYWORD [--project PATH]")
+            sys.exit(1)
+        search_conversations(args[0], project_path)
     elif command == "export":
-        if len(sys.argv) < 3:
+        if not args:
             print("Usage: ./find-conversations.py export SESSION_ID [OUTPUT_PATH]")
             sys.exit(1)
-        output = sys.argv[3] if len(sys.argv) > 3 else None
-        export_conversation(sys.argv[2], output)
+        session_id = args[0]
+        output = args[1] if len(args) > 1 and not args[1].startswith('--') else None
+        export_conversation(session_id, output)
     else:
         print(f"Unknown command: {command}")
         print(__doc__)
