@@ -545,8 +545,7 @@
                 ;; Write active port for watchexec/scripts to read
                 (spit (str active-port-file) (str (:port jvm)))
                 (println "\nApp started successfully!")
-                (println "Connect REPL: clj -M:connect --port" (:port jvm))
-                (println "Active port written to:" (str active-port-file)))
+                (println "Connect REPL: clj -M:connect --port" (:port jvm)))
               (println "\nFailed to start app:" (:error result))))))
       ;; No idle JVMs - user hasn't run start
       (println "No idle JVMs available. Run 'bb scripts/pool.clj start' first."))))
