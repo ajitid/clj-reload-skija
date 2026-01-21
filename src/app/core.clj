@@ -202,7 +202,7 @@
                 paint (doto (Paint.)
                         (.setColor (unchecked-int text-color)))]
       ;; Header
-      (.drawString canvas "ERROR" (float padding) (float (+ padding line-height)) font paint)
+      (.drawString canvas "ERROR (Ctrl+E or middle-click to copy)" (float padding) (float (+ padding line-height)) font paint)
       ;; Location (file:line:column) if available (for compile errors)
       (when location
         (.drawString canvas (str "at " location) (float padding) (float (+ padding (* 2.5 line-height))) font paint))
