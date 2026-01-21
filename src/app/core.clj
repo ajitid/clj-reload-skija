@@ -478,8 +478,9 @@
         ;; Mouse button event
         (instance? EventMouseButton event)
         (do
-          ;; Middle click copies error to clipboard
-          (when (and (= (:button event) :middle) (:pressed? event))
+          ;; Middle click copies error to clipboard (only if error exists)
+          (when (and (= (:button event) :middle) (:pressed? event)
+                     (or @state/last-reload-error @state/last-runtime-error))
             (copy-current-error-to-clipboard!))
           ;; Pass to gesture system for normal handling
           (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
@@ -512,9 +513,10 @@
         (instance? EventKey event)
         (let [{:keys [key pressed? modifiers]} event]
           (when pressed?
-            ;; Ctrl+E copies error to clipboard (SDL3 'e' keycode = 0x65)
-            ;; SDL modifiers: CTRL = 0x0040 | 0x0080 (LCTRL | RCTRL)
-            (when (and (= key 0x65) (pos? (bit-and modifiers 0x00C0)))
+            ;; Ctrl+E copies error to clipboard (only if error exists)
+            ;; SDL3 'e' keycode = 0x65, CTRL modifier = 0x00C0 (LCTRL | RCTRL)
+            (when (and (= key 0x65) (pos? (bit-and modifiers 0x00C0))
+                       (or @state/last-reload-error @state/last-runtime-error))
               (copy-current-error-to-clipboard!))))
 
         ;; Unknown event - ignore
