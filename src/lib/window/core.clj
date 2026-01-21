@@ -225,3 +225,22 @@
    Returns [x y]."
   []
   (sdl/get-global-mouse-position))
+
+;; Clipboard functions (re-exported from internal)
+(defn set-clipboard-text!
+  "Set UTF-8 text to system clipboard.
+   Returns true on success, false on failure."
+  [^String text]
+  (sdl/set-clipboard-text! text))
+
+(defn get-clipboard-text
+  "Get UTF-8 text from system clipboard.
+   Returns string or nil if no text available."
+  []
+  (sdl/get-clipboard-text))
+
+(defn has-clipboard-text?
+  "Check if clipboard contains text (non-empty).
+   Returns boolean."
+  []
+  (sdl/has-clipboard-text?))

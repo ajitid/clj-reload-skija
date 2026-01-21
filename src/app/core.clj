@@ -20,8 +20,6 @@
   (:import [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap Font Typeface]
            [io.github.humbleui.types Rect]
            [java.io StringWriter PrintWriter]
-           [java.awt Toolkit]
-           [java.awt.datatransfer StringSelection]
            [lib.window.events EventClose EventResize EventMouseButton EventMouseMove
             EventKey EventFrameSkija EventFingerDown EventFingerMove EventFingerUp]))
 
@@ -155,11 +153,9 @@
     (.toString sw)))
 
 (defn copy-to-clipboard!
-  "Copy text to system clipboard."
+  "Copy text to system clipboard using SDL3."
   [^String text]
-  (let [clipboard (.getSystemClipboard (Toolkit/getDefaultToolkit))
-        selection (StringSelection. text)]
-    (.setContents clipboard selection nil)))
+  (window/set-clipboard-text! text))
 
 (defn format-error-for-clipboard
   "Format error with full stack trace for clipboard."
@@ -481,9 +477,14 @@
 
         ;; Mouse button event
         (instance? EventMouseButton event)
-        (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
-          (handle-fn event {:scale @state/scale
-                            :window-width @state/window-width}))
+        (do
+          ;; Middle click copies error to clipboard
+          (when (and (= (:button event) :middle) (:pressed? event))
+            (copy-current-error-to-clipboard!))
+          ;; Pass to gesture system for normal handling
+          (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
+            (handle-fn event {:scale @state/scale
+                              :window-width @state/window-width})))
 
         ;; Mouse move event
         (instance? EventMouseMove event)
@@ -511,10 +512,10 @@
         (instance? EventKey event)
         (let [{:keys [key pressed? modifiers]} event]
           (when pressed?
-            ;; F2 copies error to clipboard
-            ;; Ctrl+` toggles panel
-            ;; Note: key codes differ from JWM, may need adjustment
-            nil))
+            ;; Ctrl+E copies error to clipboard (SDL3 'e' keycode = 0x65)
+            ;; SDL modifiers: CTRL = 0x0040 | 0x0080 (LCTRL | RCTRL)
+            (when (and (= key 0x65) (pos? (bit-and modifiers 0x00C0)))
+              (copy-current-error-to-clipboard!))))
 
         ;; Unknown event - ignore
         :else nil))))

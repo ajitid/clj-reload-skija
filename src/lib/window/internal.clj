@@ -2,7 +2,7 @@
   "Private SDL3 interop layer via LWJGL 3.4.0.
    Handles SDL initialization, window/context creation, and event polling."
   (:require [lib.window.events :as e])
-  (:import [org.lwjgl.sdl SDLInit SDLVideo SDLMouse SDLEvents SDLError SDL_Event SDL_Rect
+  (:import [org.lwjgl.sdl SDLInit SDLVideo SDLMouse SDLEvents SDLError SDLClipboard SDL_Event SDL_Rect
             SDL_MouseButtonEvent SDL_MouseMotionEvent SDL_WindowEvent
             SDL_KeyboardEvent SDL_TouchFingerEvent SDL_EventFilterI]
            [org.lwjgl.opengl GL]
@@ -339,6 +339,28 @@
   [watcher]
   (when watcher
     (SDLEvents/SDL_RemoveEventWatch watcher 0)))
+
+;; ============================================================
+;; Clipboard
+;; ============================================================
+
+(defn set-clipboard-text!
+  "Set UTF-8 text to system clipboard.
+   Returns true on success, false on failure."
+  [^String text]
+  (SDLClipboard/SDL_SetClipboardText text))
+
+(defn get-clipboard-text
+  "Get UTF-8 text from system clipboard.
+   Returns string or nil if no text available."
+  []
+  (SDLClipboard/SDL_GetClipboardText))
+
+(defn has-clipboard-text?
+  "Check if clipboard contains text (non-empty).
+   Returns boolean."
+  []
+  (SDLClipboard/SDL_HasClipboardText))
 
 (defn cleanup!
   "Clean up SDL resources.
