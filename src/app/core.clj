@@ -14,13 +14,14 @@
             [clojure.string :as str]
             [lib.layout.core :as layout]
             [lib.layout.render :as layout-render]
+            [lib.layout.scroll :as scroll]
             [lib.window.core :as window]
             [lib.window.events :as e]
             [lib.window.macos :as macos])
   (:import [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap Font Typeface]
            [io.github.humbleui.types Rect]
            [java.io StringWriter PrintWriter]
-           [lib.window.events EventClose EventResize EventMouseButton EventMouseMove
+           [lib.window.events EventClose EventResize EventMouseButton EventMouseMove EventMouseWheel
             EventKey EventFrameSkija EventFingerDown EventFingerMove EventFingerUp]))
 
 ;; ============================================================
@@ -252,6 +253,9 @@
   ;; Initial grid calculation
   (recalculate-grid! @state/window-width @state/window-height)
 
+  ;; Initialize scroll state for demo
+  (scroll/init! :scroll-demo)
+
   ;; Register gesture targets
   (when-let [register-gestures! (requiring-resolve 'app.gestures/register-gestures!)]
     (register-gestures!)))
@@ -331,49 +335,72 @@
   "Layout system demo using new Subform-style API."
   []
   {:layout {:x {:size "100%"} :y {:size "100%"}}
-   :children-layout {:mode :stack-y
-                     :x {:before 20 :after 20}
-                     :y {:before 20 :between 12 :after 20}}
+   :children-layout {:mode :stack-x
+                     :x {:before 20 :between 20 :after 20}
+                     :y {:before 20 :after 20}}
    :children
-   [;; Row 1: Fixed + Spacer + Fixed
-    {:layout {:y {:size 50}}
-     :children-layout {:mode :stack-x :x {:between 10}}
+   [;; Left column: Original layout demo
+    {:layout {:x {:size "1s"} :y {:size "100%"}}
+     :children-layout {:mode :stack-y
+                       :y {:between 12}}
      :children
-     [{:layout {:x {:size 100}} :fill 0xFF4A90D9 :label "100px"}
-      {:layout {:x {:size "1s"}} :fill 0x20FFFFFF :label "spacer (1s)"}
-      {:layout {:x {:size 100}} :fill 0xFF4A90D9 :label "100px"}]}
+     [;; Row 1: Fixed + Spacer + Fixed
+      {:layout {:y {:size 50}}
+       :children-layout {:mode :stack-x :x {:between 10}}
+       :children
+       [{:layout {:x {:size 100}} :fill 0xFF4A90D9 :label "100px"}
+        {:layout {:x {:size "1s"}} :fill 0x20FFFFFF :label "spacer (1s)"}
+        {:layout {:x {:size 100}} :fill 0xFF4A90D9 :label "100px"}]}
 
-    ;; Row 2: Stretch weights 1:2:1
-    {:layout {:y {:size 60}}
-     :children-layout {:mode :stack-x :x {:between 10}}
+      ;; Row 2: Stretch weights 1:2:1
+      {:layout {:y {:size 60}}
+       :children-layout {:mode :stack-x :x {:between 10}}
+       :children
+       [{:layout {:x {:size "1s"}} :fill 0xFF44AA66 :label "1s"}
+        {:layout {:x {:size "2s"}} :fill 0xFF66CC88 :label "2s"}
+        {:layout {:x {:size "1s"}} :fill 0xFF44AA66 :label "1s"}]}
+
+      ;; Row 3: Percentages
+      {:layout {:y {:size 50}}
+       :children-layout {:mode :stack-x :x {:between 10}}
+       :children
+       [{:layout {:x {:size "30%"}} :fill 0xFFD94A4A :label "30%"}
+        {:layout {:x {:size "70%"}} :fill 0xFFD97A4A :label "70%"}]}
+
+      ;; Row 4: Vertical stretch (fills remaining)
+      {:layout {:y {:size "1s"}} :fill 0x15FFFFFF :label "stretch (1s)"}]}
+
+    ;; Right column: Scrollable list demo
+    {:id :scroll-demo
+     :layout {:x {:size 200} :y {:size "100%"}}
+     :fill 0x20FFFFFF
+     :children-layout {:mode :stack-y
+                       :overflow {:y :scroll}
+                       :y {:before 10 :between 8 :after 10}
+                       :x {:before 10 :after 10}}
      :children
-     [{:layout {:x {:size "1s"}} :fill 0xFF44AA66 :label "1s"}
-      {:layout {:x {:size "2s"}} :fill 0xFF66CC88 :label "2s"}
-      {:layout {:x {:size "1s"}} :fill 0xFF44AA66 :label "1s"}]}
+     (vec (for [i (range 30)]
+            {:layout {:y {:size 40}}
+             :fill (+ 0xFF303050 (* (mod i 5) 0x101010))
+             :label (str "Item " (inc i))}))}]})
 
-    ;; Row 3: Percentages
-    {:layout {:y {:size 50}}
-     :children-layout {:mode :stack-x :x {:between 10}}
-     :children
-     [{:layout {:x {:size "30%"}} :fill 0xFFD94A4A :label "30%"}
-      {:layout {:x {:size "70%"}} :fill 0xFFD97A4A :label "70%"}]}
+(defn- find-node-by-id
+  "Find a node in laid-out tree by :id."
+  [tree id]
+  (when tree
+    (if (= (:id tree) id)
+      tree
+      (some #(find-node-by-id % id) (:children tree)))))
 
-    ;; Row 4: Vertical stretch (fills remaining)
-    {:layout {:y {:size "1s"}} :fill 0x15FFFFFF :label "stretch (1s)"}
-
-    ;; Row 5: Grid
-    {:layout {:y {:size 120}}
-     :fill 0x10FFFFFF
-     :label "grid 3 x-count"
-     :children-layout {:mode :grid
-                       :x-count 3
-                       :x {:before 10 :between 8 :after 10}
-                       :y {:before 10 :between 8 :after 10}}
-     :children
-     (vec (for [i (range 6)]
-            {:layout {:y {:size 45}}
-             :fill (+ 0xFF505050 (* i 0x101010))
-             :label (str "cell " i)}))}]})
+(defn- calculate-content-height
+  "Calculate total content height from children."
+  [node]
+  (if-let [children (:children node)]
+    (let [bounds (map :bounds children)
+          max-bottom (reduce max 0 (map #(+ (:y %) (:h %)) bounds))
+          parent-top (get-in node [:bounds :y] 0)]
+      (- max-bottom parent-top))
+    0))
 
 (defn draw-layout-demo
   "Draw the layout demo UI."
@@ -381,16 +408,26 @@
   (with-open [fill-paint (Paint.)
               text-paint (doto (Paint.) (.setColor (unchecked-int 0xFFFFFFFF)))
               font (Font. (Typeface/makeDefault) (float 10))]
-    (layout-render/render-tree canvas (demo-ui) {:x 0 :y 0 :w width :h height}
-                               (fn [^Canvas c node {:keys [x y w h]}]
-                                 ;; Draw fill
-                                 (when-let [color (:fill node)]
-                                   (.setColor fill-paint (unchecked-int color))
-                                   (.setMode fill-paint PaintMode/FILL)
-                                   (.drawRect c (Rect/makeXYWH x y w h) fill-paint))
-                                 ;; Draw label only on leaf nodes (no children)
-                                 (when (and (:label node) (not (:children node)))
-                                   (.drawString c (:label node) (float (+ x 4)) (float (+ y 12)) font text-paint))))))
+    (let [laid-out (layout-render/render-tree canvas (demo-ui) {:x 0 :y 0 :w width :h height}
+                                 (fn [^Canvas c node {:keys [x y w h]}]
+                                   ;; Draw fill
+                                   (when-let [color (:fill node)]
+                                     (.setColor fill-paint (unchecked-int color))
+                                     (.setMode fill-paint PaintMode/FILL)
+                                     (.drawRect c (Rect/makeXYWH x y w h) fill-paint))
+                                   ;; Draw label only on leaf nodes (no children)
+                                   (when (and (:label node) (not (:children node)))
+                                     (.drawString c (:label node) (float (+ x 4)) (float (+ y 12)) font text-paint))))]
+      ;; Store laid-out tree for scroll hit testing
+      (reset! state/current-tree laid-out)
+
+      ;; Update scroll dimensions for scrollable containers
+      (when-let [scroll-node (find-node-by-id laid-out :scroll-demo)]
+        (let [bounds (:bounds scroll-node)
+              viewport {:w (:w bounds) :h (:h bounds)}
+              content-h (calculate-content-height scroll-node)
+              content {:w (:w bounds) :h content-h}]
+          (scroll/set-dimensions! :scroll-demo viewport content))))))
 
 (defn draw
   "Called every frame for rendering.
@@ -497,6 +534,14 @@
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-move)]
           (handle-fn event {:scale @state/scale
                             :window-width @state/window-width}))
+
+        ;; Mouse wheel event
+        (instance? EventMouseWheel event)
+        (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-wheel)]
+          (when (handle-fn event {:scale @state/scale
+                                  :tree @state/current-tree})
+            ;; Request frame redraw if scroll was handled
+            (window/request-frame! win)))
 
         ;; Touch/finger events
         (instance? EventFingerDown event)

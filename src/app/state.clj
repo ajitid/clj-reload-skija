@@ -17,6 +17,7 @@
 (defonce circles-x (atom 2))
 (defonce circles-y (atom 2))
 (defonce grid-positions (atom []))
+(defonce current-tree (atom nil))  ;; laid-out tree for scroll hit testing
 
 ;; UI state
 (defonce dragging-slider (atom nil))

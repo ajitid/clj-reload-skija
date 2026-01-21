@@ -24,22 +24,165 @@ Control stacking order of elements. Higher `:z` values render on top.
 
 Control what happens when children exceed parent bounds.
 
+### Values
+
+- `:visible` (default) - Children can render beyond parent bounds
+- `:clip` - Children clipped to parent bounds (no scrolling)
+- `:scroll` - Children clipped with scroll capability
+
+### Syntax
+
+```clojure
+;; Shorthand - applies to both axes
+:overflow :clip
+:overflow :scroll
+
+;; Map syntax - per-axis control
+:overflow {:x :clip :y :scroll}
+:overflow {:y :scroll}  ;; x defaults to :visible
+```
+
+### Basic Example
+
 ```clojure
 {:children-layout {:mode :stack-y
                    :overflow :clip}  ; clips children to parent bounds
  :children [...]}
 ```
 
-**Options:**
-- `:visible` (default) - children can extend beyond bounds
-- `:clip` - children clipped to parent bounds
-- `:hidden` - alias for :clip
-
-**Usage with canvas:** Use `(walk-layout tree canvas render-fn)` for clipping support.
+**Usage with canvas:** Use `(walk-layout tree canvas render-fn)` for clipping/scroll support.
 
 ---
 
-## 3. Aspect Ratio
+## 3. Scrolling
+
+Containers with `:overflow :scroll` enable scrollable content with mouse wheel support.
+
+### Requirements
+
+1. Explicit `:id` on the scrollable container (for state tracking)
+2. Initialize scroll state with `(scroll/init! id)`
+3. Set content dimensions with `(scroll/set-dimensions! id viewport content)`
+
+### Example
+
+```clojure
+(require '[lib.layout.scroll :as scroll])
+
+;; In your UI tree
+{:id :my-list
+ :layout {:y {:size 300}}
+ :children-layout {:mode :stack-y
+                   :overflow {:y :scroll}}
+ :children [...]}
+
+;; Initialize scroll state (e.g., in init function)
+(scroll/init! :my-list)
+
+;; Set dimensions after layout (e.g., after render-tree)
+(scroll/set-dimensions! :my-list
+  {:w 200 :h 300}   ;; viewport
+  {:w 200 :h 1000}) ;; content (total scrollable height)
+```
+
+### Scroll APIs
+
+The `lib.layout.scroll` namespace provides:
+
+**Read APIs:**
+```clojure
+(scroll/get-scroll :my-list)           ;; => {:x 0 :y 150}
+(scroll/get-dimensions :my-list)       ;; => {:scroll {...} :viewport {...} :content {...}}
+(scroll/get-scrollable-size :my-list)  ;; => {:x 0 :y 700} (max scroll)
+(scroll/get-scroll-progress :my-list :y) ;; => 0.5 (50% scrolled)
+(scroll/scrollable? :my-list :y)       ;; => true
+```
+
+**Write APIs:**
+```clojure
+(scroll/set-scroll! :my-list {:x 0 :y 200})
+(scroll/scroll-by! :my-list {:x 0 :y 50})
+(scroll/scroll-to-top! :my-list)
+(scroll/scroll-to-bottom! :my-list)
+```
+
+**Watchers:**
+```clojure
+;; Watch for scroll changes
+(def watcher-id
+  (scroll/watch! :my-list
+    (fn [old-pos new-pos]
+      (println "Scrolled from" old-pos "to" new-pos))))
+
+;; Stop watching
+(scroll/unwatch! :my-list watcher-id)
+```
+
+### Scrollbar Rendering
+
+Scrollbars are rendered automatically when:
+- Overflow is `:scroll` on an axis
+- Content size exceeds viewport size on that axis
+
+Scrollbars appear as semi-transparent rounded rectangles on the right (vertical) or bottom (horizontal) edge.
+
+---
+
+## 4. Mixins (Lifecycle Hooks)
+
+Reusable lifecycle behaviors for layout nodes. Mixins are maps with `:did-mount` and `:will-unmount` functions.
+
+```clojure
+(require '[lib.layout.mixins :as mixins])
+
+;; Scrollable mixin - manages scroll state lifecycle
+{:id :sidebar
+ :mixins [(mixins/scrollable :y)]
+ :overflow {:y :scroll}
+ :children [...]}
+
+;; Persist scroll when container hidden
+{:mixins [(mixins/scrollable :y {:persist true})]}
+
+;; Watch scroll changes
+{:mixins [(mixins/on-scroll-changed
+            (fn [id old new]
+              (println id "scrolled from" old "to" new)))]}
+```
+
+### Virtual Scrolling
+
+For long lists (1000s of items), use the virtual scroll mixin to only render visible items:
+
+```clojure
+(require '[lib.layout.mixins :as mixins])
+
+;; Create virtual scroll mixin
+(def contact-scroller
+  (mixins/virtual-scroll
+    @all-contacts      ;; all items (data)
+    50                 ;; item height (px)
+    (fn [contact idx]  ;; render function
+      {:fill 0xFF404040
+       :label (:name contact)})
+    {:buffer 5}))      ;; extra items above/below viewport
+
+;; In your UI, compute visible children dynamically
+(defn contacts-list [viewport-height]
+  {:id :contacts
+   :layout {:y {:size viewport-height}}
+   :children-layout {:mode :stack-y :overflow {:y :scroll}}
+   :children (mixins/compute-visible-children contact-scroller :contacts viewport-height)})
+```
+
+The virtual scroll mixin:
+- Only renders items visible in the viewport (plus a buffer)
+- Automatically sets scroll dimensions based on total item count
+- Uses absolute positioning for visible items
+
+---
+
+## 5. Aspect Ratio
 
 Maintain width/height proportions. One axis derives from the other.
 
@@ -61,7 +204,7 @@ Maintain width/height proportions. One axis derives from the other.
 
 ---
 
-## 4. Anchor/Origin for Pop-Out
+## 6. Anchor/Origin for Pop-Out
 
 Position pop-out elements from different reference points using `:anchor` and `:offset`.
 
@@ -96,7 +239,7 @@ Position pop-out elements from different reference points using `:anchor` and `:
 
 ---
 
-## 5. Per-Pair Spacing (Workaround)
+## 7. Per-Pair Spacing (Workaround)
 
 To override `:between` spacing for specific pairs of children, insert a zero-width spacer:
 

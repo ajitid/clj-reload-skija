@@ -1,14 +1,114 @@
 (ns lib.layout.render
   "Rendering utilities for layout trees with Skija."
-  (:require [lib.layout.core :as layout])
+  (:require [lib.layout.core :as layout]
+            [lib.layout.scroll :as scroll])
   (:import [io.github.humbleui.skija Canvas Paint PaintMode]
-           [io.github.humbleui.types Rect]))
+           [io.github.humbleui.types Rect RRect]))
+
+;; ============================================================
+;; Helpers
+;; ============================================================
+
+(defn- normalize-overflow
+  "Convert overflow spec to normalized map form."
+  [overflow]
+  (cond
+    (nil? overflow) {:x :visible :y :visible}
+    (keyword? overflow) {:x overflow :y overflow}
+    (map? overflow) (merge {:x :visible :y :visible} overflow)))
+
+;; ============================================================
+;; Scrollbar Rendering
+;; ============================================================
+
+(defn- render-scrollbars
+  "Render scrollbars for scrollable container.
+
+  Args:
+    canvas - Skija Canvas
+    node - layout node (must have :id)
+    bounds - container bounds {:x :y :w :h}
+    scroll-offset - current scroll {:x :y}"
+  [^Canvas canvas node bounds scroll-offset]
+  (when-let [dims (scroll/get-dimensions (:id node))]
+    (let [{:keys [viewport content]} dims
+          {:keys [x y w h]} bounds
+
+          scrollbar-width 6
+          scrollbar-margin 2
+          scrollbar-radius 3
+          track-color 0x20FFFFFF
+          thumb-color 0x60FFFFFF]
+
+      ;; Vertical scrollbar (when content taller than viewport)
+      (when (and (pos? (:h viewport)) (> (:h content) (:h viewport)))
+        (let [track-height (- h (* 2 scrollbar-margin))
+              thumb-ratio (/ (:h viewport) (:h content))
+              thumb-height (max 20 (* track-height thumb-ratio))
+              max-scroll (- (:h content) (:h viewport))
+              scroll-progress (if (pos? max-scroll)
+                               (/ (:y scroll-offset) max-scroll)
+                               0)
+              thumb-y (* scroll-progress (- track-height thumb-height))
+
+              track-x (- (+ x w) scrollbar-width scrollbar-margin)
+              track-y (+ y scrollbar-margin)]
+
+          ;; Draw track
+          (with-open [track-paint (doto (Paint.)
+                                    (.setColor (unchecked-int track-color)))]
+            (.drawRRect canvas
+                        (RRect/makeXYWH track-x track-y scrollbar-width track-height scrollbar-radius)
+                        track-paint))
+
+          ;; Draw thumb
+          (with-open [thumb-paint (doto (Paint.)
+                                    (.setColor (unchecked-int thumb-color)))]
+            (.drawRRect canvas
+                        (RRect/makeXYWH track-x (+ track-y thumb-y) scrollbar-width thumb-height scrollbar-radius)
+                        thumb-paint))))
+
+      ;; Horizontal scrollbar (when content wider than viewport)
+      (when (and (pos? (:w viewport)) (> (:w content) (:w viewport)))
+        (let [track-width (- w (* 2 scrollbar-margin))
+              thumb-ratio (/ (:w viewport) (:w content))
+              thumb-width (max 20 (* track-width thumb-ratio))
+              max-scroll (- (:w content) (:w viewport))
+              scroll-progress (if (pos? max-scroll)
+                               (/ (:x scroll-offset) max-scroll)
+                               0)
+              thumb-x (* scroll-progress (- track-width thumb-width))
+
+              track-x (+ x scrollbar-margin)
+              track-y (- (+ y h) scrollbar-width scrollbar-margin)]
+
+          ;; Draw track
+          (with-open [track-paint (doto (Paint.)
+                                    (.setColor (unchecked-int track-color)))]
+            (.drawRRect canvas
+                        (RRect/makeXYWH track-x track-y track-width scrollbar-width scrollbar-radius)
+                        track-paint))
+
+          ;; Draw thumb
+          (with-open [thumb-paint (doto (Paint.)
+                                    (.setColor (unchecked-int thumb-color)))]
+            (.drawRRect canvas
+                        (RRect/makeXYWH (+ track-x thumb-x) track-y thumb-width scrollbar-width scrollbar-radius)
+                        thumb-paint)))))))
+
+;; ============================================================
+;; Layout Tree Walking
+;; ============================================================
 
 (defn walk-layout
   "Walk a laid-out tree, calling render-fn for each node.
    render-fn receives (node bounds canvas) where bounds is {:x :y :w :h :z :overflow}.
    Children are sorted by :z index (lower z rendered first, higher z on top).
-   When :overflow is :clip or :hidden, children are clipped to parent bounds.
+
+   Overflow handling:
+   - :visible - children can render beyond parent bounds
+   - :clip - children clipped to parent bounds
+   - :scroll - children clipped + translated by scroll offset + scrollbars rendered
 
    Example:
      (walk-layout tree canvas
@@ -16,7 +116,7 @@
          (when-let [color (:color node)]
            (.drawRect canvas (Rect/makeXYWH x y w h) paint))))"
   ([tree render-fn]
-   ;; Legacy arity without canvas - no clipping support
+   ;; Legacy arity without canvas - no clipping/scroll support
    (when tree
      (let [bounds (:bounds tree)]
        (render-fn tree bounds)
@@ -24,24 +124,61 @@
          (doseq [child sorted-children]
            (walk-layout child render-fn))))))
   ([tree ^Canvas canvas render-fn]
-   ;; With canvas - supports overflow clipping
+   ;; With canvas - supports overflow clipping and scrolling
    (when tree
      (let [bounds (:bounds tree)
-           overflow (get bounds :overflow :visible)
-           clip? (#{:clip :hidden} overflow)]
+           overflow (normalize-overflow (get bounds :overflow))
+           {:keys [x y]} overflow
+
+           ;; Determine clipping/scrolling behavior per axis
+           clip-x? (#{:clip :scroll} x)
+           clip-y? (#{:clip :scroll} y)
+           scroll-x? (= :scroll x)
+           scroll-y? (= :scroll y)
+
+           ;; Get scroll offset if scrollable (requires :id)
+           scroll-offset (when (and (:id tree) (or scroll-x? scroll-y?))
+                          (scroll/get-scroll (:id tree)))
+
+           needs-clip? (or clip-x? clip-y?)
+           needs-scroll? (and scroll-offset (or scroll-x? scroll-y?))]
+
+       ;; Render this node first
        (render-fn tree bounds canvas)
+
        (let [sorted-children (sort-by #(get-in % [:bounds :z] 0) (:children tree))]
-         (if (and clip? (seq sorted-children))
-           ;; Save canvas state, clip, render children, restore
+         (if needs-clip?
+           ;; Save canvas state, apply clipping and scroll translation
            (let [save-count (.save canvas)
                  {:keys [x y w h]} bounds]
+
+             ;; Clip to parent bounds
              (.clipRect canvas (Rect/makeXYWH x y w h))
+
+             ;; Translate by scroll offset (negative = content moves opposite to scroll)
+             (when needs-scroll?
+               (let [dx (if scroll-x? (- (:x scroll-offset 0)) 0)
+                     dy (if scroll-y? (- (:y scroll-offset 0)) 0)]
+                 (.translate canvas (float dx) (float dy))))
+
+             ;; Render children
              (doseq [child sorted-children]
                (walk-layout child canvas render-fn))
-             (.restoreToCount canvas save-count))
-           ;; No clipping needed
+
+             ;; Restore canvas state (removes clip and translation)
+             (.restoreToCount canvas save-count)
+
+             ;; Render scrollbars AFTER restoring (so they're not clipped/translated)
+             (when needs-scroll?
+               (render-scrollbars canvas tree bounds scroll-offset)))
+
+           ;; No clipping - children can overflow
            (doseq [child sorted-children]
              (walk-layout child canvas render-fn))))))))
+
+;; ============================================================
+;; Convenience Functions
+;; ============================================================
 
 (defn draw-debug-bounds
   "Draw debug rectangles showing layout bounds.
@@ -118,7 +255,7 @@
   (let [laid-out (if (:bounds tree)
                    tree
                    (layout/layout tree parent-bounds))]
-    (walk-layout laid-out
-      (fn [node bounds]
+    (walk-layout laid-out canvas
+      (fn [node bounds _canvas]
         (draw-node canvas node bounds)))
     laid-out))

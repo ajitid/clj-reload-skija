@@ -3,7 +3,7 @@
    Handles SDL initialization, window/context creation, and event polling."
   (:require [lib.window.events :as e])
   (:import [org.lwjgl.sdl SDLInit SDLVideo SDLMouse SDLEvents SDLError SDLClipboard SDL_Event SDL_Rect
-            SDL_MouseButtonEvent SDL_MouseMotionEvent SDL_WindowEvent
+            SDL_MouseButtonEvent SDL_MouseMotionEvent SDL_MouseWheelEvent SDL_WindowEvent
             SDL_KeyboardEvent SDL_TouchFingerEvent SDL_EventFilterI]
            [org.lwjgl.opengl GL]
            [org.lwjgl.system MemoryStack]))
@@ -23,6 +23,7 @@
 (def ^:private EVENT_MOUSE_BUTTON_DOWN SDLEvents/SDL_EVENT_MOUSE_BUTTON_DOWN)
 (def ^:private EVENT_MOUSE_BUTTON_UP   SDLEvents/SDL_EVENT_MOUSE_BUTTON_UP)
 (def ^:private EVENT_MOUSE_MOTION      SDLEvents/SDL_EVENT_MOUSE_MOTION)
+(def ^:private EVENT_MOUSE_WHEEL       SDLEvents/SDL_EVENT_MOUSE_WHEEL)
 (def ^:private EVENT_KEY_DOWN          SDLEvents/SDL_EVENT_KEY_DOWN)
 (def ^:private EVENT_KEY_UP            SDLEvents/SDL_EVENT_KEY_UP)
 (def ^:private EVENT_FINGER_DOWN       SDLEvents/SDL_EVENT_FINGER_DOWN)
@@ -212,6 +213,13 @@
   (let [mm (SDL_MouseMotionEvent/create (.address (.motion event)))]
     (e/->EventMouseMove (.x mm) (.y mm))))
 
+(defn- convert-mouse-wheel-event
+  "Convert SDL mouse wheel event to EventMouseWheel.
+   x, y are mouse position; dx, dy are scroll delta."
+  [^SDL_Event event]
+  (let [mw (SDL_MouseWheelEvent/create (.address (.wheel event)))]
+    (e/->EventMouseWheel (.mouse_x mw) (.mouse_y mw) (.x mw) (.y mw))))
+
 (defn- convert-finger-event
   "Convert SDL finger event to touch event.
    Note: SDL finger coords are normalized 0..1, we convert to logical pixels."
@@ -272,6 +280,9 @@
 
           (= event-type EVENT_MOUSE_MOTION)
           (conj! events (convert-mouse-motion-event event))
+
+          (= event-type EVENT_MOUSE_WHEEL)
+          (conj! events (convert-mouse-wheel-event event))
 
           (= event-type EVENT_KEY_DOWN)
           (conj! events (convert-key-event event true))

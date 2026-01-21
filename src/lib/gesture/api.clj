@@ -7,6 +7,8 @@
    - Shell applies state changes and executes effects"
   (:require [lib.gesture.state :as state]
             [lib.gesture.arena :as arena]
+            [lib.gesture.hit-test :as hit-test]
+            [lib.layout.scroll :as scroll]
             [lib.window.events :as e]))
 
 ;; -----------------------------------------------------------------------------
@@ -208,3 +210,45 @@
         (arena/arena-check-time-thresholds @state/arena time)]
     (reset! state/arena arena)
     (execute-effects! effects time)))
+
+;; -----------------------------------------------------------------------------
+;; Mouse Wheel Handler (for scrolling)
+;; -----------------------------------------------------------------------------
+
+(defn- normalize-overflow
+  "Convert overflow spec to normalized map form."
+  [overflow]
+  (cond
+    (nil? overflow) {:x :visible :y :visible}
+    (keyword? overflow) {:x overflow :y overflow}
+    (map? overflow) (merge {:x :visible :y :visible} overflow)))
+
+(defn handle-mouse-wheel
+  "Handle mouse wheel scroll events.
+
+   Finds scrollable container under cursor and updates scroll offset.
+
+   Arguments:
+   - event: EventMouseWheel with :x :y :dx :dy
+   - ctx: context map with :tree (laid-out tree) and optional :scale
+
+   Returns: true if scroll was handled, nil otherwise"
+  [event ctx]
+  (let [{:keys [x y dx dy]} event
+        {:keys [tree]} ctx]
+    (when tree
+      ;; Find scrollable container under cursor
+      (when-let [scrollable (hit-test/find-scrollable-container x y tree)]
+        (let [id (:id scrollable)
+              overflow (normalize-overflow (get-in scrollable [:bounds :overflow]))
+              scroll-x? (= :scroll (:x overflow))
+              scroll-y? (= :scroll (:y overflow))
+              ;; SDL3 wheel: positive dy = scroll up (content moves down = negative scroll offset change)
+              ;; We want: scroll wheel down = see content below = increase scroll offset
+              ;; So we negate dy for natural scrolling
+              scroll-multiplier 20  ;; pixels per wheel tick
+              delta {:x (if scroll-x? (* (- dx) scroll-multiplier) 0)
+                     :y (if scroll-y? (* (- dy) scroll-multiplier) 0)}]
+          (when (or (not= 0 (:x delta)) (not= 0 (:y delta)))
+            (scroll/scroll-by! id delta)
+            true))))))

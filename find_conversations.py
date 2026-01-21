@@ -3,10 +3,11 @@
 Find and search through Claude Code conversations.
 
 Usage:
-    ./find-conversations.py list [--project PATH]           # List all conversations
-    ./find-conversations.py recent [N] [--project PATH]     # List N most recent (default 10)
-    ./find-conversations.py search "scroll" [--project PATH]  # Search for keyword
-    ./find-conversations.py export SESSION_ID               # Export specific conversation
+    ./find_conversations.py list [--project PATH]           # List all conversations
+    ./find_conversations.py recent [N] [--project PATH]     # List N most recent (default 10)
+    ./find_conversations.py search "scroll" [--project PATH]  # Search for keyword
+    ./find_conversations.py export SESSION_ID               # Export specific conversation
+    ./find_conversations.py copy-last [--project PATH]      # Copy last assistant message to clipboard
 
 Options:
     --project PATH    Filter by project path (e.g., --project ~/myproject or --project .)
@@ -15,6 +16,8 @@ Options:
 import json
 import sys
 import os
+import subprocess
+import platform
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
@@ -191,7 +194,7 @@ def recent_conversations(limit=10, project_path=None):
         print(f"   Date: {dt.strftime('%Y-%m-%d %H:%M')}")
         print(f"   Messages: {conv['user_messages']} user, {conv['message_count']} total")
         print(f"   Session: {conv['session_id']}")
-        print(f"\n   To export: ./find-conversations.py export {conv['session_id']}")
+        print(f"\n   To export: ./find_conversations.py export {conv['session_id']}")
 
 def search_conversations(keyword, project_path=None):
     """Search all conversations for a keyword."""
@@ -336,6 +339,103 @@ def export_conversation(session_id, output_path=None):
     print(f"Exported to: {output_path}")
     print(f"Table of Contents: {user_count} user messages")
 
+def copy_to_clipboard(text):
+    """Copy text to clipboard using platform-specific commands."""
+    system = platform.system()
+
+    try:
+        if system == 'Darwin':  # macOS
+            process = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            _, stderr = process.communicate(text.encode('utf-8'))
+            if process.returncode != 0:
+                print(f"Error: pbcopy command failed: {stderr.decode('utf-8', errors='ignore')}")
+                return False
+        elif system == 'Linux':
+            # Try Wayland first (wl-copy), then X11 tools (xclip, xsel)
+            clipboard_tools = [
+                ['wl-copy'],                                    # Wayland
+                ['xclip', '-selection', 'clipboard'],           # X11
+                ['xsel', '--clipboard', '--input'],             # X11 fallback
+            ]
+
+            success = False
+            last_error = None
+
+            for tool in clipboard_tools:
+                try:
+                    process = subprocess.Popen(tool, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+                    _, stderr = process.communicate(text.encode('utf-8'))
+                    if process.returncode == 0:
+                        success = True
+                        break
+                    last_error = stderr.decode('utf-8', errors='ignore')
+                except FileNotFoundError:
+                    continue
+
+            if not success:
+                print("Error: No clipboard tool found on Linux")
+                print("Please install one of: wl-clipboard (Wayland), xclip, or xsel (X11)")
+                if last_error:
+                    print(f"Last error: {last_error}")
+                return False
+
+        elif system == 'Windows':
+            # clip.exe works in both PowerShell and CMD
+            # subprocess launches the executable directly, not through a shell
+            process = subprocess.Popen(['clip'], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            _, stderr = process.communicate(text.encode('utf-8'))
+            if process.returncode != 0:
+                print(f"Error: clip command failed: {stderr.decode('utf-8', errors='ignore')}")
+                return False
+        else:
+            print(f"Unsupported platform: {system}")
+            return False
+        return True
+    except Exception as e:
+        print(f"Error copying to clipboard: {e}")
+        return False
+
+def copy_last_message(project_path=None):
+    """Copy the last assistant message from the most recent conversation to clipboard."""
+    if project_path:
+        print(f"Finding most recent conversation in project: {project_path}\n")
+    else:
+        print("Finding most recent conversation...\n")
+
+    conversations = get_all_conversations(project_path)
+
+    if not conversations:
+        print("No conversations found")
+        return
+
+    # Get the most recent conversation
+    conv = conversations[0]
+
+    # Find the last assistant message
+    last_assistant_msg = None
+    for msg in reversed(conv['messages']):
+        if msg['role'] == 'assistant':
+            last_assistant_msg = msg['text']
+            break
+
+    if not last_assistant_msg:
+        print("No assistant messages found in the most recent conversation")
+        return
+
+    # Copy to clipboard
+    if copy_to_clipboard(last_assistant_msg):
+        dt = datetime.fromisoformat(conv['last_timestamp'].replace('Z', '+00:00'))
+        project_name = Path(conv['project']).name if conv['project'] else "Unknown"
+
+        print("✓ Copied last assistant message to clipboard!")
+        print(f"\nFrom conversation: {conv['first_message']}")
+        print(f"Project: {project_name}")
+        print(f"Date: {dt.strftime('%Y-%m-%d %H:%M')}")
+        print(f"\nMessage length: {len(last_assistant_msg)} characters")
+        print(f"Preview: {last_assistant_msg[:150]}...")
+    else:
+        print("Failed to copy to clipboard")
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -363,16 +463,18 @@ def main():
         recent_conversations(limit, project_path)
     elif command == "search":
         if not args or args[0].startswith('--'):
-            print("Usage: ./find-conversations.py search KEYWORD [--project PATH]")
+            print("Usage: ./find_conversations.py search KEYWORD [--project PATH]")
             sys.exit(1)
         search_conversations(args[0], project_path)
     elif command == "export":
         if not args:
-            print("Usage: ./find-conversations.py export SESSION_ID [OUTPUT_PATH]")
+            print("Usage: ./find_conversations.py export SESSION_ID [OUTPUT_PATH]")
             sys.exit(1)
         session_id = args[0]
         output = args[1] if len(args) > 1 and not args[1].startswith('--') else None
         export_conversation(session_id, output)
+    elif command == "copy-last":
+        copy_last_message(project_path)
     else:
         print(f"Unknown command: {command}")
         print(__doc__)

@@ -106,11 +106,25 @@
   "Defaults for children-layout.
    :mode - how children are arranged (:stack-x, :stack-y, :grid)
    :x/:y - spacing on each axis with :before/:between/:after
-   :overflow - how to handle content exceeding bounds (:visible, :clip, :hidden)"
+   :overflow - how to handle content exceeding bounds (:visible, :clip, :scroll)"
   {:mode :stack-y
    :x children-axis-defaults
    :y children-axis-defaults
-   :overflow :visible})
+   :overflow {:x :visible :y :visible}})
+
+(defn normalize-overflow
+  "Convert overflow spec to normalized map form.
+
+  Examples:
+    nil          => {:x :visible :y :visible}
+    :clip        => {:x :clip :y :clip}
+    :scroll      => {:x :scroll :y :scroll}
+    {:y :scroll} => {:x :visible :y :scroll}"
+  [overflow]
+  (cond
+    (nil? overflow) {:x :visible :y :visible}
+    (keyword? overflow) {:x overflow :y overflow}
+    (map? overflow) (merge {:x :visible :y :visible} overflow)))
 
 ;; ============================================================
 ;; Helpers
@@ -609,8 +623,8 @@
          final-w (clamp-size w min-w max-w)
          final-h (clamp-size h min-h max-h)
 
-         ;; Get overflow mode from children-layout
-         overflow (get children-layout :overflow :visible)
+         ;; Get overflow mode from children-layout (normalize to map form)
+         overflow (normalize-overflow (get children-layout :overflow))
 
          ;; Get z-index from layout
          z-index (get layout-spec :z 0)
