@@ -592,7 +592,7 @@
                :recording? false)  ; Not actually recording until FFmpeg starts
         (set-capture-active!)
         (println "[capture] Recording requested:" path
-                 "(will start on next frame)"))))))
+                 "(will start on next frame)")))))
 
 (defn stop-recording!
   "Stop video recording."
