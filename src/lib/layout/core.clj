@@ -29,6 +29,25 @@
      :grid    - 2D grid with :x-count columns and :y-count rows")
 
 ;; ============================================================
+;; Mixin Lifecycle State
+;; ============================================================
+
+(defonce ^:private mounted-nodes (atom #{}))
+
+(defn- process-mixins
+  "Call lifecycle hooks on all mixins for a node.
+   Phase can be :did-mount, :did-update, :will-unmount."
+  [node phase]
+  (doseq [mixin (:mixins node)]
+    (when-let [hook (get mixin phase)]
+      (hook node))))
+
+(defn reset-mounted-nodes!
+  "Clear the set of mounted nodes. Call when recreating the UI tree."
+  []
+  (reset! mounted-nodes #{}))
+
+;; ============================================================
 ;; Unit Parsing
 ;; ============================================================
 
@@ -645,8 +664,15 @@
                      child))
                  laid-out-children))]
 
-     (cond-> (assoc tree :bounds bounds)
-       final-children (assoc :children final-children)))))
+     ;; Build final tree with bounds
+     (let [result (cond-> (assoc tree :bounds bounds)
+                    final-children (assoc :children final-children))]
+       ;; Process mixin lifecycle if node has id and mixins
+       (when (and (:id result) (:mixins result))
+         (when-not (contains? @mounted-nodes (:id result))
+           (swap! mounted-nodes conj (:id result))
+           (process-mixins result :did-mount)))
+       result))))
 
 ;; ============================================================
 ;; Convenience constructors

@@ -223,18 +223,49 @@
     (keyword? overflow) {:x overflow :y overflow}
     (map? overflow) (merge {:x :visible :y :visible} overflow)))
 
+;; SDL modifier masks
+(def ^:private SDL_KMOD_SHIFT 0x0003)  ;; SDL_KMOD_LSHIFT | SDL_KMOD_RSHIFT
+
+;; -----------------------------------------------------------------------------
+;; Drag-to-Scroll Handler
+;; -----------------------------------------------------------------------------
+
+(defn handle-scroll-drag
+  "Handle drag gesture for scrolling.
+
+   Use this as an :on-drag handler for scrollable containers.
+   Scrolls the container in the opposite direction of the drag.
+
+   Arguments:
+   - event: gesture event with :delta {:x :y} and :pointer {:x :y}
+   - ctx: context map with :tree (laid-out tree)
+
+   Example usage:
+     (register-target! {:id :my-scroll-area
+                        :gesture-recognizers [:drag]
+                        :handlers {:on-drag handle-scroll-drag}})"
+  [event ctx]
+  (let [{:keys [delta pointer]} event
+        {:keys [tree]} ctx
+        {:keys [x y]} pointer]
+    (when-let [scrollable (hit-test/find-scrollable-container x y tree)]
+      (scroll/scroll-by! (:id scrollable)
+        {:x (- (:x delta 0))
+         :y (- (:y delta 0))}))))
+
 (defn handle-mouse-wheel
   "Handle mouse wheel scroll events.
 
    Finds scrollable container under cursor and updates scroll offset.
+   Shift+wheel swaps axes for horizontal scrolling.
 
    Arguments:
-   - event: EventMouseWheel with :x :y :dx :dy
+   - event: EventMouseWheel with :x :y :dx :dy :modifiers
    - ctx: context map with :tree (laid-out tree) and optional :scale
 
    Returns: true if scroll was handled, nil otherwise"
   [event ctx]
-  (let [{:keys [x y dx dy]} event
+  (let [{:keys [x y dx dy modifiers]} event
         {:keys [tree]} ctx]
     (when tree
       ;; Find scrollable container under cursor
@@ -243,12 +274,15 @@
               overflow (normalize-overflow (get-in scrollable [:bounds :overflow]))
               scroll-x? (= :scroll (:x overflow))
               scroll-y? (= :scroll (:y overflow))
+              ;; Shift+wheel: swap axes for horizontal scrolling
+              shift? (pos? (bit-and (or modifiers 0) SDL_KMOD_SHIFT))
+              [effective-dx effective-dy] (if shift? [dy dx] [dx dy])
               ;; SDL3 wheel: positive dy = scroll up (content moves down = negative scroll offset change)
               ;; We want: scroll wheel down = see content below = increase scroll offset
               ;; So we negate dy for natural scrolling
               scroll-multiplier 20  ;; pixels per wheel tick
-              delta {:x (if scroll-x? (* (- dx) scroll-multiplier) 0)
-                     :y (if scroll-y? (* (- dy) scroll-multiplier) 0)}]
+              delta {:x (if scroll-x? (* (- effective-dx) scroll-multiplier) 0)
+                     :y (if scroll-y? (* (- effective-dy) scroll-multiplier) 0)}]
           (when (or (not= 0 (:x delta)) (not= 0 (:y delta)))
             (scroll/scroll-by! id delta)
             true))))))

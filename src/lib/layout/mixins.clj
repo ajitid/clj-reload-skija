@@ -112,6 +112,12 @@
 
      :compute-children
      (fn [id viewport-height]
+       ;; Update scroll dimensions FIRST - this clamps scroll to valid range
+       (scroll/set-dimensions! id
+         {:w 0 :h viewport-height}
+         {:w 0 :h total-height})
+
+       ;; Now read scroll-y (clamped to valid range by set-dimensions!)
        (let [scroll-y (:y (scroll/get-scroll id) 0)
 
              ;; Calculate visible range
@@ -120,12 +126,7 @@
              end-idx (min total-items (+ start-idx visible-count (* 2 buffer)))
 
              ;; Get slice of visible items
-             visible-items (subvec (vec items) start-idx end-idx)
-
-             ;; Update scroll dimensions (virtual content height)
-             _ (scroll/set-dimensions! id
-                 {:w 0 :h viewport-height}
-                 {:w 0 :h total-height})]
+             visible-items (subvec (vec items) start-idx end-idx)]
 
          ;; Render visible items with absolute positioning
          (vec (for [[i item] (map-indexed vector visible-items)]

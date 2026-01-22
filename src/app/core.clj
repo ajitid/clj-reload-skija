@@ -13,6 +13,7 @@
   (:require [app.state :as state]
             [clojure.string :as str]
             [lib.layout.core :as layout]
+            [lib.layout.mixins :as mixins]
             [lib.layout.render :as layout-render]
             [lib.layout.scroll :as scroll]
             [lib.window.core :as window]
@@ -253,8 +254,9 @@
   ;; Initial grid calculation
   (recalculate-grid! @state/window-width @state/window-height)
 
-  ;; Initialize scroll state for demo
+  ;; Initialize scroll state for demos
   (scroll/init! :scroll-demo)
+  (scroll/init! :virtual-list)
 
   ;; Register gesture targets
   (when-let [register-gestures! (requiring-resolve 'app.gestures/register-gestures!)]
@@ -331,9 +333,18 @@
 ;; Layout Demo
 ;; ============================================================
 
+;; Virtual scroll mixin for 10,000 items
+(def virtual-scroll-mixin
+  (mixins/virtual-scroll
+    (vec (range 10000))   ;; 10,000 items
+    40                     ;; 40px per item
+    (fn [item idx]
+      {:fill (+ 0xFF303050 (* (mod idx 5) 0x101010))
+       :label (str "Item " idx)})))
+
 (defn demo-ui
   "Layout system demo using new Subform-style API."
-  []
+  [viewport-height]
   {:layout {:x {:size "100%"} :y {:size "100%"}}
    :children-layout {:mode :stack-x
                      :x {:before 20 :between 20 :after 20}
@@ -370,9 +381,9 @@
       ;; Row 4: Vertical stretch (fills remaining)
       {:layout {:y {:size "1s"}} :fill 0x15FFFFFF :label "stretch (1s)"}]}
 
-    ;; Right column: Scrollable list demo
+    ;; Middle column: Scrollable list demo (30 items)
     {:id :scroll-demo
-     :layout {:x {:size 200} :y {:size "100%"}}
+     :layout {:x {:size 180} :y {:size "100%"}}
      :fill 0x20FFFFFF
      :children-layout {:mode :stack-y
                        :overflow {:y :scroll}
@@ -382,7 +393,17 @@
      (vec (for [i (range 30)]
             {:layout {:y {:size 40}}
              :fill (+ 0xFF303050 (* (mod i 5) 0x101010))
-             :label (str "Item " (inc i))}))}]})
+             :label (str "Item " (inc i))}))}
+
+    ;; Right column: Virtual scroll demo (10,000 items)
+    {:id :virtual-list
+     :layout {:x {:size 180} :y {:size "100%"}}
+     :fill 0x20FFFFFF
+     :children-layout {:mode :stack-y
+                       :overflow {:y :scroll}
+                       :y {:before 10 :after 10}
+                       :x {:before 10 :after 10}}
+     :children (mixins/compute-visible-children virtual-scroll-mixin :virtual-list (- viewport-height 40))}]})
 
 (defn- find-node-by-id
   "Find a node in laid-out tree by :id."
@@ -406,7 +427,7 @@
   "Draw the layout demo UI."
   [^Canvas canvas width height]
   ;; Step 1: Layout (compute bounds, no rendering yet)
-  (let [tree (demo-ui)
+  (let [tree (demo-ui height)
         parent-bounds {:x 0 :y 0 :w width :h height}
         laid-out (layout/layout tree parent-bounds)]
 

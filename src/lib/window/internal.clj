@@ -2,7 +2,7 @@
   "Private SDL3 interop layer via LWJGL 3.4.0.
    Handles SDL initialization, window/context creation, and event polling."
   (:require [lib.window.events :as e])
-  (:import [org.lwjgl.sdl SDLInit SDLVideo SDLMouse SDLEvents SDLError SDLClipboard SDL_Event SDL_Rect
+  (:import [org.lwjgl.sdl SDLInit SDLVideo SDLMouse SDLEvents SDLError SDLClipboard SDLKeyboard SDL_Event SDL_Rect
             SDL_MouseButtonEvent SDL_MouseMotionEvent SDL_MouseWheelEvent SDL_WindowEvent
             SDL_KeyboardEvent SDL_TouchFingerEvent SDL_EventFilterI]
            [org.lwjgl.opengl GL]
@@ -215,10 +215,11 @@
 
 (defn- convert-mouse-wheel-event
   "Convert SDL mouse wheel event to EventMouseWheel.
-   x, y are mouse position; dx, dy are scroll delta."
+   x, y are mouse position; dx, dy are scroll delta; modifiers from keyboard state."
   [^SDL_Event event]
-  (let [mw (SDL_MouseWheelEvent/create (.address (.wheel event)))]
-    (e/->EventMouseWheel (.mouse_x mw) (.mouse_y mw) (.x mw) (.y mw))))
+  (let [mw (SDL_MouseWheelEvent/create (.address (.wheel event)))
+        modifiers (SDLKeyboard/SDL_GetModState)]
+    (e/->EventMouseWheel (.mouse_x mw) (.mouse_y mw) (.x mw) (.y mw) modifiers)))
 
 (defn- convert-finger-event
   "Convert SDL finger event to touch event.
