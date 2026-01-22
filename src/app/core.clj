@@ -431,6 +431,9 @@
         parent-bounds {:x 0 :y 0 :w width :h height}
         laid-out (layout/layout tree parent-bounds)]
 
+    ;; Reconcile lifecycle (mount/unmount in correct order)
+    (layout/reconcile! laid-out)
+
     ;; Step 2: Update scroll dimensions BEFORE rendering (this clamps scroll)
     (when-let [scroll-node (find-node-by-id laid-out :scroll-demo)]
       (let [bounds (:bounds scroll-node)

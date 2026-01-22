@@ -49,6 +49,9 @@
   ;; @(resolve ...) - deref var to get atom, then reset! the atom
   (reset! @(resolve 'app.state/reloading?) true)
   (try
+    ;; Unmount all BEFORE reload (so will-unmount runs with OLD mixin code)
+    (when-let [reset-fn (resolve 'lib.layout.core/reset-mounted-nodes!)]
+      (reset-fn))
     (let [result (reload/reload)]
       ;; Clear error on successful reload
       (reset! @(resolve 'app.state/last-reload-error) nil)

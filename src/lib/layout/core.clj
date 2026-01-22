@@ -33,6 +33,8 @@
 ;; ============================================================
 
 (defonce ^:private mounted-nodes (atom #{}))
+(defonce ^:private previous-tree (atom nil))
+(defonce ^:private mounted-node-data (atom {}))
 
 (defn- process-mixins
   "Call lifecycle hooks on all mixins for a node.
@@ -42,10 +44,65 @@
     (when-let [hook (get mixin phase)]
       (hook node))))
 
+(defn- collect-mixin-nodes-pre-order
+  "Collect nodes with mixins in pre-order (parent first, then children).
+   Used for unmount (top-down)."
+  [tree]
+  (when tree
+    (let [has-mixin? (and (:id tree) (:mixins tree))
+          self (when has-mixin? [tree])
+          children-nodes (mapcat collect-mixin-nodes-pre-order (:children tree))]
+      (concat self children-nodes))))
+
+(defn- collect-mixin-nodes-post-order
+  "Collect nodes with mixins in post-order (children first, then parent).
+   Used for mount (bottom-up)."
+  [tree]
+  (when tree
+    (let [has-mixin? (and (:id tree) (:mixins tree))
+          children-nodes (mapcat collect-mixin-nodes-post-order (:children tree))
+          self (when has-mixin? [tree])]
+      (concat children-nodes self))))
+
 (defn reset-mounted-nodes!
-  "Clear the set of mounted nodes. Call when recreating the UI tree."
+  "Unmount all nodes and clear state. Call before hot-reload."
   []
-  (reset! mounted-nodes #{}))
+  (let [old-tree @previous-tree
+        nodes (collect-mixin-nodes-pre-order old-tree)]
+    ;; Unmount all in top-down order
+    (doseq [node nodes]
+      (process-mixins node :will-unmount))
+    ;; Clear state
+    (reset! mounted-nodes #{})
+    (reset! mounted-node-data {})
+    (reset! previous-tree nil)))
+
+(defn reconcile!
+  "Reconcile lifecycle between old and new trees.
+   Call after layout, before rendering."
+  [new-tree]
+  (let [old-tree @previous-tree
+        old-nodes (collect-mixin-nodes-pre-order old-tree)
+        new-nodes (collect-mixin-nodes-post-order new-tree)
+        old-ids (set (map :id old-nodes))
+        new-ids (set (map :id new-nodes))
+        removed-ids (clojure.set/difference old-ids new-ids)
+        added-ids (clojure.set/difference new-ids old-ids)]
+
+    ;; Unmount removed (top-down order from pre-order collection)
+    (doseq [node (filter #(contains? removed-ids (:id %)) old-nodes)]
+      (process-mixins node :will-unmount)
+      (swap! mounted-nodes disj (:id node))
+      (swap! mounted-node-data dissoc (:id node)))
+
+    ;; Mount added (bottom-up order from post-order collection)
+    (doseq [node (filter #(contains? added-ids (:id %)) new-nodes)]
+      (swap! mounted-nodes conj (:id node))
+      (swap! mounted-node-data assoc (:id node) node)
+      (process-mixins node :did-mount))
+
+    (reset! previous-tree new-tree)
+    new-tree))
 
 ;; ============================================================
 ;; Unit Parsing
@@ -665,14 +722,8 @@
                  laid-out-children))]
 
      ;; Build final tree with bounds
-     (let [result (cond-> (assoc tree :bounds bounds)
-                    final-children (assoc :children final-children))]
-       ;; Process mixin lifecycle if node has id and mixins
-       (when (and (:id result) (:mixins result))
-         (when-not (contains? @mounted-nodes (:id result))
-           (swap! mounted-nodes conj (:id result))
-           (process-mixins result :did-mount)))
-       result))))
+     (cond-> (assoc tree :bounds bounds)
+       final-children (assoc :children final-children)))))
 
 ;; ============================================================
 ;; Convenience constructors
