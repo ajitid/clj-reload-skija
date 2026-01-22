@@ -321,29 +321,81 @@
                           {:container-id id :axis :x :geometry h-geom}))))))
             hits))))
 
+(defn- find-scrollbar-track-at
+  "Find scrollbar track (but not thumb) under the given screen coordinates.
+
+   Returns {:container-id :id :axis :x|:y :geometry {...} :click-pos number} or nil.
+   :click-pos is the position within the track (0.0 to 1.0).
+
+   Arguments:
+   - screen-x, screen-y: mouse position
+   - tree: laid-out tree with :bounds"
+  [screen-x screen-y tree]
+  (when tree
+    (let [hits (hit-test/hit-test-tree screen-x screen-y tree)]
+      (some (fn [node]
+              (when-let [id (:id node)]
+                (let [bounds (:bounds node)]
+                  ;; Check vertical scrollbar track (but not thumb)
+                  (or (when-let [v-geom (scroll/get-vertical-scrollbar-geometry id bounds)]
+                        (let [track (:track v-geom)
+                              thumb (:thumb v-geom)]
+                          (when (and (point-in-rect? screen-x screen-y track)
+                                     (not (point-in-rect? screen-x screen-y thumb)))
+                            (let [click-pos (/ (- screen-y (:y track)) (:h track))]
+                              {:container-id id :axis :y :geometry v-geom :click-pos click-pos}))))
+                      ;; Check horizontal scrollbar track (but not thumb)
+                      (when-let [h-geom (scroll/get-horizontal-scrollbar-geometry id bounds)]
+                        (let [track (:track h-geom)
+                              thumb (:thumb h-geom)]
+                          (when (and (point-in-rect? screen-x screen-y track)
+                                     (not (point-in-rect? screen-x screen-y thumb)))
+                            (let [click-pos (/ (- screen-x (:x track)) (:w track))]
+                              {:container-id id :axis :x :geometry h-geom :click-pos click-pos}))))))))
+            hits))))
+
 (defn handle-scrollbar-mouse-down
-  "Handle mouse down for scrollbar thumb dragging.
+  "Handle mouse down for scrollbar interaction.
+
+   Handles two cases:
+   1. Click on thumb: start dragging
+   2. Click on track (not thumb): jump scroll to that position
 
    Arguments:
    - event: EventMouseButton with :x :y :pressed?
    - ctx: context map with :tree (laid-out tree)
 
-   Returns: true if scrollbar drag started, nil otherwise"
+   Returns: true if scrollbar interaction started, nil otherwise"
   [event ctx]
   (when (:pressed? event)
     (let [{:keys [x y]} event
           {:keys [tree]} ctx]
-      (when-let [{:keys [container-id axis geometry]} (find-scrollbar-thumb-at x y tree)]
+      ;; First check for thumb click (drag)
+      (if-let [{:keys [container-id axis geometry]} (find-scrollbar-thumb-at x y tree)]
+        ;; Thumb click: start drag
         (let [current-scroll (scroll/get-scroll container-id)
-              start-pos (if (= axis :y) y x)
-              start-scroll (if (= axis :y) (:y current-scroll) (:x current-scroll))]
-          (reset! state/scrollbar-drag
-            {:container-id container-id
-             :axis axis
-             :start-mouse-pos start-pos
-             :start-scroll start-scroll
-             :scroll-per-pixel (:scroll-per-pixel geometry)})
-          true)))))
+                start-pos (if (= axis :y) y x)
+                start-scroll (if (= axis :y) (:y current-scroll) (:x current-scroll))]
+            (reset! state/scrollbar-drag
+              {:container-id container-id
+               :axis axis
+               :start-mouse-pos start-pos
+               :start-scroll start-scroll
+               :scroll-per-pixel (:scroll-per-pixel geometry)})
+          true)
+        ;; Not thumb - check for track click (jump)
+        (if-let [{:keys [container-id axis geometry click-pos]} (find-scrollbar-track-at x y tree)]
+          ;; Track click: jump scroll to position
+          (let [max-scroll (:max-scroll geometry)
+                  new-scroll (* click-pos max-scroll)
+                  current (scroll/get-scroll container-id)]
+              (scroll/set-scroll! container-id
+                (if (= axis :y)
+                  {:x (:x current) :y new-scroll}
+                  {:x new-scroll :y (:y current)}))
+            true)
+          ;; No scrollbar hit
+          nil)))))
 
 (defn handle-scrollbar-mouse-move
   "Handle mouse move during scrollbar thumb dragging.

@@ -34,66 +34,65 @@
     (let [{:keys [viewport content]} dims
           {:keys [x y w h]} bounds
 
-          scrollbar-width 6
-          scrollbar-margin 2
+          ;; Use constants from scroll.clj (single source of truth)
           scrollbar-radius 3
           track-color 0x20FFFFFF
           thumb-color 0x60FFFFFF]
 
       ;; Vertical scrollbar (when content taller than viewport)
       (when (and (pos? (:h viewport)) (> (:h content) (:h viewport)))
-        (let [track-height (- h (* 2 scrollbar-margin))
+        (let [track-height (- h (* 2 scroll/scrollbar-margin))
               thumb-ratio (/ (:h viewport) (:h content))
-              thumb-height (max 20 (* track-height thumb-ratio))
+              thumb-height (max scroll/scrollbar-min-thumb (* track-height thumb-ratio))
               max-scroll (- (:h content) (:h viewport))
               scroll-progress (if (pos? max-scroll)
                                (/ (:y scroll-offset) max-scroll)
                                0)
               thumb-y (* scroll-progress (- track-height thumb-height))
 
-              track-x (- (+ x w) scrollbar-width scrollbar-margin)
-              track-y (+ y scrollbar-margin)]
+              track-x (- (+ x w) scroll/scrollbar-width scroll/scrollbar-margin)
+              track-y (+ y scroll/scrollbar-margin)]
 
           ;; Draw track
           (with-open [track-paint (doto (Paint.)
                                     (.setColor (unchecked-int track-color)))]
             (.drawRRect canvas
-                        (RRect/makeXYWH track-x track-y scrollbar-width track-height scrollbar-radius)
+                        (RRect/makeXYWH track-x track-y scroll/scrollbar-width track-height scrollbar-radius)
                         track-paint))
 
           ;; Draw thumb
           (with-open [thumb-paint (doto (Paint.)
                                     (.setColor (unchecked-int thumb-color)))]
             (.drawRRect canvas
-                        (RRect/makeXYWH track-x (+ track-y thumb-y) scrollbar-width thumb-height scrollbar-radius)
+                        (RRect/makeXYWH track-x (+ track-y thumb-y) scroll/scrollbar-width thumb-height scrollbar-radius)
                         thumb-paint))))
 
       ;; Horizontal scrollbar (when content wider than viewport)
       (when (and (pos? (:w viewport)) (> (:w content) (:w viewport)))
-        (let [track-width (- w (* 2 scrollbar-margin))
+        (let [track-width (- w (* 2 scroll/scrollbar-margin))
               thumb-ratio (/ (:w viewport) (:w content))
-              thumb-width (max 20 (* track-width thumb-ratio))
+              thumb-width (max scroll/scrollbar-min-thumb (* track-width thumb-ratio))
               max-scroll (- (:w content) (:w viewport))
               scroll-progress (if (pos? max-scroll)
                                (/ (:x scroll-offset) max-scroll)
                                0)
               thumb-x (* scroll-progress (- track-width thumb-width))
 
-              track-x (+ x scrollbar-margin)
-              track-y (- (+ y h) scrollbar-width scrollbar-margin)]
+              track-x (+ x scroll/scrollbar-margin)
+              track-y (- (+ y h) scroll/scrollbar-width scroll/scrollbar-margin)]
 
           ;; Draw track
           (with-open [track-paint (doto (Paint.)
                                     (.setColor (unchecked-int track-color)))]
             (.drawRRect canvas
-                        (RRect/makeXYWH track-x track-y track-width scrollbar-width scrollbar-radius)
+                        (RRect/makeXYWH track-x track-y track-width scroll/scrollbar-width scrollbar-radius)
                         track-paint))
 
           ;; Draw thumb
           (with-open [thumb-paint (doto (Paint.)
                                     (.setColor (unchecked-int thumb-color)))]
             (.drawRRect canvas
-                        (RRect/makeXYWH (+ track-x thumb-x) track-y thumb-width scrollbar-width scrollbar-radius)
+                        (RRect/makeXYWH (+ track-x thumb-x) track-y thumb-width scroll/scrollbar-width scrollbar-radius)
                         thumb-paint)))))))
 
 ;; ============================================================
