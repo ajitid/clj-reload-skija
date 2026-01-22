@@ -296,15 +296,7 @@
   (when-let [check-long-press! (requiring-resolve 'lib.gesture.api/check-long-press!)]
     (check-long-press!))
 
-  ;; Update demo circle decay animation (X-axis only)
-  (when-not @state/demo-dragging?
-    (when-let [decay-x @state/demo-decay-x]
-      (when-let [decay-now (requiring-resolve 'lib.anim.decay/decay-now)]
-        (let [{:keys [value at-rest?]} (decay-now decay-x)]
-          (reset! state/demo-circle-x value)
-          (when at-rest? (reset! state/demo-decay-x nil))))))
-
-  ;; Tick all registered animations
+  ;; Tick all registered animations (includes demo circle decay)
   (when-let [tick-fn (requiring-resolve 'lib.anim.registry/tick-all!)]
     (tick-fn)))
 

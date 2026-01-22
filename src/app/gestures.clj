@@ -62,7 +62,9 @@
    (fn [event]
      (let [mx (get-in event [:pointer :x])]
        (reset! state/demo-dragging? true)
-       (reset! state/demo-decay-x nil)
+       ;; Cancel any running decay animation
+       (when-let [cancel! (requiring-resolve 'lib.anim.registry/cancel!)]
+         (cancel! :demo-circle-x))
        (reset! state/demo-drag-offset-x (- @state/demo-circle-x mx))
        (reset! state/demo-position-history
                [{:x @state/demo-circle-x :t @state/game-time}])
@@ -76,11 +78,14 @@
    :on-drag-end
    (fn [_]
      (reset! state/demo-dragging? false)
+     ;; Use animation registry for decay
      (when-let [decay-fn (requiring-resolve 'lib.anim.decay/decay)]
-       (reset! state/demo-decay-x
-               (decay-fn {:from @state/demo-circle-x
-                          :velocity @state/demo-velocity-x
-                          :rate :normal}))))})
+       (when-let [animate! (requiring-resolve 'lib.anim.registry/animate!)]
+         (animate! :demo-circle-x
+                   (decay-fn {:from @state/demo-circle-x
+                              :velocity @state/demo-velocity-x
+                              :rate :normal})
+                   {:target state/demo-circle-x}))))})
 
 ;; -----------------------------------------------------------------------------
 ;; Registration
