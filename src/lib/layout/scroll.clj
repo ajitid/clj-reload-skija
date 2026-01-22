@@ -37,13 +37,22 @@
   (swap! watchers dissoc id))
 
 (defn set-dimensions!
-  "Update viewport and content dimensions. Called after layout."
+  "Update viewport and content dimensions. Called after layout.
+   Also clamps scroll position to new valid range."
   [id viewport-bounds content-size]
   (swap! scroll-states update id
     (fn [state]
-      (assoc state
-        :viewport viewport-bounds
-        :content content-size))))
+      (let [new-state (assoc state
+                        :viewport viewport-bounds
+                        :content content-size)
+            ;; Calculate new max scroll
+            max-x (max 0 (- (:w content-size) (:w viewport-bounds)))
+            max-y (max 0 (- (:h content-size) (:h viewport-bounds)))
+            ;; Clamp current scroll to new range
+            current-scroll (:scroll state)
+            clamped-scroll {:x (max 0 (min (:x current-scroll 0) max-x))
+                            :y (max 0 (min (:y current-scroll 0) max-y))}]
+        (assoc new-state :scroll clamped-scroll)))))
 
 ;; ============================================================
 ;; Read APIs

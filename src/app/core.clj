@@ -405,29 +405,36 @@
 (defn draw-layout-demo
   "Draw the layout demo UI."
   [^Canvas canvas width height]
-  (with-open [fill-paint (Paint.)
-              text-paint (doto (Paint.) (.setColor (unchecked-int 0xFFFFFFFF)))
-              font (Font. (Typeface/makeDefault) (float 10))]
-    (let [laid-out (layout-render/render-tree canvas (demo-ui) {:x 0 :y 0 :w width :h height}
-                                 (fn [^Canvas c node {:keys [x y w h]}]
-                                   ;; Draw fill
-                                   (when-let [color (:fill node)]
-                                     (.setColor fill-paint (unchecked-int color))
-                                     (.setMode fill-paint PaintMode/FILL)
-                                     (.drawRect c (Rect/makeXYWH x y w h) fill-paint))
-                                   ;; Draw label only on leaf nodes (no children)
-                                   (when (and (:label node) (not (:children node)))
-                                     (.drawString c (:label node) (float (+ x 4)) (float (+ y 12)) font text-paint))))]
-      ;; Store laid-out tree for scroll hit testing
-      (reset! state/current-tree laid-out)
+  ;; Step 1: Layout (compute bounds, no rendering yet)
+  (let [tree (demo-ui)
+        parent-bounds {:x 0 :y 0 :w width :h height}
+        laid-out (layout/layout tree parent-bounds)]
 
-      ;; Update scroll dimensions for scrollable containers
-      (when-let [scroll-node (find-node-by-id laid-out :scroll-demo)]
-        (let [bounds (:bounds scroll-node)
-              viewport {:w (:w bounds) :h (:h bounds)}
-              content-h (calculate-content-height scroll-node)
-              content {:w (:w bounds) :h content-h}]
-          (scroll/set-dimensions! :scroll-demo viewport content))))))
+    ;; Step 2: Update scroll dimensions BEFORE rendering (this clamps scroll)
+    (when-let [scroll-node (find-node-by-id laid-out :scroll-demo)]
+      (let [bounds (:bounds scroll-node)
+            viewport {:w (:w bounds) :h (:h bounds)}
+            content-h (calculate-content-height scroll-node)
+            content {:w (:w bounds) :h content-h}]
+        (scroll/set-dimensions! :scroll-demo viewport content)))
+
+    ;; Store laid-out tree for scroll hit testing
+    (reset! state/current-tree laid-out)
+
+    ;; Step 3: Render with clamped scroll position
+    (with-open [fill-paint (Paint.)
+                text-paint (doto (Paint.) (.setColor (unchecked-int 0xFFFFFFFF)))
+                font (Font. (Typeface/makeDefault) (float 10))]
+      (layout-render/walk-layout laid-out canvas
+        (fn [node {:keys [x y w h]} _canvas]
+          ;; Draw fill
+          (when-let [color (:fill node)]
+            (.setColor fill-paint (unchecked-int color))
+            (.setMode fill-paint PaintMode/FILL)
+            (.drawRect canvas (Rect/makeXYWH x y w h) fill-paint))
+          ;; Draw label only on leaf nodes (no children)
+          (when (and (:label node) (not (:children node)))
+            (.drawString canvas (:label node) (float (+ x 4)) (float (+ y 12)) font text-paint)))))))
 
 (defn draw
   "Called every frame for rendering.
