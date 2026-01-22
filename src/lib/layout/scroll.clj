@@ -160,3 +160,87 @@
   "Remove all watchers for a container."
   [id]
   (swap! watchers dissoc id))
+
+;; ============================================================
+;; Scrollbar Geometry (for hit testing and dragging)
+;; ============================================================
+
+;; Constants must match render.clj
+(def scrollbar-width 6)
+(def scrollbar-margin 2)
+(def scrollbar-min-thumb 20)
+
+(defn get-vertical-scrollbar-geometry
+  "Calculate vertical scrollbar track and thumb geometry.
+
+   Args:
+     id - scroll container id
+     container-bounds - {:x :y :w :h} of the container
+
+   Returns:
+     {:track {:x :y :w :h}
+      :thumb {:x :y :w :h}
+      :max-scroll number
+      :scroll-per-pixel number}  ;; how much scroll per pixel of thumb movement
+   Or nil if not scrollable vertically."
+  [id container-bounds]
+  (when-let [{:keys [viewport content scroll]} (get @scroll-states id)]
+    (when (and (pos? (:h viewport)) (> (:h content) (:h viewport)))
+      (let [{:keys [x y w h]} container-bounds
+            track-height (- h (* 2 scrollbar-margin))
+            thumb-ratio (/ (:h viewport) (:h content))
+            thumb-height (max scrollbar-min-thumb (* track-height thumb-ratio))
+            max-scroll (- (:h content) (:h viewport))
+            scroll-progress (if (pos? max-scroll)
+                              (/ (:y scroll) max-scroll)
+                              0)
+            thumb-y (* scroll-progress (- track-height thumb-height))
+
+            track-x (- (+ x w) scrollbar-width scrollbar-margin)
+            track-y (+ y scrollbar-margin)
+
+            ;; How much scroll for each pixel of thumb movement
+            scroll-per-pixel (if (> (- track-height thumb-height) 0)
+                               (/ max-scroll (- track-height thumb-height))
+                               0)]
+        {:track {:x track-x :y track-y :w scrollbar-width :h track-height}
+         :thumb {:x track-x :y (+ track-y thumb-y) :w scrollbar-width :h thumb-height}
+         :max-scroll max-scroll
+         :scroll-per-pixel scroll-per-pixel}))))
+
+(defn get-horizontal-scrollbar-geometry
+  "Calculate horizontal scrollbar track and thumb geometry.
+
+   Args:
+     id - scroll container id
+     container-bounds - {:x :y :w :h} of the container
+
+   Returns:
+     {:track {:x :y :w :h}
+      :thumb {:x :y :w :h}
+      :max-scroll number
+      :scroll-per-pixel number}
+   Or nil if not scrollable horizontally."
+  [id container-bounds]
+  (when-let [{:keys [viewport content scroll]} (get @scroll-states id)]
+    (when (and (pos? (:w viewport)) (> (:w content) (:w viewport)))
+      (let [{:keys [x y w h]} container-bounds
+            track-width (- w (* 2 scrollbar-margin))
+            thumb-ratio (/ (:w viewport) (:w content))
+            thumb-width (max scrollbar-min-thumb (* track-width thumb-ratio))
+            max-scroll (- (:w content) (:w viewport))
+            scroll-progress (if (pos? max-scroll)
+                              (/ (:x scroll) max-scroll)
+                              0)
+            thumb-x (* scroll-progress (- track-width thumb-width))
+
+            track-x (+ x scrollbar-margin)
+            track-y (- (+ y h) scrollbar-width scrollbar-margin)
+
+            scroll-per-pixel (if (> (- track-width thumb-width) 0)
+                               (/ max-scroll (- track-width thumb-width))
+                               0)]
+        {:track {:x track-x :y track-y :w track-width :h scrollbar-width}
+         :thumb {:x (+ track-x thumb-x) :y track-y :w thumb-width :h scrollbar-width}
+         :max-scroll max-scroll
+         :scroll-per-pixel scroll-per-pixel}))))

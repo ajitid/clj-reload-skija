@@ -286,3 +286,97 @@
           (when (or (not= 0 (:x delta)) (not= 0 (:y delta)))
             (scroll/scroll-by! id delta)
             true))))))
+
+;; -----------------------------------------------------------------------------
+;; Scrollbar Thumb Dragging
+;; -----------------------------------------------------------------------------
+
+(defn- point-in-rect?
+  "Check if point (px, py) is inside rect {:x :y :w :h}."
+  [px py {:keys [x y w h]}]
+  (and (>= px x) (< px (+ x w))
+       (>= py y) (< py (+ y h))))
+
+(defn- find-scrollbar-thumb-at
+  "Find scrollbar thumb under the given screen coordinates.
+
+   Returns {:container-id :id :axis :x|:y :geometry {...}} or nil.
+
+   Arguments:
+   - screen-x, screen-y: mouse position
+   - tree: laid-out tree with :bounds"
+  [screen-x screen-y tree]
+  (when tree
+    ;; Walk the tree looking for scrollable containers
+    (let [hits (hit-test/hit-test-tree screen-x screen-y tree)]
+      (some (fn [node]
+              (when-let [id (:id node)]
+                (let [bounds (:bounds node)]
+                  ;; Check vertical scrollbar first, then horizontal
+                  (or (when-let [v-geom (scroll/get-vertical-scrollbar-geometry id bounds)]
+                        (when (point-in-rect? screen-x screen-y (:thumb v-geom))
+                          {:container-id id :axis :y :geometry v-geom}))
+                      (when-let [h-geom (scroll/get-horizontal-scrollbar-geometry id bounds)]
+                        (when (point-in-rect? screen-x screen-y (:thumb h-geom))
+                          {:container-id id :axis :x :geometry h-geom}))))))
+            hits))))
+
+(defn handle-scrollbar-mouse-down
+  "Handle mouse down for scrollbar thumb dragging.
+
+   Arguments:
+   - event: EventMouseButton with :x :y :pressed?
+   - ctx: context map with :tree (laid-out tree)
+
+   Returns: true if scrollbar drag started, nil otherwise"
+  [event ctx]
+  (when (:pressed? event)
+    (let [{:keys [x y]} event
+          {:keys [tree]} ctx]
+      (when-let [{:keys [container-id axis geometry]} (find-scrollbar-thumb-at x y tree)]
+        (let [current-scroll (scroll/get-scroll container-id)
+              start-pos (if (= axis :y) y x)
+              start-scroll (if (= axis :y) (:y current-scroll) (:x current-scroll))]
+          (reset! state/scrollbar-drag
+            {:container-id container-id
+             :axis axis
+             :start-mouse-pos start-pos
+             :start-scroll start-scroll
+             :scroll-per-pixel (:scroll-per-pixel geometry)})
+          true)))))
+
+(defn handle-scrollbar-mouse-move
+  "Handle mouse move during scrollbar thumb dragging.
+
+   Arguments:
+   - event: EventMouseMove with :x :y
+
+   Returns: true if scroll was updated, nil otherwise"
+  [event]
+  (when-let [{:keys [container-id axis start-mouse-pos start-scroll scroll-per-pixel]}
+             @state/scrollbar-drag]
+    (let [{:keys [x y]} event
+          current-pos (if (= axis :y) y x)
+          delta-pixels (- current-pos start-mouse-pos)
+          delta-scroll (* delta-pixels scroll-per-pixel)
+          new-scroll (+ start-scroll delta-scroll)
+          current (scroll/get-scroll container-id)]
+      (scroll/set-scroll! container-id
+        (if (= axis :y)
+          {:x (:x current) :y new-scroll}
+          {:x new-scroll :y (:y current)}))
+      true)))
+
+(defn handle-scrollbar-mouse-up
+  "Handle mouse up to end scrollbar thumb dragging.
+
+   Returns: true if scrollbar drag was active, nil otherwise"
+  []
+  (when @state/scrollbar-drag
+    (reset! state/scrollbar-drag nil)
+    true))
+
+(defn scrollbar-dragging?
+  "Check if a scrollbar is currently being dragged."
+  []
+  (some? @state/scrollbar-drag))

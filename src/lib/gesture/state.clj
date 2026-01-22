@@ -23,3 +23,13 @@
    :long-press {:min-duration 500          ;; iOS: minimumPressDuration = 0.5s
                 :max-distance 10}          ;; iOS: allowableMovement = 10pt
    :tap        {:max-distance 10}})         ;; iOS: ~10pt tolerance, no duration limit
+
+;; Scrollbar drag state - separate from gesture arena
+;; Tracks dragging of scrollbar thumbs
+(defonce scrollbar-drag
+  (atom nil))
+;; When dragging: {:container-id :keyword
+;;                 :axis :x|:y
+;;                 :start-mouse-pos number    ;; mouse position when drag started
+;;                 :start-scroll number       ;; scroll value when drag started
+;;                 :scroll-per-pixel number}  ;; conversion factor

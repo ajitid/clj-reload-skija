@@ -552,16 +552,40 @@
           (when (and (= (:button event) :middle) (:pressed? event)
                      (or @state/last-reload-error @state/last-runtime-error))
             (copy-current-error-to-clipboard!))
-          ;; Pass to gesture system for normal handling
-          (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
-            (handle-fn event {:scale @state/scale
-                              :window-width @state/window-width})))
+          (when (= (:button event) :primary)
+            (if (:pressed? event)
+              ;; Mouse down: check scrollbar first, then gesture system
+              (let [scrollbar-handler (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-down)
+                    scrollbar-hit? (when scrollbar-handler
+                                     (scrollbar-handler event {:tree @state/current-tree}))]
+                (when scrollbar-hit?
+                  (window/request-frame! win))
+                ;; If not a scrollbar hit, pass to gesture system
+                (when-not scrollbar-hit?
+                  (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
+                    (handle-fn event {:scale @state/scale
+                                      :window-width @state/window-width}))))
+              ;; Mouse up: end scrollbar drag, then gesture system
+              (do
+                (when-let [end-scrollbar (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-up)]
+                  (end-scrollbar))
+                (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
+                  (handle-fn event {:scale @state/scale
+                                    :window-width @state/window-width}))))))
 
         ;; Mouse move event
         (instance? EventMouseMove event)
-        (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-move)]
-          (handle-fn event {:scale @state/scale
-                            :window-width @state/window-width}))
+        (let [scrollbar-dragging? (when-let [f (requiring-resolve 'lib.gesture.api/scrollbar-dragging?)]
+                                    (f))]
+          (if scrollbar-dragging?
+            ;; Handle scrollbar drag movement
+            (when-let [handle-scrollbar-move (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-move)]
+              (when (handle-scrollbar-move event)
+                (window/request-frame! win)))
+            ;; Regular gesture system handling
+            (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-move)]
+              (handle-fn event {:scale @state/scale
+                                :window-width @state/window-width}))))
 
         ;; Mouse wheel event
         (instance? EventMouseWheel event)
