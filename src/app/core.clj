@@ -302,7 +302,11 @@
       (when-let [decay-now (requiring-resolve 'lib.anim.decay/decay-now)]
         (let [{:keys [value at-rest?]} (decay-now decay-x)]
           (reset! state/demo-circle-x value)
-          (when at-rest? (reset! state/demo-decay-x nil)))))))
+          (when at-rest? (reset! state/demo-decay-x nil))))))
+
+  ;; Tick all registered animations
+  (when-let [tick-fn (requiring-resolve 'lib.anim.registry/tick-all!)]
+    (tick-fn)))
 
 (defn draw-demo-anchor
   "Draw the anchor/rest position for the spring demo."
