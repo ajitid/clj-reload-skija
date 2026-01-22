@@ -65,4 +65,11 @@ public class MainThread {
      * Check if currently executing on macOS main thread.
      */
     public static native boolean isMainThread();
+
+    /**
+     * Activate the application, bringing it to foreground focus.
+     * This is needed on macOS to receive keyboard/mouse input when
+     * launched from Terminal.
+     */
+    public static native void activateApp();
 }

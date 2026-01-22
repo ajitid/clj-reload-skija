@@ -674,6 +674,10 @@
                                    :resizable? true
                                    :high-dpi? true})]
     (reset! state/window win)
+    ;; On macOS, activate app to receive keyboard/mouse focus
+    ;; (SDL_RaiseWindow alone only raises z-order, doesn't grant input focus)
+    (when (macos?)
+      (macos/activate-app!))
     ;; Initialize window title state for recording indicator
     (reset! state/window-title "Skija Demo - Hot Reload with clj-reload")
     ;; Initialize scale and dimensions from window

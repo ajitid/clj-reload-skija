@@ -65,6 +65,7 @@ clang -shared -fPIC $ARCH_FLAG \
     -o "$NATIVE_DIR/libmacos_main.dylib" \
     -framework Foundation \
     -framework CoreFoundation \
+    -framework AppKit \
     -I"$JNI_INCLUDE" \
     -I"$JNI_INCLUDE_DARWIN" \
     "$NATIVE_DIR/macos_main.m"

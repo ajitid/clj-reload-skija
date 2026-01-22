@@ -92,6 +92,13 @@
   (ensure-loaded!)
   (MainThread/isMainThread))
 
+(defn activate-app!
+  "Activate the macOS application, bringing it to foreground focus.
+   This is needed to receive keyboard/mouse input when launched from Terminal."
+  []
+  (ensure-loaded!)
+  (MainThread/activateApp))
+
 (defn run-main-loop!
   "Run the macOS main run loop. BLOCKS until stop-main-loop! is called.
    This must be called from the main thread to process dispatched work."

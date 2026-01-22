@@ -13,6 +13,7 @@
 
 #import <Foundation/Foundation.h>
 #import <CoreFoundation/CoreFoundation.h>
+#import <AppKit/AppKit.h>
 #import <dispatch/dispatch.h>
 #import <jni.h>
 #import <pthread.h>
@@ -173,6 +174,18 @@ JNIEXPORT void JNICALL Java_lib_window_macos_MainThread_stopMainLoop
  */
 JNIEXPORT jboolean JNICALL Java_lib_window_macos_MainThread_isMainThread
   (JNIEnv *env, jclass cls) {
-    
+
     return pthread_main_np() != 0;
+}
+
+/**
+ * JNI: Activate the application, bringing it to foreground focus.
+ * This is needed on macOS to receive keyboard/mouse input when
+ * launched from Terminal (SDL_RaiseWindow only changes z-order).
+ */
+JNIEXPORT void JNICALL Java_lib_window_macos_MainThread_activateApp
+  (JNIEnv *env, jclass cls) {
+    @autoreleasepool {
+        [NSApp activateIgnoringOtherApps:YES];
+    }
 }
