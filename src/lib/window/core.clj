@@ -165,8 +165,8 @@
               :else
               (dispatch-event! window ev))))
 
-        ;; Render frame if requested
-        (when @(:frame-requested? window)
+        ;; Render frame if requested and still running
+        (when (and @(:running? window) @(:frame-requested? window))
           (reset! (:frame-requested? window) false)
           (render-frame! window)))
 
