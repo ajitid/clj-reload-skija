@@ -342,7 +342,16 @@
                               thumb (:thumb v-geom)]
                           (when (and (point-in-rect? screen-x screen-y track)
                                      (not (point-in-rect? screen-x screen-y thumb)))
-                            (let [click-pos (/ (- screen-y (:y track)) (:h track))]
+                            ;; Calculate click-pos to center thumb on click position
+                            ;; Maps click to scroll-progress (0-1) accounting for thumb size
+                            (let [thumb-height (:h thumb)
+                                  track-height (:h track)
+                                  click-in-track (- screen-y (:y track))
+                                  desired-thumb-top (- click-in-track (/ thumb-height 2))
+                                  scroll-range (- track-height thumb-height)
+                                  click-pos (if (pos? scroll-range)
+                                              (max 0.0 (min 1.0 (/ desired-thumb-top scroll-range)))
+                                              0.0)]
                               {:container-id id :axis :y :geometry v-geom :click-pos click-pos}))))
                       ;; Check horizontal scrollbar track (but not thumb)
                       (when-let [h-geom (scroll/get-horizontal-scrollbar-geometry id bounds)]
@@ -350,7 +359,15 @@
                               thumb (:thumb h-geom)]
                           (when (and (point-in-rect? screen-x screen-y track)
                                      (not (point-in-rect? screen-x screen-y thumb)))
-                            (let [click-pos (/ (- screen-x (:x track)) (:w track))]
+                            ;; Calculate click-pos to center thumb on click position
+                            (let [thumb-width (:w thumb)
+                                  track-width (:w track)
+                                  click-in-track (- screen-x (:x track))
+                                  desired-thumb-left (- click-in-track (/ thumb-width 2))
+                                  scroll-range (- track-width thumb-width)
+                                  click-pos (if (pos? scroll-range)
+                                              (max 0.0 (min 1.0 (/ desired-thumb-left scroll-range)))
+                                              0.0)]
                               {:container-id id :axis :x :geometry h-geom :click-pos click-pos}))))))))
             hits))))
 
