@@ -451,7 +451,12 @@
   (.clear canvas (unchecked-int 0xFF222222))
 
   ;; Draw layout demo
-  (draw-layout-demo canvas width height))
+  (draw-layout-demo canvas width height)
+
+  ;; Draw control panel (on top) when visible
+  (when @src/panel-visible?
+    (when-let [draw-panel (requiring-resolve 'app.controls/draw-panel)]
+      (draw-panel canvas width))))
 
 ;; ============================================================
 ;; Game loop infrastructure
@@ -496,8 +501,8 @@
               (when (pos? raw-dt)
                 (let [current-fps (/ 1.0 raw-dt)
                       smoothing 0.8]
-                  (sig/raw-fps (+ (* smoothing @sig/raw-fps)
-                                  (* (- 1.0 smoothing) current-fps)))))
+                  (sig/fps (+ (* smoothing @sig/fps)
+                             (* (- 1.0 smoothing) current-fps)))))
               (try
                 (.save canvas)
                 (.scale canvas (float scale) (float scale))
@@ -641,7 +646,13 @@
                       ;; Update title with [Recording] indicator
                       (window/set-window-title! @sys/window
                                                (str @sys/window-title " [Recording]"))
-                      (println "[keybind] Recording started:" filename))))))))
+                      (println "[keybind] Recording started:" filename))))))
+
+            ;; Ctrl+` toggles panel visibility
+            ;; SDL3 '`' (grave/backtick) keycode = 0x60
+            (when (and (= key 0x60) (pos? (bit-and modifiers 0x00C0)))
+              (src/panel-visible? (not @src/panel-visible?))
+              (println "[keybind] Panel visible:" @src/panel-visible?))))
 
         ;; Unknown event - ignore
         :else nil))))

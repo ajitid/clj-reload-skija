@@ -34,10 +34,5 @@
 ;; FPS display
 ;; ============================================================
 
-;; Raw FPS source - updated every frame in draw
-(flex/defsource raw-fps 0.0)
-
-;; Smoothed FPS signal for display
-(def fps
-  "FPS value for display. Updated from raw-fps."
-  (flex/signal @raw-fps))
+;; Smoothed FPS source - updated every frame with exponential moving average
+(flex/defsource fps 0.0)
