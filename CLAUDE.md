@@ -36,7 +36,7 @@ Clojure demo showcasing hot-reloading with LWJGL/SDL3 (windowing) and Skija (2D 
 ### Design Pattern: clj-reload + Flex Reactivity
 
 Following [clj-reload](https://github.com/tonsky/clj-reload) best practices with Vue 3-style reactive signals via [Flex](https://github.com/lilactown/flex):
-- **Everything reloads** except `user` namespace and `defonce` values
+- **app.* namespaces reload**; `user` namespace and `lib.*` namespaces do not hot-reload (restart required)
 - Use `(requiring-resolve 'ns/sym)` for cross-namespace function calls (vars are removed on unload)
 - Use `defonce` for state that must survive reloads
 - UI state uses Flex sources/signals for automatic reactivity
@@ -54,7 +54,7 @@ Following [clj-reload](https://github.com/tonsky/clj-reload) best practices with
 | `app.core` | `defn` | Functions **update** on reload |
 | `app.controls` | `defn` | Functions **update** on reload |
 | `app.gestures` | `defn` | Functions **update** on reload |
-| All `lib.*` | `defn` | Functions **update** on reload |
+| All `lib.*` | `defn` | **Restart required** (not hot-reloadable) |
 
 ### State Architecture (Flex)
 
