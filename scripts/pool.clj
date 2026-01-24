@@ -396,40 +396,52 @@
 
 (defn ensure-pool-size!
   "Adjust idle pool to target size - spawn if needed, kill excess if too many.
-   Target size = idle JVMs to maintain (active JVMs don't count)."
+   Target size = idle JVMs to maintain (active JVMs don't count).
+   Uses fine-grained locking: only holds lock during state reads/writes,
+   not during slow JVM spawn operations."
   [target-idle]
-  (cleanup-dead-jvms!)
-  (let [state (load-state)
-        config (:config state)
-        current-idle (count (:idle state))
-        needed (- target-idle current-idle)]
+  ;; Phase 1: Read state under lock to determine what's needed
+  (let [{:keys [needed config excess-jvms keep-jvms]}
+        (with-state-lock
+          (cleanup-dead-jvms!)
+          (let [state (load-state)
+                config (:config state)
+                current-idle (count (:idle state))
+                needed (- target-idle current-idle)]
+            (cond
+              (pos? needed)
+              {:needed needed :config config}
+
+              (neg? needed)
+              (let [excess (- needed)
+                    idle-jvms (:idle state)]
+                {:needed 0
+                 :excess-jvms (take excess idle-jvms)
+                 :keep-jvms (vec (drop excess idle-jvms))})
+
+              :else {:needed 0})))]
+    ;; Phase 2: Spawn/kill JVMs OUTSIDE the lock (slow operations)
     (cond
-      ;; Need more JVMs
       (pos? needed)
       (do
         (println "Spawning" needed "JVM(s) in parallel...")
-        ;; Spawn all JVMs in parallel using futures
         (let [futures (doall (for [_ (range needed)]
                                (future (spawn-jvm! config))))
-              ;; Wait for all to complete, collect successful ones
-              jvms (->> futures
-                        (map deref)
-                        (filter some?))]
-          ;; Add all to state at once
+              jvms (->> futures (map deref) (filter some?) vec)]
+          ;; Phase 3: Update state under lock (brief)
           (when (seq jvms)
-            (update-state! update :idle into jvms)
+            (with-state-lock
+              (update-state! update :idle into jvms))
             (println "Pool ready:" (count jvms) "JVM(s) added"))))
 
-      ;; Too many JVMs - kill excess
-      (neg? needed)
-      (let [excess (- needed)
-            idle-jvms (:idle state)
-            to-kill (take excess idle-jvms)
-            to-keep (vec (drop excess idle-jvms))]
-        (println "Killing" excess "excess JVM(s)...")
-        (doseq [jvm to-kill]
+      (seq excess-jvms)
+      (do
+        (println "Killing" (count excess-jvms) "excess JVM(s)...")
+        (doseq [jvm excess-jvms]
           (kill-jvm! (:id jvm)))
-        (update-state! assoc :idle to-keep)
+        ;; Update state under lock (brief)
+        (with-state-lock
+          (update-state! assoc :idle keep-jvms))
         (println "Pool trimmed.")))))
 
 (defn acquire-jvm!
@@ -467,24 +479,28 @@
 ;; ============================================================================
 
 (defn cmd-start [{:keys [spare cmd]}]
-  (with-state-lock
-    (ensure-dirs!)
-    (let [raw-spare (or spare 2)
-          pool-size (if (< raw-spare 1)
-                      (do
-                        (println "Warning: --spare must be at least 1. Using 1.")
-                        1)
-                      raw-spare)
-          jvm-cmd (or cmd (:cmd default-config))
-          initial-count (inc pool-size)]  ;; spare + 1 for open
-      (println "Starting JVM pool with" initial-count "idle JVM(s)")
-      (println "Command:" jvm-cmd)
-      (println "Platform:" (if windows? "Windows" "Unix"))
-      (update-state! assoc-in [:config :pool-size] pool-size)
-      (update-state! assoc-in [:config :cmd] jvm-cmd)
-      (update-state! assoc-in [:config :project-dir] (str (fs/cwd)))
-      (ensure-pool-size! initial-count)
-      (println "\nPool ready. Use 'bb pool.clj open' to start your app."))))
+  ;; Phase 1: Setup config under lock (brief)
+  (let [initial-count
+        (with-state-lock
+          (ensure-dirs!)
+          (let [raw-spare (or spare 2)
+                pool-size (if (< raw-spare 1)
+                            (do
+                              (println "Warning: --spare must be at least 1. Using 1.")
+                              1)
+                            raw-spare)
+                jvm-cmd (or cmd (:cmd default-config))
+                initial-count (inc pool-size)]  ;; spare + 1 for open
+            (println "Starting JVM pool with" initial-count "idle JVM(s)")
+            (println "Command:" jvm-cmd)
+            (println "Platform:" (if windows? "Windows" "Unix"))
+            (update-state! assoc-in [:config :pool-size] pool-size)
+            (update-state! assoc-in [:config :cmd] jvm-cmd)
+            (update-state! assoc-in [:config :project-dir] (str (fs/cwd)))
+            initial-count))]
+    ;; Phase 2: Spawn JVMs (ensure-pool-size! manages its own locking)
+    (ensure-pool-size! initial-count)
+    (println "\nPool ready. Use 'bb pool.clj open' to start your app.")))
 
 (defn cmd-stop []
   (with-state-lock
@@ -536,7 +552,10 @@
         (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
         (println "Sending (open) + replenishing in parallel...")
         (let [cmd-future (future (send-nrepl-command! (:port jvm) "(open)"))
-              replenish-future (future (with-state-lock (ensure-pool-size! pool-size)))]
+              ;; ensure-pool-size! uses fine-grained locking internally,
+              ;; so this won't block other open commands (lock only held briefly)
+              replenish-future (future (ensure-pool-size! pool-size))]
+          ;; Must wait for replenish, otherwise process exits and future is killed
           @replenish-future
           (let [result (deref cmd-future 100 {:success true :blocking true})]
             (print-nrepl-result result)
@@ -546,24 +565,34 @@
                 (spit (str active-port-file) (str (:port jvm)))
                 (println "\nApp started successfully!")
                 (println "Connect REPL: clj -M:connect --port" (:port jvm)))
-              (println "\nFailed to start app:" (:error result))))))
+              ;; Check if JVM was killed by another open command
+              (if (not (process-alive? (:pid jvm)))
+                (println "\nJVM was killed (likely by another 'open' command running in parallel).")
+                (println "\nFailed to start app:" (:error result)))))))
       ;; No idle JVMs - user hasn't run start
       (println "No idle JVMs available. Run 'bb scripts/pool.clj start' first."))))
 
 (defn cmd-close []
-  (with-state-lock
-    (let [state (load-state)
-          pool-size (get-in state [:config :pool-size] 2)]
-      (if (:active state)
-        (do
-          (release-jvm!)
-          ;; Remove active port file
-          (when (fs/exists? active-port-file)
-            (fs/delete active-port-file))
-          (println "Closed. Replenishing pool...")
-          (ensure-pool-size! (inc pool-size))  ;; spare + 1 for next open
-          (println "Pool ready."))
-        (println "No active JVM to close.")))))
+  ;; Phase 1: Release JVM under lock (brief)
+  (let [{:keys [was-active pool-size]}
+        (with-state-lock
+          (let [state (load-state)
+                pool-size (get-in state [:config :pool-size] 2)]
+            (if (:active state)
+              (do
+                (release-jvm!)
+                ;; Remove active port file
+                (when (fs/exists? active-port-file)
+                  (fs/delete active-port-file))
+                (println "Closed. Replenishing pool...")
+                {:was-active true :pool-size pool-size})
+              (do
+                (println "No active JVM to close.")
+                {:was-active false}))))]
+    ;; Phase 2: Replenish outside lock (ensure-pool-size! manages its own locking)
+    (when was-active
+      (ensure-pool-size! (inc pool-size))  ;; spare + 1 for next open
+      (println "Pool ready."))))
 
 (defn cmd-status []
   (ensure-dirs!)
