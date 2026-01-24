@@ -87,44 +87,48 @@
     (.setStrokeWidth (float 1.5))
     (.setAntiAlias true)
     (.setColor (unchecked-int (cfg 'app.config/fps-graph-color)))))
-;; Reusable Path object - call .reset before each use
-(def fps-graph-path (Path.))
+;; Line segments: (n-1) segments × 4 floats (x1,y1,x2,y2) each
+(def fps-graph-lines (float-array (* (dec src/fps-history-size) 4)))
 
 (defn draw-fps-graph
   "Draw FPS history as a line graph (ring buffer). Zero allocations."
   [^Canvas canvas x y w h]
   (let [^floats history src/fps-history
-        current-idx @src/fps-history-idx
+        current-idx (long @src/fps-history-idx)
         n (alength history)
         target-fps (double (cfg 'app.config/fps-target))
         max-fps (* target-fps 1.5)
-        inv-max-fps (/ 1.0 max-fps)  ;; Multiply instead of divide in loop
+        inv-max-fps (/ 1.0 max-fps)
         x (double x)
         y (double y)
         w (double w)
         h (double h)
         bottom (+ y h)
         step (/ w (dec n))
-        ^Path path fps-graph-path]
+        ^floats lines fps-graph-lines]
     ;; Draw background
     (.drawRect canvas (Rect/makeXYWH (float x) (float y) (float w) (float h)) fps-graph-bg-paint)
     ;; Draw target line (60 FPS reference)
     (let [target-y (- bottom (* h target-fps inv-max-fps))]
       (.drawLine canvas (float x) (float target-y) (float (+ x w)) (float target-y) fps-graph-line-paint))
-    ;; Build path (reuse object, just reset)
-    (.reset path)
-    (loop [i (int 0)]
-      (when (< i n)
-        (let [ring-idx (mod (+ current-idx 1 i) n)
+    ;; Build line segments: each segment is (prev-x, prev-y, curr-x, curr-y)
+    (loop [i (long 0)
+           prev-x x
+           prev-y (let [fps (double (aget history (mod (inc current-idx) n)))]
+                    (- bottom (* h (max 0.0 (min max-fps fps)) inv-max-fps)))]
+      (when (< i (dec n))
+        (let [ring-idx (mod (+ current-idx 2 i) n)
               fps (double (aget history ring-idx))
-              clamped (if (< fps 0.0) 0.0 (if (> fps max-fps) max-fps fps))
-              px (float (+ x (* i step)))
-              py (float (- bottom (* h clamped inv-max-fps)))]
-          (if (zero? i)
-            (.moveTo path px py)
-            (.lineTo path px py))
-          (recur (inc i)))))
-    (.drawPath canvas path fps-graph-stroke-paint)))
+              clamped (max 0.0 (min max-fps fps))
+              curr-x (+ x (* (inc i) step))
+              curr-y (- bottom (* h clamped inv-max-fps))
+              base (* i 4)]
+          (aset lines base (float prev-x))
+          (aset lines (+ base 1) (float prev-y))
+          (aset lines (+ base 2) (float curr-x))
+          (aset lines (+ base 3) (float curr-y))
+          (recur (inc i) curr-x curr-y))))
+    (.drawLines canvas lines fps-graph-stroke-paint)))
 
 (defn draw-panel
   "Draw control panel with sliders at top-right."
