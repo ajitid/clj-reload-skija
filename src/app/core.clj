@@ -508,7 +508,7 @@
               (reset! last-time now)
               (when (pos? raw-dt)
                 (let [current-fps (/ 1.0 raw-dt)
-                      smoothing 0.9]
+                      smoothing 0.8]
                   (reset! state/fps (+ (* smoothing @state/fps)
                                        (* (- 1.0 smoothing) current-fps)))))
               (try
