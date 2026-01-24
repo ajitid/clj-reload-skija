@@ -2,7 +2,7 @@
   "Skija surface management - port of JWM's LayerGLSkija pattern.
    Handles DirectContext, BackendRenderTarget, and Surface lifecycle."
   (:import [io.github.humbleui.skija DirectContext BackendRenderTarget
-            Surface SurfaceOrigin SurfaceColorFormat]))
+            Surface SurfaceOrigin ColorType]))
 
 ;; GL_RGBA8 format constant (0x8058 in OpenGL)
 (def ^:private GL_RGBA8 0x8058)
@@ -38,7 +38,7 @@
       (let [rt (BackendRenderTarget/makeGL width height 0 8 0 GL_RGBA8)
             sf (Surface/wrapBackendRenderTarget
                  context rt SurfaceOrigin/BOTTOM_LEFT
-                 SurfaceColorFormat/RGBA_8888 nil nil)]
+                 ColorType/RGBA_8888 nil nil)]
         (swap! state assoc
                :render-target rt
                :surface sf
@@ -54,7 +54,7 @@
   (let [{:keys [context surface]} @state]
     {:surface  surface
      :canvas   (.getCanvas surface)
-     :flush-fn #(.flushAndSubmit surface)}))
+     :flush-fn #(.flushAndSubmit context surface)}))
 
 (defn resize!
   "Called on window resize. Invalidates surface for recreation on next frame."

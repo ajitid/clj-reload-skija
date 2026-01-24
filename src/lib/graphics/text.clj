@@ -3,11 +3,16 @@
 
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern)."
   (:require [lib.graphics.state :as gfx])
-  (:import [io.github.humbleui.skija Canvas Paint Font Typeface]))
+  (:import [io.github.humbleui.skija Canvas Paint Font FontMgr FontStyle]))
 
 ;; ============================================================
 ;; Font Cache
 ;; ============================================================
+
+(defn default-typeface
+  "Get the default system typeface."
+  []
+  (.matchFamilyStyle (FontMgr/getDefault) nil FontStyle/NORMAL))
 
 (def ^:private font-cache
   "Cache of Typeface -> Size -> Font to reduce allocations."
@@ -17,11 +22,11 @@
   "Get or create a cached font.
 
    Args:
-     typeface - Typeface instance (default: Typeface/makeDefault)
+     typeface - Typeface instance (default: default-typeface)
      size     - font size in points (default: 14)
 
    Returns: Font instance (cached, do not close)"
-  ([] (get-font (Typeface/makeDefault) 14))
+  ([] (get-font (default-typeface) 14))
   ([typeface] (get-font typeface 14))
   ([typeface size]
    (let [cache-key [typeface size]]
@@ -61,7 +66,7 @@
    (text canvas text x y {}))
   ([^Canvas canvas text x y opts]
    (let [;; Get font from cache (hide Typeface/Font from users)
-         font (get-font (Typeface/makeDefault) (or (:size opts) 14))
+         font (get-font (default-typeface) (or (:size opts) 14))
          ;; Remove text-specific opts before passing to paint
          paint-opts (dissoc opts :size :font :typeface)]
      (if-let [paint (:paint opts)]
@@ -77,7 +82,7 @@
      opts - optional map:
             :font     - Font instance (default: cached default font)
             :size     - font size if no :font provided (default: 14)
-            :typeface - Typeface if no :font provided (default: Typeface/makeDefault)
+            :typeface - Typeface if no :font provided (default: default-typeface)
 
    Returns: width in pixels (float)
 
@@ -87,6 +92,6 @@
   ([text] (measure-text text {}))
   ([text opts]
    (let [font (or (:font opts)
-                  (get-font (or (:typeface opts) (Typeface/makeDefault))
+                  (get-font (or (:typeface opts) (default-typeface))
                             (or (:size opts) 14)))]
      (.measureTextWidth font (str text)))))

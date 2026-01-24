@@ -8,6 +8,9 @@
   ;; Types - core classes shared by Skija
   io.github.humbleui/types {:mvn/version "0.2.0"}
 
+  ;; Color - color space conversions (OKLCH, etc.)
+  clojure2d/clojure2d {:mvn/version "1.4.5"}
+
   ;; LWJGL 3.4.0 with SDL3 and OpenGL
   org.lwjgl/lwjgl {:mvn/version "3.4.0"}
   org.lwjgl/lwjgl-sdl {:mvn/version "3.4.0"}

@@ -28,7 +28,7 @@
             [lib.window.core :as window]
             [lib.window.events :as e]
             [lib.window.macos :as macos])
-  (:import [io.github.humbleui.skija Canvas Paint PaintMode Font Typeface]
+  (:import [io.github.humbleui.skija Canvas Paint PaintMode Font FontMgr FontStyle]
            [io.github.humbleui.types Rect]
            [lib.window.events EventClose EventResize EventMouseButton EventMouseMove EventMouseWheel
             EventKey EventFrameSkija EventFingerDown EventFingerMove EventFingerUp]))
@@ -293,7 +293,7 @@
     ;; Step 3: Render with clamped scroll position
     (with-open [fill-paint (Paint.)
                 text-paint (doto (Paint.) (.setColor (unchecked-int 0xFFFFFFFF)))
-                font (Font. (Typeface/makeDefault) (float 10))]
+                font (Font. (.matchFamilyStyle (FontMgr/getDefault) nil FontStyle/NORMAL) (float 10))]
       (layout-render/walk-layout laid-out canvas
         (fn [node {:keys [x y w h]} _canvas]
           ;; Draw fill
@@ -528,8 +528,7 @@
             ;; Ctrl+` toggles panel visibility
             ;; SDL3 '`' (grave/backtick) keycode = 0x60
             (when (and (= key 0x60) (pos? (bit-and modifiers 0x00C0)))
-              (src/panel-visible? (not @src/panel-visible?))
-              (println "[keybind] Panel visible:" @src/panel-visible?))))
+              (src/panel-visible? (not @src/panel-visible?)))))
 
         ;; Unknown event - ignore
         :else nil))))

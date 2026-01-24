@@ -181,8 +181,12 @@
    Args:
      seg-length - length of each segment
      deviation  - maximum perpendicular deviation
+     seed       - random seed (optional, defaults to 0)
 
    Example:
-     (discrete-path-effect 10 5)  ; Jagged/sketchy line effect"
-  [seg-length deviation]
-  (PathEffect/makeDiscrete (float seg-length) (float deviation)))
+     (discrete-path-effect 10 5)    ; Jagged/sketchy line effect
+     (discrete-path-effect 10 5 42) ; With specific seed"
+  ([seg-length deviation]
+   (discrete-path-effect seg-length deviation 0))
+  ([seg-length deviation seed]
+   (PathEffect/makeDiscrete (float seg-length) (float deviation) (int seed))))

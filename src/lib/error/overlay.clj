@@ -4,7 +4,7 @@
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern)."
   (:require [lib.error.core :as err]
             [clojure.string :as str])
-  (:import [io.github.humbleui.skija Canvas Paint Font Typeface]))
+  (:import [io.github.humbleui.skija Canvas Paint Font FontMgr FontStyle]))
 
 ;; ============================================================
 ;; Error Overlay Rendering
@@ -22,7 +22,7 @@
     ;; Red background
     (.clear canvas (unchecked-int bg-color))
     ;; Draw error text
-    (with-open [typeface (Typeface/makeDefault)
+    (with-open [typeface (.matchFamilyStyle (FontMgr/getDefault) nil FontStyle/NORMAL)
                 font (Font. typeface (float font-size))
                 paint (doto (Paint.)
                         (.setColor (unchecked-int text-color)))]

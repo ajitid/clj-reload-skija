@@ -29,7 +29,7 @@
 ;; ============================================================
 
 (flex/defsource dragging-slider nil)
-(flex/defsource panel-visible? true)
+(flex/defsource panel-visible? false)
 (flex/defsource demo-dragging? false)
 
 ;; ============================================================
