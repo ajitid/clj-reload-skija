@@ -47,23 +47,26 @@
   (println "Reloading...")
   ;; Set guard BEFORE unload starts (protects against all namespace reloads)
   ;; @(resolve ...) - deref var to get atom, then reset! the atom
-  (reset! @(resolve 'app.state/reloading?) true)
+  (reset! @(resolve 'app.state.system/reloading?) true)
   (try
+    ;; Dispose Flex effects first (before any namespaces are unloaded)
+    (when-let [dispose-fn (resolve 'lib.flex.core/dispose-all-effects!)]
+      (dispose-fn))
     ;; Unmount all BEFORE reload (so will-unmount runs with OLD mixin code)
     (when-let [reset-fn (resolve 'lib.layout.core/reset-mounted-nodes!)]
       (reset-fn))
     (let [result (reload/reload)]
       ;; Clear error on successful reload
-      (reset! @(resolve 'app.state/last-reload-error) nil)
+      (reset! @(resolve 'app.state.system/last-reload-error) nil)
       (println "Reloaded:" (:loaded result))
       result)
     (catch Exception e
       ;; Store compile error so UI can display it
-      (reset! @(resolve 'app.state/last-reload-error) e)
+      (reset! @(resolve 'app.state.system/last-reload-error) e)
       (throw e))  ;; Re-throw for REPL feedback
     (finally
       ;; Always clear guard, even on error
-      (reset! @(resolve 'app.state/reloading?) false))))
+      (reset! @(resolve 'app.state.system/reloading?) false))))
 
 (defn open
   "Open the application window. For interactive REPL use.
@@ -74,7 +77,7 @@
     ((resolve 'app.core/start-app))
     (finally
       ;; Reset running state so app can be reopened
-      (reset! @(resolve 'app.state/running?) false))))
+      (reset! @(resolve 'app.state.system/running?) false))))
 
 (defn quick-open
   "Open the application window and exit when closed. For quick demos/testing.
@@ -93,10 +96,10 @@
   (reload)
 
   ;; Check current state values (these persist)
-  @(resolve 'app.state/circles-x)
-  @(resolve 'app.state/circles-y)
+  @(resolve 'app.state.sources/circles-x)
+  @(resolve 'app.state.sources/circles-y)
 
   ;; You can also modify persistent state from REPL
-  (reset! @(resolve 'app.state/circles-x) 5)
-  (reset! @(resolve 'app.state/circles-y) 4)
+  (reset! @(resolve 'app.state.sources/circles-x) 5)
+  (reset! @(resolve 'app.state.sources/circles-y) 4)
   )

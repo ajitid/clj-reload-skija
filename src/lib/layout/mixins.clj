@@ -1,5 +1,8 @@
 (ns lib.layout.mixins
-  "Reusable lifecycle mixins for layout nodes."
+  "Reusable lifecycle mixins for layout nodes.
+
+   Mixins use a new pattern where :did-mount can return a Flex effect
+   for automatic disposal on unmount or hot-reload."
   (:require [lib.layout.scroll :as scroll]))
 
 ;; ============================================================
@@ -24,7 +27,8 @@
         persist? (:persist opts false)]
     {:did-mount
      (fn [node]
-       (scroll/init! (:id node)))
+       (scroll/init! (:id node))
+       nil)  ;; No effect to track
 
      :will-unmount
      (fn [node]
@@ -44,21 +48,21 @@
   Example:
     (mixins/on-scroll-changed
       (fn [id old new]
-        (println id \"scrolled from\" old \"to\" new)))"
-  [callback]
-  (let [watcher-id-atom (atom nil)]
-    {:did-mount
-     (fn [node]
-       (let [id (:id node)
-             watcher-id (scroll/watch! id
-                          (fn [old-pos new-pos]
-                            (callback id old-pos new-pos)))]
-         (reset! watcher-id-atom watcher-id)))
+        (println id \"scrolled from\" old \"to\" new)))
 
-     :will-unmount
-     (fn [node]
-       (when-let [watcher-id @watcher-id-atom]
-         (scroll/unwatch! (:id node) watcher-id)))}))
+  The Flex effect is automatically disposed by the lifecycle system."
+  [callback]
+  {:did-mount
+   (fn [node]
+     ;; Return effect for automatic disposal
+     (scroll/watch! (:id node)
+       (fn [old-pos new-pos]
+         (callback (:id node) old-pos new-pos))))
+
+   :will-unmount
+   (fn [_node]
+     ;; Effect disposed automatically by lifecycle system
+     nil)})
 
 ;; ============================================================
 ;; Virtual Scroll Mixin
@@ -104,7 +108,8 @@
 
      :did-mount
      (fn [node]
-       (scroll/init! (:id node)))
+       (scroll/init! (:id node))
+       nil)  ;; No effect to track
 
      :will-unmount
      (fn [node]

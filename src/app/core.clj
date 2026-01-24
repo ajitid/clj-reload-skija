@@ -10,8 +10,12 @@
    - init - called once at startup
    - tick - called every frame with delta time (dt)
    - draw - called every frame for rendering"
-  (:require [app.state :as state]
+  (:require [app.state.sources :as src]
+            [app.state.signals :as sig]
+            [app.state.animations :as anim]
+            [app.state.system :as sys]
             [clojure.string :as str]
+            [lib.flex.core :as flex]
             [lib.layout.core :as layout]
             [lib.layout.mixins :as mixins]
             [lib.layout.render :as layout-render]
@@ -47,10 +51,10 @@
 ;; so these hooks bracket the entire reload process
 
 (defn before-ns-unload []
-  (reset! state/reloading? true))
+  (reset! sys/reloading? true))
 
 (defn after-ns-reload []
-  (reset! state/reloading? false))
+  (reset! sys/reloading? false))
 
 ;; ============================================================
 ;; Drawing helpers
@@ -65,26 +69,11 @@
                       (.setAntiAlias true))]
     (.drawCircle canvas (float x) (float y) (float radius) paint)))
 
-(defn recalculate-grid!
-  "Recalculate and cache grid positions. Called on resize or grid settings change."
-  [width height]
-  (let [nx @state/circles-x
-        ny @state/circles-y
-        radius (or (cfg 'app.config/grid-circle-radius) 100)
-        cell-w (/ width nx)
-        cell-h (/ height ny)
-        positions (for [row (range ny)
-                        col (range nx)]
-                    (let [cx (+ (* col cell-w) (/ cell-w 2))
-                          cy (+ (* row cell-h) (/ cell-h 2))
-                          fit-radius (min (/ cell-w 2.2) (/ cell-h 2.2) radius)]
-                      {:cx cx :cy cy :radius fit-radius}))]
-    (reset! state/grid-positions (vec positions))))
-
 (defn draw-circle-grid
-  "Draw a grid of circles using batched points API."
+  "Draw a grid of circles using batched points API.
+   Uses the grid-positions signal which auto-recomputes."
   [^Canvas canvas]
-  (let [positions @state/grid-positions]
+  (let [positions @sig/grid-positions]
     (when (seq positions)
       (let [;; All circles same radius - use first one
             radius (:radius (first positions))
@@ -184,7 +173,7 @@
   "Copy the current error (if any) to clipboard.
    Prioritizes reload error over runtime error."
   []
-  (when-let [err (or @state/last-reload-error @state/last-runtime-error)]
+  (when-let [err (or @sys/last-reload-error @sys/last-runtime-error)]
     (copy-to-clipboard! (format-error-for-clipboard err))))
 
 (defn draw-error
@@ -244,15 +233,13 @@
   (println "Game loaded!")
   ;; Point all libs to use game-time
   (when-let [time-source (requiring-resolve 'lib.time/time-source)]
-    (reset! @time-source #(deref state/game-time)))
+    (reset! @time-source #(deref sys/game-time)))
 
   ;; Set initial anchor position to center of window
-  (reset! state/demo-anchor-x (/ @state/window-width 2))
-  (reset! state/demo-anchor-y (/ @state/window-height 2))
-  (reset! state/demo-circle-x (/ @state/window-width 2))
-  (reset! state/demo-circle-y (/ @state/window-height 2))
-  ;; Initial grid calculation
-  (recalculate-grid! @state/window-width @state/window-height)
+  (reset! anim/demo-anchor-x (/ @src/window-width 2))
+  (reset! anim/demo-anchor-y (/ @src/window-height 2))
+  (reset! anim/demo-circle-x (/ @src/window-width 2))
+  (reset! anim/demo-circle-y (/ @src/window-height 2))
 
   ;; Initialize scroll state for demos
   (scroll/init! :scroll-demo)
@@ -267,29 +254,29 @@
    Update your game state here."
   [dt]
   ;; Advance game time (dt is in seconds, apply time scale)
-  (swap! state/game-time + (* dt @state/time-scale))
+  (swap! sys/game-time + (* dt @sys/time-scale))
 
   ;; Track velocity during drag (frame-based, not event-based)
   ;; Uses a ring buffer of last 3 position samples to compute velocity.
   ;; This captures momentum from "just before" mouse stops, solving the
   ;; stale velocity problem where event-based sampling gives velocity ≈ 0
   ;; when user stops moving before releasing.
-  (when @state/demo-dragging?
-    (let [history @state/demo-position-history
-          current-x @state/demo-circle-x
-          current-t @state/game-time
+  (when @src/demo-dragging?
+    (let [history @anim/demo-position-history
+          current-x @anim/demo-circle-x
+          current-t @sys/game-time
           new-history (-> history
                           (conj {:x current-x :t current-t})
                           (->> (take-last 3))
                           vec)]
-      (reset! state/demo-position-history new-history)
+      (reset! anim/demo-position-history new-history)
       ;; Calculate velocity from oldest to newest sample
       (when (>= (count new-history) 2)
         (let [oldest (first new-history)
               newest (last new-history)
               dt-hist (- (:t newest) (:t oldest))]
           (when (pos? dt-hist)
-            (reset! state/demo-velocity-x
+            (reset! anim/demo-velocity-x
                     (/ (- (:x newest) (:x oldest)) dt-hist)))))))
 
   ;; Check long-press timers in gesture system
@@ -303,8 +290,8 @@
 (defn draw-demo-anchor
   "Draw the anchor/rest position for the spring demo."
   [^Canvas canvas]
-  (let [x @state/demo-anchor-x
-        y @state/demo-anchor-y
+  (let [x @anim/demo-anchor-x
+        y @anim/demo-anchor-y
         radius (or (cfg 'app.config/demo-circle-radius) 25)]
     (with-open [paint (doto (Paint.)
                         (.setColor (unchecked-int (or (cfg 'app.config/demo-anchor-color) 0x44FFFFFF)))
@@ -316,8 +303,8 @@
 (defn draw-demo-circle
   "Draw the draggable demo circle."
   [^Canvas canvas]
-  (let [x @state/demo-circle-x
-        y @state/demo-circle-y
+  (let [x @anim/demo-circle-x
+        y @anim/demo-circle-y
         radius (or (cfg 'app.config/demo-circle-radius) 25)]
     (with-open [paint (doto (Paint.)
                         (.setColor (unchecked-int (or (cfg 'app.config/demo-circle-color) 0xFF4A90D9)))
@@ -439,7 +426,7 @@
         (scroll/set-dimensions! :scroll-demo viewport content)))
 
     ;; Store laid-out tree for scroll hit testing
-    (reset! state/current-tree laid-out)
+    (reset! sys/current-tree laid-out)
 
     ;; Step 3: Render with clamped scroll position
     (with-open [fill-paint (Paint.)
@@ -472,7 +459,7 @@
 
 (defn create-event-handler
   "Create an event handler for the window.
-   Uses state/reloading? guard to skip event handling during namespace reload."
+   Uses sys/reloading? guard to skip event handling during namespace reload."
   [win]
   (let [last-time (atom (System/nanoTime))]
     (fn [event]
@@ -481,11 +468,11 @@
         (instance? EventClose event)
         (do
           ;; Stop recording if active
-          (when @state/recording-active?
+          (when @src/recording-active?
             (when-let [stop-recording! (requiring-resolve 'lib.window.capture/stop-recording!)]
               (stop-recording!))
-            (reset! state/recording-active? false))
-          (reset! state/running? false)
+            (src/recording-active? false))
+          (reset! sys/running? false)
           (window/close! win))
 
         ;; Frame event - always request next frame, draw only when not reloading
@@ -497,11 +484,11 @@
           ;; Always request next frame - keeps render loop alive during reload
           (window/request-frame! win)
           ;; Only draw when not reloading
-          (when-not @state/reloading?
+          (when-not @sys/reloading?
             (let [{:keys [canvas]} event
-                  scale @state/scale
-                  w @state/window-width
-                  h @state/window-height
+                  scale @src/scale
+                  w @src/window-width
+                  h @src/window-height
                   now (System/nanoTime)
                   raw-dt (/ (- now @last-time) 1e9)
                   dt (min raw-dt 0.033)]  ;; Clamp to 30 FPS floor to prevent animation jumps
@@ -509,23 +496,23 @@
               (when (pos? raw-dt)
                 (let [current-fps (/ 1.0 raw-dt)
                       smoothing 0.8]
-                  (reset! state/fps (+ (* smoothing @state/fps)
-                                       (* (- 1.0 smoothing) current-fps)))))
+                  (sig/raw-fps (+ (* smoothing @sig/raw-fps)
+                                  (* (- 1.0 smoothing) current-fps)))))
               (try
                 (.save canvas)
                 (.scale canvas (float scale) (float scale))
                 ;; Check for pending reload error
-                (if-let [reload-err @state/last-reload-error]
+                (if-let [reload-err @sys/last-reload-error]
                   (draw-error canvas reload-err)
                   (do
-                    (reset! state/last-runtime-error nil)
+                    (reset! sys/last-runtime-error nil)
                     (when-let [tick-fn (requiring-resolve 'app.core/tick)]
                       (tick-fn dt))
                     (when-let [draw-fn (requiring-resolve 'app.core/draw)]
                       (draw-fn canvas w h))))
                 (catch Exception e
-                  (reset! state/last-runtime-error e)
-                  (let [error-to-show (or @state/last-reload-error e)]
+                  (reset! sys/last-runtime-error e)
+                  (let [error-to-show (or @sys/last-reload-error e)]
                     (draw-error canvas error-to-show))
                   (println "Render error:" (.getMessage e)))
                 (finally
@@ -534,44 +521,44 @@
               true)))
 
         ;; Skip other events during reload (vars not available)
-        @state/reloading?
+        @sys/reloading?
         nil
 
         ;; Resize event
         (instance? EventResize event)
         (let [{:keys [width height scale]} event]
-          (reset! state/window-width width)
-          (reset! state/window-height height)
-          (reset! state/scale scale)
-          ((requiring-resolve 'app.core/recalculate-grid!) width height))
+          ;; Update Flex sources - grid-positions signal auto-recomputes
+          (src/window-width width)
+          (src/window-height height)
+          (src/scale scale))
 
         ;; Mouse button event
         (instance? EventMouseButton event)
         (do
           ;; Middle click copies error to clipboard (only if error exists)
           (when (and (= (:button event) :middle) (:pressed? event)
-                     (or @state/last-reload-error @state/last-runtime-error))
+                     (or @sys/last-reload-error @sys/last-runtime-error))
             (copy-current-error-to-clipboard!))
           (when (= (:button event) :primary)
             (if (:pressed? event)
               ;; Mouse down: check scrollbar first, then gesture system
               (let [scrollbar-handler (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-down)
                     scrollbar-hit? (when scrollbar-handler
-                                     (scrollbar-handler event {:tree @state/current-tree}))]
+                                     (scrollbar-handler event {:tree @sys/current-tree}))]
                 (when scrollbar-hit?
                   (window/request-frame! win))
                 ;; If not a scrollbar hit, pass to gesture system
                 (when-not scrollbar-hit?
                   (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
-                    (handle-fn event {:scale @state/scale
-                                      :window-width @state/window-width}))))
+                    (handle-fn event {:scale @src/scale
+                                      :window-width @src/window-width}))))
               ;; Mouse up: end scrollbar drag, then gesture system
               (do
                 (when-let [end-scrollbar (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-up)]
                   (end-scrollbar))
                 (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
-                  (handle-fn event {:scale @state/scale
-                                    :window-width @state/window-width}))))))
+                  (handle-fn event {:scale @src/scale
+                                    :window-width @src/window-width}))))))
 
         ;; Mouse move event
         (instance? EventMouseMove event)
@@ -584,32 +571,32 @@
                 (window/request-frame! win)))
             ;; Regular gesture system handling
             (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-move)]
-              (handle-fn event {:scale @state/scale
-                                :window-width @state/window-width}))))
+              (handle-fn event {:scale @src/scale
+                                :window-width @src/window-width}))))
 
         ;; Mouse wheel event
         (instance? EventMouseWheel event)
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-wheel)]
-          (when (handle-fn event {:scale @state/scale
-                                  :tree @state/current-tree})
+          (when (handle-fn event {:scale @src/scale
+                                  :tree @sys/current-tree})
             ;; Request frame redraw if scroll was handled
             (window/request-frame! win)))
 
         ;; Touch/finger events
         (instance? EventFingerDown event)
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-finger-down)]
-          (handle-fn event {:scale @state/scale
-                            :window-width @state/window-width}))
+          (handle-fn event {:scale @src/scale
+                            :window-width @src/window-width}))
 
         (instance? EventFingerMove event)
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-finger-move)]
-          (handle-fn event {:scale @state/scale
-                            :window-width @state/window-width}))
+          (handle-fn event {:scale @src/scale
+                            :window-width @src/window-width}))
 
         (instance? EventFingerUp event)
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-finger-up)]
-          (handle-fn event {:scale @state/scale
-                            :window-width @state/window-width}))
+          (handle-fn event {:scale @src/scale
+                            :window-width @src/window-width}))
 
         ;; Keyboard event
         (instance? EventKey event)
@@ -618,9 +605,9 @@
             ;; Ctrl+E copies error to clipboard (only if error exists)
             ;; SDL3 'e' keycode = 0x65, CTRL modifier = 0x00C0 (LCTRL | RCTRL)
             (when (and (= key 0x65) (pos? (bit-and modifiers 0x00C0))
-                       (or @state/last-reload-error @state/last-runtime-error))
+                       (or @sys/last-reload-error @sys/last-runtime-error))
               (copy-current-error-to-clipboard!))
-            
+
             ;; Ctrl+S captures screenshot
             ;; SDL3 's' keycode = 0x73
             (when (and (= key 0x73) (pos? (bit-and modifiers 0x00C0)))
@@ -630,18 +617,18 @@
                       filename (str "screenshot_" (.format timestamp formatter) ".png")]
                   (screenshot! filename :png)
                   (println "[keybind] Screenshot captured:" filename))))
-            
+
             ;; Ctrl+R toggles recording
             ;; SDL3 'r' keycode = 0x72
             (when (and (= key 0x72) (pos? (bit-and modifiers 0x00C0)))
-              (if @state/recording-active?
+              (if @src/recording-active?
                 ;; Stop recording
                 (do
                   (when-let [stop-recording! (requiring-resolve 'lib.window.capture/stop-recording!)]
                     (stop-recording!))
-                  (reset! state/recording-active? false)
+                  (src/recording-active? false)
                   ;; Restore original title
-                  (window/set-window-title! @state/window @state/window-title)
+                  (window/set-window-title! @sys/window @sys/window-title)
                   (println "[keybind] Recording stopped"))
                 ;; Start recording
                 (do
@@ -650,10 +637,10 @@
                           formatter (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd_HH-mm-ss")
                           filename (str "recording_" (.format timestamp formatter) ".mp4")]
                       (start-recording! filename {:fps 60})
-                      (reset! state/recording-active? true)
+                      (src/recording-active? true)
                       ;; Update title with [Recording] indicator
-                      (window/set-window-title! @state/window 
-                                               (str @state/window-title " [Recording]"))
+                      (window/set-window-title! @sys/window
+                                               (str @sys/window-title " [Recording]"))
                       (println "[keybind] Recording started:" filename))))))))
 
         ;; Unknown event - ignore
@@ -668,24 +655,24 @@
   "Internal: Start the application - creates window and runs event loop.
    Must be called on macOS main thread for SDL3 compatibility."
   []
-  (reset! state/running? true)
+  (reset! sys/running? true)
   (let [win (window/create-window {:title "Skija Demo - Hot Reload with clj-reload"
                                    :width 800
                                    :height 600
                                    :resizable? true
                                    :high-dpi? true})]
-    (reset! state/window win)
+    (reset! sys/window win)
     ;; On macOS, activate app to receive keyboard/mouse focus
     ;; (SDL_RaiseWindow alone only raises z-order, doesn't grant input focus)
     (when (macos?)
       (macos/activate-app!))
     ;; Initialize window title state for recording indicator
-    (reset! state/window-title "Skija Demo - Hot Reload with clj-reload")
-    ;; Initialize scale and dimensions from window
-    (reset! state/scale (window/get-scale win))
+    (reset! sys/window-title "Skija Demo - Hot Reload with clj-reload")
+    ;; Initialize scale and dimensions from window (Flex sources)
+    (src/scale (window/get-scale win))
     (let [[w h] (window/get-size win)]
-      (reset! state/window-width w)
-      (reset! state/window-height h))
+      (src/window-width w)
+      (src/window-height h))
     ;; Call init once at startup
     (when-let [init-fn (resolve 'app.core/init)]
       (init-fn))
@@ -699,7 +686,7 @@
   "Start the application - creates window and runs event loop.
    On macOS, dispatches SDL operations to the main thread (thread 0)."
   []
-  (when-not @state/running?
+  (when-not @sys/running?
     (if (macos?)
       ;; macOS: dispatch to main thread for SDL3/Cocoa compatibility
       (macos/run-on-main-thread-sync! start-app-impl)

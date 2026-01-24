@@ -1,7 +1,11 @@
 {:paths ["src" "classes" "resources"]
 
  :deps
- {;; Types - core classes shared by Skija
+ {;; Flex - Vue 3-style reactive signals
+  town.lilac/flex {:git/url "https://github.com/lilactown/flex"
+                   :git/sha "f3d93a7c697dfc1c63c12e1f2a111fda8248d96a"}
+
+  ;; Types - core classes shared by Skija
   io.github.humbleui/types {:mvn/version "0.2.0"}
 
   ;; LWJGL 3.4.0 with SDL3 and OpenGL

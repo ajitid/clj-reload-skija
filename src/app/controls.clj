@@ -1,7 +1,10 @@
 (ns app.controls
   "Control panel UI - sliders and mouse handling.
    Drawing and update logic for the control panel."
-  (:require [app.state :as state])
+  (:require [app.state.sources :as src]
+            [app.state.signals :as sig]
+            [app.state.animations :as anim]
+            [app.state.system :as sys])
   (:import [io.github.humbleui.skija Canvas Paint PaintMode Font Typeface]
            [io.github.humbleui.types Rect]
            [lib.window.events EventMouseButton EventMouseMove]))
@@ -14,12 +17,6 @@
   "Get config value with runtime var lookup (survives hot-reload)."
   [var-sym]
   (some-> (requiring-resolve var-sym) deref))
-
-(defn trigger-grid-recalc!
-  "Trigger grid recalculation (calls core/recalculate-grid! via requiring-resolve)."
-  []
-  (when-let [recalc (requiring-resolve 'app.core/recalculate-grid!)]
-    (recalc @state/window-width @state/window-height)))
 
 ;; ============================================================
 ;; Slider geometry
@@ -61,8 +58,8 @@
 (defn point-in-demo-circle?
   "Check if point (px, py) is inside the demo circle."
   [px py]
-  (let [cx @state/demo-circle-x
-        cy @state/demo-circle-y
+  (let [cx @anim/demo-circle-x
+        cy @anim/demo-circle-y
         radius (or (cfg 'app.config/demo-circle-radius) 25)
         dx (- px cx)
         dy (- py cy)]
@@ -125,13 +122,13 @@
                 fps-paint (doto (Paint.)
                             (.setColor (unchecked-int (cfg 'app.config/panel-text-color))))]
       (.drawString canvas
-                   (format "FPS: %.0f" (double @state/fps))
+                   (format "FPS: %.0f" (double @sig/fps))
                    (float (+ px pad))
                    (float (+ py pad 14))
                    font fps-paint))
     ;; Draw sliders
-    (draw-slider canvas "X:" @state/circles-x (slider-x-bounds window-width))
-    (draw-slider canvas "Y:" @state/circles-y (slider-y-bounds window-width))))
+    (draw-slider canvas "X:" @src/circles-x (slider-x-bounds window-width))
+    (draw-slider canvas "Y:" @src/circles-y (slider-y-bounds window-width))))
 
 ;; ============================================================
 ;; Mouse event handling
@@ -142,72 +139,69 @@
   [event]
   (when (= (:button event) :primary)
     ;; Convert physical pixels to logical pixels
-    (let [scale @state/scale
-          ww @state/window-width
+    (let [scale @src/scale
+          ww @src/window-width
           mx (/ (:x event) scale)
           my (/ (:y event) scale)
-          panel-visible? @state/panel-visible?]
+          panel-visible? @src/panel-visible?]
       (cond
         ;; Check sliders first (higher z-order) - only when panel visible
         (and panel-visible? (point-in-rect? mx my (slider-x-bounds ww)))
         (do
-          (reset! state/dragging-slider :x)
-          (reset! state/circles-x (slider-value-from-x mx (slider-x-bounds ww)))
-          (trigger-grid-recalc!))
+          (src/dragging-slider :x)
+          (src/circles-x (slider-value-from-x mx (slider-x-bounds ww))))
 
         (and panel-visible? (point-in-rect? mx my (slider-y-bounds ww)))
         (do
-          (reset! state/dragging-slider :y)
-          (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds ww)))
-          (trigger-grid-recalc!))
+          (src/dragging-slider :y)
+          (src/circles-y (slider-value-from-x mx (slider-y-bounds ww))))
 
         ;; Check demo circle
         (point-in-demo-circle? mx my)
         (do
-          (reset! state/demo-dragging? true)
+          (src/demo-dragging? true)
           ;; Stop any running decay
-          (reset! state/demo-decay-x nil)
+          (reset! anim/demo-decay-x nil)
           ;; Store click offset (so ball doesn't jump)
-          (reset! state/demo-drag-offset-x (- @state/demo-circle-x mx))
+          (reset! anim/demo-drag-offset-x (- @anim/demo-circle-x mx))
           ;; Initialize position history for velocity tracking
-          (reset! state/demo-position-history
-                  [{:x @state/demo-circle-x :t @state/game-time}])
+          (reset! anim/demo-position-history
+                  [{:x @anim/demo-circle-x :t @sys/game-time}])
           ;; Reset velocity
-          (reset! state/demo-velocity-x 0.0))))))
+          (reset! anim/demo-velocity-x 0.0))))))
 
 (defn handle-mouse-release
   "Handle mouse button release - stop dragging, create decay for momentum."
   [event]
   ;; Handle slider release
-  (reset! state/dragging-slider nil)
+  (src/dragging-slider nil)
 
   ;; Handle demo circle release - create decay animation for momentum
-  (when @state/demo-dragging?
-    (reset! state/demo-dragging? false)
+  (when @src/demo-dragging?
+    (src/demo-dragging? false)
     ;; Create decay animation with current velocity
     (when-let [decay-fn (requiring-resolve 'lib.anim.decay/decay)]
-      (reset! state/demo-decay-x
-              (decay-fn {:from @state/demo-circle-x
-                         :velocity @state/demo-velocity-x
+      (reset! anim/demo-decay-x
+              (decay-fn {:from @anim/demo-circle-x
+                         :velocity @anim/demo-velocity-x
                          :rate :normal})))))
 
 (defn handle-mouse-move
   "Handle mouse move - update slider or demo circle if dragging."
   [event]
   ;; Convert physical pixels to logical pixels
-  (let [scale @state/scale
-        ww @state/window-width
+  (let [scale @src/scale
+        ww @src/window-width
         mx (/ (:x event) scale)
         my (/ (:y event) scale)]
 
-    ;; Handle slider dragging
-    (when-let [slider @state/dragging-slider]
+    ;; Handle slider dragging - grid auto-recomputes via Flex signal
+    (when-let [slider @src/dragging-slider]
       (case slider
-        :x (reset! state/circles-x (slider-value-from-x mx (slider-x-bounds ww)))
-        :y (reset! state/circles-y (slider-value-from-x mx (slider-y-bounds ww))))
-      (trigger-grid-recalc!))
+        :x (src/circles-x (slider-value-from-x mx (slider-x-bounds ww)))
+        :y (src/circles-y (slider-value-from-x mx (slider-y-bounds ww)))))
 
     ;; Handle demo circle dragging (X-axis only)
-    (when @state/demo-dragging?
+    (when @src/demo-dragging?
       ;; Move circle with offset (no jump!) - velocity calculated in tick
-      (reset! state/demo-circle-x (+ mx @state/demo-drag-offset-x)))))
+      (reset! anim/demo-circle-x (+ mx @anim/demo-drag-offset-x)))))

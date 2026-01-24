@@ -33,24 +33,56 @@ clj -M:connect
 
 Clojure demo showcasing hot-reloading with LWJGL/SDL3 (windowing) and Skija (2D graphics), plus animation and gesture libraries.
 
-### Design Pattern: clj-reload
+### Design Pattern: clj-reload + Flex Reactivity
 
-Following [clj-reload](https://github.com/tonsky/clj-reload) best practices:
+Following [clj-reload](https://github.com/tonsky/clj-reload) best practices with Vue 3-style reactive signals via [Flex](https://github.com/lilactown/flex):
 - **Everything reloads** except `user` namespace and `defonce` values
 - Use `(requiring-resolve 'ns/sym)` for cross-namespace function calls (vars are removed on unload)
 - Use `defonce` for state that must survive reloads
-- Structure code by business logic, not reload constraints
+- UI state uses Flex sources/signals for automatic reactivity
+- Animation targets stay as plain atoms (no reactive overhead at 60fps)
 
 ### Reloadable vs Persistent
 
 | Namespace | Declaration | Reload Behavior |
 |-----------|-------------|-----------------|
-| `app.state` | `defonce` | Values **persist** (window, atoms, game-time) |
+| `app.state.sources` | `flex/defsource` | Flex sources **persist** (window size, UI state) |
+| `app.state.signals` | `flex/signal` | Derived values **recompute** automatically |
+| `app.state.animations` | `defonce` atom | Animation targets **persist** |
+| `app.state.system` | `defonce` atom | System state **persist** (window, errors) |
 | `app.config` | `def` | Values **update** on reload |
 | `app.core` | `defn` | Functions **update** on reload |
 | `app.controls` | `defn` | Functions **update** on reload |
 | `app.gestures` | `defn` | Functions **update** on reload |
 | All `lib.*` | `defn` | Functions **update** on reload |
+
+### State Architecture (Flex)
+
+State is split into four namespaces:
+
+```clojure
+;; app.state.sources - Flex sources (reactive UI state)
+(flex/defsource window-width 800)
+(flex/defsource circles-x 2)
+@src/window-width        ;; Read value
+(src/window-width 1024)  ;; Update (call as function) triggers dependent signals
+
+;; app.state.signals - Derived signals (auto-recompute)
+(def grid-positions
+  (flex/signal
+    (let [nx @src/circles-x ny @src/circles-y ...]
+      (compute-grid ...))))
+@sig/grid-positions         ;; Auto-recomputes when deps change
+
+;; app.state.animations - Plain atoms (60fps, no reactive overhead)
+(defonce demo-circle-x (atom 400.0))
+
+;; app.state.system - System lifecycle atoms
+(defonce window (atom nil))
+(defonce game-time (atom 0.0))
+```
+
+**Key Benefit:** Grid positions auto-recompute when window resizes or slider changes - no manual `recalculate-grid!` calls needed.
 
 ### Love2D-Style Game Loop
 
@@ -63,6 +95,11 @@ The app uses three hot-reloadable callbacks in `app.core`:
 ```
 
 ### Library Systems (lib/)
+
+**lib.flex/** - Hot-reload compatible Flex integration:
+- `source`, `signal`, `listen` - Re-exports from town.lilac/flex
+- `defsource` macro - defonce + source for persistent reactive values
+- `track-effect!`, `dispose-all-effects!` - Effect lifecycle for hot-reload
 
 **lib.time** - Configurable time source for all animation libs. Configure in `init` via `set-time-source!` to use game-time for slow-mo/pause.
 
@@ -103,6 +140,7 @@ The app uses three hot-reloadable callbacks in `app.core`:
 - Sizes: fixed (`100`), percentage (`"50%"`), stretch (`"1s"`, `"2s"`)
 - Modes: `:stack-x`, `:stack-y`, `:grid`
 - Spacing: `:before`, `:between`, `:after`
+- Mixins with Flex effect lifecycle (auto-dispose on unmount/reload)
 
 **lib.window/** - SDL3/OpenGL windowing layer:
 - `core` - `create-window`, `run!`, `request-frame!`, `close!`
@@ -112,8 +150,8 @@ The app uses three hot-reloadable callbacks in `app.core`:
 ### Game-Time System
 
 For animation synchronization and slow-mo/pause support:
-- `app.state/game-time` - Accumulated time in seconds (advanced in tick)
-- `app.state/time-scale` - Speed multiplier (1.0 = normal, 0.5 = slow-mo, 0 = paused)
+- `app.state.system/game-time` - Accumulated time in seconds (advanced in tick)
+- `app.state.system/time-scale` - Speed multiplier (1.0 = normal, 0.5 = slow-mo, 0 = paused)
 - `lib.time/time-source` - Atom containing time function, configured in `init`
 
 ### Dynamic Dispatch Pattern
@@ -137,14 +175,18 @@ The event listener uses `requiring-resolve` for ALL callbacks so they survive na
 ### Namespace Responsibilities
 
 - **app.core** - Game loop callbacks (init/tick/draw), event handler with dynamic dispatch
-- **app.state** - Atoms wrapped in `defonce` for persistent state
+- **app.state.sources** - Flex sources for reactive UI state
+- **app.state.signals** - Derived signals that auto-recompute
+- **app.state.animations** - Plain atoms for animation targets (60fps)
+- **app.state.system** - System/lifecycle atoms (window, errors)
 - **app.config** - Plain `def` values for visual parameters
 - **app.controls** - UI drawing and slider/mouse handling
 - **app.gestures** - Gesture target registration and handlers
+- **lib.flex.core** - Flex integration with hot-reload effect tracking
 - **lib.window.*** - SDL3/OpenGL windowing and Skija surface management
 - **lib.anim.*** - Animation primitives (spring, decay, tween, timer, etc.)
 - **lib.gesture.*** - Gesture recognition system
-- **lib.layout.*** - Constraint-based layout engine
+- **lib.layout.*** - Constraint-based layout engine with Flex effect lifecycle
 - **lib.time** - Configurable time source for animations
 - **user** (dev/) - REPL namespace with `open` and `reload` functions
 
@@ -153,3 +195,4 @@ The event listener uses `requiring-resolve` for ALL callbacks so they survive na
 - **LWJGL 3.4.0** - Cross-platform windowing via SDL3 + OpenGL bindings
 - **Skija** (platform-specific) - Skia bindings for 2D graphics
 - **clj-reload** - Hot-reloading without losing state
+- **town.lilac/flex** - Vue 3-style reactive signals

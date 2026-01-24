@@ -26,7 +26,8 @@
    Parent layout modes:
      :stack-x - children flow left to right
      :stack-y - children flow top to bottom
-     :grid    - 2D grid with :x-count columns and :y-count rows")
+     :grid    - 2D grid with :x-count columns and :y-count rows"
+  (:require [lib.flex.core :as flex]))
 
 ;; ============================================================
 ;; Mixin Lifecycle State
@@ -35,14 +36,47 @@
 (defonce ^:private mounted-nodes (atom #{}))
 (defonce ^:private previous-tree (atom nil))
 (defonce ^:private mounted-node-data (atom {}))
+(defonce ^:private mounted-effects (atom {}))  ;; {node-id -> [effects...]}
+
+(defn- process-mixins-mount
+  "Call :did-mount hooks on all mixins for a node.
+   Collects and tracks any returned Flex effects."
+  [node]
+  (let [node-effects (atom [])]
+    (doseq [mixin (:mixins node)]
+      (when-let [hook (get mixin :did-mount)]
+        (when-let [effect (hook node)]
+          (swap! node-effects conj effect))))
+    ;; Store effects for this node if any were returned
+    (when (seq @node-effects)
+      (swap! mounted-effects assoc (:id node) @node-effects))))
+
+(defn- process-mixins-unmount
+  "Call :will-unmount hooks and dispose any tracked effects."
+  [node]
+  ;; Dispose tracked effects first
+  (when-let [effects (get @mounted-effects (:id node))]
+    (doseq [effect effects]
+      (try
+        (flex/dispose! effect)
+        (catch Exception _)))
+    (swap! mounted-effects dissoc (:id node)))
+  ;; Then call will-unmount hooks
+  (doseq [mixin (:mixins node)]
+    (when-let [hook (get mixin :will-unmount)]
+      (hook node))))
 
 (defn- process-mixins
   "Call lifecycle hooks on all mixins for a node.
    Phase can be :did-mount, :did-update, :will-unmount."
   [node phase]
-  (doseq [mixin (:mixins node)]
-    (when-let [hook (get mixin phase)]
-      (hook node))))
+  (case phase
+    :did-mount (process-mixins-mount node)
+    :will-unmount (process-mixins-unmount node)
+    ;; Default for other phases
+    (doseq [mixin (:mixins node)]
+      (when-let [hook (get mixin phase)]
+        (hook node)))))
 
 (defn- collect-mixin-nodes-pre-order
   "Collect nodes with mixins in pre-order (parent first, then children).
@@ -69,12 +103,15 @@
   []
   (let [old-tree @previous-tree
         nodes (collect-mixin-nodes-pre-order old-tree)]
-    ;; Unmount all in top-down order
+    ;; Unmount all in top-down order (disposes tracked effects)
     (doseq [node nodes]
       (process-mixins node :will-unmount))
+    ;; Dispose any remaining global Flex effects
+    (flex/dispose-all-effects!)
     ;; Clear state
     (reset! mounted-nodes #{})
     (reset! mounted-node-data {})
+    (reset! mounted-effects {})
     (reset! previous-tree nil)))
 
 (defn reconcile!
