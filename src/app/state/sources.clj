@@ -37,3 +37,10 @@
 ;; ============================================================
 
 (flex/defsource recording-active? false)
+
+;; ============================================================
+;; FPS display
+;; ============================================================
+
+;; Smoothed FPS - updated every frame with exponential moving average
+(flex/defsource fps 0.0)

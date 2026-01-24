@@ -29,10 +29,3 @@
              {:cx (+ (* col cell-w) (/ cell-w 2))
               :cy (+ (* row cell-h) (/ cell-h 2))
               :radius radius})))))
-
-;; ============================================================
-;; FPS display
-;; ============================================================
-
-;; Smoothed FPS source - updated every frame with exponential moving average
-(flex/defsource fps 0.0)

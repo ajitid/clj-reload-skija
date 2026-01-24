@@ -3,14 +3,10 @@
    Registers sliders and demo circle with the gesture system."
   (:require [app.state.sources :as src]
             [app.state.animations :as anim]
-            [app.state.system :as sys]))
+            [app.state.system :as sys]
+            [app.util :refer [cfg]]))
 
 ;; Note: We use requiring-resolve for cross-namespace calls to survive hot-reload
-
-(defn cfg
-  "Get config value with runtime var lookup."
-  [var-sym]
-  (some-> (requiring-resolve var-sym) deref))
 
 ;; -----------------------------------------------------------------------------
 ;; Slider (generic)

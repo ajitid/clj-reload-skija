@@ -2,21 +2,13 @@
   "Control panel UI - sliders and mouse handling.
    Drawing and update logic for the control panel."
   (:require [app.state.sources :as src]
-            [app.state.signals :as sig]
             [app.state.animations :as anim]
-            [app.state.system :as sys])
+            [app.state.system :as sys]
+            [app.util :refer [cfg]]
+            [lib.gesture.hit-test :as hit-test])
   (:import [io.github.humbleui.skija Canvas Paint PaintMode Font Typeface]
            [io.github.humbleui.types Rect]
            [lib.window.events EventMouseButton EventMouseMove]))
-
-;; ============================================================
-;; Helpers
-;; ============================================================
-
-(defn cfg
-  "Get config value with runtime var lookup (survives hot-reload)."
-  [var-sym]
-  (some-> (requiring-resolve var-sym) deref))
 
 ;; ============================================================
 ;; Slider geometry
@@ -48,12 +40,6 @@
         sh (cfg 'app.config/slider-height)
         fps-offset 25]  ;; Space for FPS display
     [(+ px pad) (+ py pad fps-offset 22 sh 30) sw sh]))
-
-(defn point-in-rect?
-  "Check if point (px, py) is inside rect [x y w h]"
-  [px py [x y w h]]
-  (and (>= px x) (<= px (+ x w))
-       (>= py y) (<= py (+ y h))))
 
 (defn point-in-demo-circle?
   "Check if point (px, py) is inside the demo circle."
@@ -122,7 +108,7 @@
                 fps-paint (doto (Paint.)
                             (.setColor (unchecked-int (cfg 'app.config/panel-text-color))))]
       (.drawString canvas
-                   (format "FPS: %.0f" (double @sig/fps))
+                   (format "FPS: %.0f" (double @src/fps))
                    (float (+ px pad))
                    (float (+ py pad 14))
                    font fps-paint))
@@ -146,12 +132,12 @@
           panel-visible? @src/panel-visible?]
       (cond
         ;; Check sliders first (higher z-order) - only when panel visible
-        (and panel-visible? (point-in-rect? mx my (slider-x-bounds ww)))
+        (and panel-visible? (hit-test/point-in-rect? mx my (slider-x-bounds ww)))
         (do
           (src/dragging-slider :x)
           (src/circles-x (slider-value-from-x mx (slider-x-bounds ww))))
 
-        (and panel-visible? (point-in-rect? mx my (slider-y-bounds ww)))
+        (and panel-visible? (hit-test/point-in-rect? mx my (slider-y-bounds ww)))
         (do
           (src/dragging-slider :y)
           (src/circles-y (slider-value-from-x mx (slider-y-bounds ww))))

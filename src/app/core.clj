@@ -14,6 +14,7 @@
             [app.state.signals :as sig]
             [app.state.animations :as anim]
             [app.state.system :as sys]
+            [app.util :refer [cfg]]
             [clojure.string :as str]
             [lib.flex.core :as flex]
             [lib.layout.core :as layout]
@@ -32,12 +33,6 @@
 ;; ============================================================
 ;; Helpers
 ;; ============================================================
-
-(defn cfg
-  "Get config value with runtime var lookup (survives hot-reload).
-   Uses requiring-resolve to load namespace if needed."
-  [var-sym]
-  (some-> (requiring-resolve var-sym) deref))
 
 (defn config-loaded?
   "Check if app.config namespace is loaded and ready."
@@ -501,7 +496,7 @@
               (when (pos? raw-dt)
                 (let [current-fps (/ 1.0 raw-dt)
                       smoothing 0.8]
-                  (sig/fps (+ (* smoothing @sig/fps)
+                  (src/fps (+ (* smoothing @src/fps)
                              (* (- 1.0 smoothing) current-fps)))))
               (try
                 (.save canvas)

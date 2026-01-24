@@ -39,21 +39,3 @@
 (def demo-spring-stiffness 180)        ;; Apple-like bouncy
 (def demo-spring-damping 12)           ;; Light damping
 (def demo-spring-mass 1.0)
-
-;; ============================================================
-;; clj-reload hooks (optional - for resource cleanup/restart)
-;; ============================================================
-
-(defn before-ns-unload
-  "Called by clj-reload before this namespace is unloaded.
-   Use for cleanup: stop servers, close connections, release resources."
-  []
-  ;; Example: (when-let [conn @db-connection] (.close conn))
-  nil)
-
-(defn after-ns-reload
-  "Called by clj-reload after this namespace is reloaded.
-   Use for restart: reconnect, reinitialize resources."
-  []
-  ;; Example: (reset! db-connection (connect-to-db))
-  nil)
