@@ -18,6 +18,11 @@
     :decal FilterTileMode/DECAL
     FilterTileMode/CLAMP))
 
+(defn- make-gradient-style
+  "Create a GradientStyle from tile mode keyword."
+  [tile-mode]
+  (GradientStyle. (parse-tile-mode tile-mode) true nil))
+
 ;; ============================================================
 ;; Linear Gradients
 ;; ============================================================
@@ -53,9 +58,9 @@
   ([x0 y0 x1 y1 colors positions tile-mode]
    (let [colors-arr (int-array (map unchecked-int colors))
          positions-arr (when positions (float-array positions))
-         mode (parse-tile-mode tile-mode)]
+         style (make-gradient-style tile-mode)]
      (Shader/makeLinearGradient (float x0) (float y0) (float x1) (float y1)
-                                colors-arr positions-arr mode))))
+                                colors-arr positions-arr style))))
 
 ;; ============================================================
 ;; Radial Gradients
@@ -86,9 +91,9 @@
   ([cx cy radius colors positions tile-mode]
    (let [colors-arr (int-array (map unchecked-int colors))
          positions-arr (when positions (float-array positions))
-         mode (parse-tile-mode tile-mode)]
+         style (make-gradient-style tile-mode)]
      (Shader/makeRadialGradient (float cx) (float cy) (float radius)
-                                colors-arr positions-arr mode))))
+                                colors-arr positions-arr style))))
 
 ;; ============================================================
 ;; Two-Point Conical Gradients
@@ -114,10 +119,10 @@
   ([x0 y0 r0 x1 y1 r1 colors positions tile-mode]
    (let [colors-arr (int-array (map unchecked-int colors))
          positions-arr (when positions (float-array positions))
-         mode (parse-tile-mode tile-mode)]
+         style (make-gradient-style tile-mode)]
      (Shader/makeTwoPointConicalGradient (float x0) (float y0) (float r0)
                                          (float x1) (float y1) (float r1)
-                                         colors-arr positions-arr mode))))
+                                         colors-arr positions-arr style))))
 
 ;; ============================================================
 ;; Sweep Gradients (Angular)
@@ -149,14 +154,14 @@
   ([cx cy colors positions start-angle end-angle tile-mode]
    (let [colors-arr (int-array (map unchecked-int colors))
          positions-arr (when positions (float-array positions))
-         mode (parse-tile-mode tile-mode)]
+         style (make-gradient-style tile-mode)]
      (if (and (= start-angle 0) (= end-angle 360))
        ;; Full sweep
        (Shader/makeSweepGradient (float cx) (float cy) colors-arr positions-arr)
        ;; Partial sweep
        (Shader/makeSweepGradient (float cx) (float cy)
                                  (float start-angle) (float end-angle)
-                                 colors-arr positions-arr mode)))))
+                                 colors-arr positions-arr style)))))
 
 ;; ============================================================
 ;; Solid Color Shader

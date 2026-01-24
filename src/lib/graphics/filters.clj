@@ -2,7 +2,7 @@
   "Common filters and effects - blur, shadows, gradients, etc.
 
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern)."
-  (:import [io.github.humbleui.skija ImageFilter MaskFilter ColorFilter Shader
+  (:import [io.github.humbleui.skija ImageFilter MaskFilter ColorFilter ColorMatrix Shader
             FilterTileMode FilterBlurMode PathEffect]))
 
 ;; ============================================================
@@ -101,7 +101,7 @@
                            0.33 0.33 0.33 0 0
                            0    0    0    1 0])"
   [matrix]
-  (ColorFilter/makeMatrix (float-array matrix)))
+  (ColorFilter/makeMatrix (ColorMatrix. (float-array matrix))))
 
 (defn brightness-filter
   "Create a brightness adjustment filter.
