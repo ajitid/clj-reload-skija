@@ -230,11 +230,12 @@
   (when-let [time-source (requiring-resolve 'lib.time/time-source)]
     (reset! @time-source #(deref sys/game-time)))
 
-  ;; Set initial anchor position to center of window
-  (reset! anim/demo-anchor-x (/ @src/window-width 2))
-  (reset! anim/demo-anchor-y (/ @src/window-height 2))
-  (reset! anim/demo-circle-x (/ @src/window-width 2))
-  (reset! anim/demo-circle-y (/ @src/window-height 2))
+  ;; Set initial demo position at top of window (x-centered, y fixed near top)
+  (let [demo-y 50]
+    (reset! anim/demo-anchor-x (/ @src/window-width 2))
+    (reset! anim/demo-anchor-y demo-y)
+    (reset! anim/demo-circle-x (/ @src/window-width 2))
+    (reset! anim/demo-circle-y demo-y))
 
   ;; Initialize scroll state for demos
   (scroll/init! :scroll-demo)
@@ -402,11 +403,12 @@
     0))
 
 (defn draw-layout-demo
-  "Draw the layout demo UI."
-  [^Canvas canvas width height]
-  ;; Step 1: Layout (compute bounds, no rendering yet)
+  "Draw the layout demo UI.
+   offset-y: vertical offset for layout bounds (screen space)"
+  [^Canvas canvas width height offset-y]
+  ;; Step 1: Layout (compute bounds in screen space, including offset)
   (let [tree (demo-ui height)
-        parent-bounds {:x 0 :y 0 :w width :h height}
+        parent-bounds {:x 0 :y offset-y :w width :h height}
         laid-out (layout/layout tree parent-bounds)]
 
     ;; Reconcile lifecycle (mount/unmount in correct order)
@@ -445,8 +447,14 @@
   ;; Clear background
   (.clear canvas (unchecked-int 0xFF222222))
 
-  ;; Draw layout demo
-  (draw-layout-demo canvas width height)
+  ;; Demo ball area at top (100px reserved)
+  (let [demo-area-height 100]
+    ;; Draw demo ball in the reserved top area (x-axis draggable with momentum)
+    (draw-demo-anchor canvas)
+    (draw-demo-circle canvas)
+
+    ;; Draw layout demo below the demo area (bounds computed in screen space)
+    (draw-layout-demo canvas width (- height demo-area-height) demo-area-height))
 
   ;; Draw control panel (on top) when visible
   (when @src/panel-visible?

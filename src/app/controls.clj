@@ -1,14 +1,10 @@
 (ns app.controls
-  "Control panel UI - sliders and mouse handling.
-   Drawing and update logic for the control panel."
+  "Control panel UI - sliders and drawing.
+   Drawing logic for the control panel."
   (:require [app.state.sources :as src]
-            [app.state.animations :as anim]
-            [app.state.system :as sys]
-            [app.util :refer [cfg]]
-            [lib.gesture.hit-test :as hit-test])
+            [app.util :refer [cfg]])
   (:import [io.github.humbleui.skija Canvas Paint PaintMode Font Typeface]
-           [io.github.humbleui.types Rect]
-           [lib.window.events EventMouseButton EventMouseMove]))
+           [io.github.humbleui.types Rect]))
 
 ;; ============================================================
 ;; Slider geometry
@@ -40,16 +36,6 @@
         sh (cfg 'app.config/slider-height)
         fps-offset 25]  ;; Space for FPS display
     [(+ px pad) (+ py pad fps-offset 22 sh 30) sw sh]))
-
-(defn point-in-demo-circle?
-  "Check if point (px, py) is inside the demo circle."
-  [px py]
-  (let [cx @anim/demo-circle-x
-        cy @anim/demo-circle-y
-        radius (or (cfg 'app.config/demo-circle-radius) 25)
-        dx (- px cx)
-        dy (- py cy)]
-    (<= (+ (* dx dx) (* dy dy)) (* radius radius))))
 
 (defn slider-value-from-x
   "Convert mouse x position to slider value (min-max)"
@@ -115,79 +101,3 @@
     ;; Draw sliders
     (draw-slider canvas "X:" @src/circles-x (slider-x-bounds window-width))
     (draw-slider canvas "Y:" @src/circles-y (slider-y-bounds window-width))))
-
-;; ============================================================
-;; Mouse event handling
-;; ============================================================
-
-(defn handle-mouse-press
-  "Handle mouse button press - start dragging if on slider or demo circle."
-  [event]
-  (when (= (:button event) :primary)
-    ;; Convert physical pixels to logical pixels
-    (let [scale @src/scale
-          ww @src/window-width
-          mx (/ (:x event) scale)
-          my (/ (:y event) scale)
-          panel-visible? @src/panel-visible?]
-      (cond
-        ;; Check sliders first (higher z-order) - only when panel visible
-        (and panel-visible? (hit-test/point-in-rect? mx my (slider-x-bounds ww)))
-        (do
-          (src/dragging-slider :x)
-          (src/circles-x (slider-value-from-x mx (slider-x-bounds ww))))
-
-        (and panel-visible? (hit-test/point-in-rect? mx my (slider-y-bounds ww)))
-        (do
-          (src/dragging-slider :y)
-          (src/circles-y (slider-value-from-x mx (slider-y-bounds ww))))
-
-        ;; Check demo circle
-        (point-in-demo-circle? mx my)
-        (do
-          (src/demo-dragging? true)
-          ;; Stop any running decay
-          (reset! anim/demo-decay-x nil)
-          ;; Store click offset (so ball doesn't jump)
-          (reset! anim/demo-drag-offset-x (- @anim/demo-circle-x mx))
-          ;; Initialize position history for velocity tracking
-          (reset! anim/demo-position-history
-                  [{:x @anim/demo-circle-x :t @sys/game-time}])
-          ;; Reset velocity
-          (reset! anim/demo-velocity-x 0.0))))))
-
-(defn handle-mouse-release
-  "Handle mouse button release - stop dragging, create decay for momentum."
-  [event]
-  ;; Handle slider release
-  (src/dragging-slider nil)
-
-  ;; Handle demo circle release - create decay animation for momentum
-  (when @src/demo-dragging?
-    (src/demo-dragging? false)
-    ;; Create decay animation with current velocity
-    (when-let [decay-fn (requiring-resolve 'lib.anim.decay/decay)]
-      (reset! anim/demo-decay-x
-              (decay-fn {:from @anim/demo-circle-x
-                         :velocity @anim/demo-velocity-x
-                         :rate :normal})))))
-
-(defn handle-mouse-move
-  "Handle mouse move - update slider or demo circle if dragging."
-  [event]
-  ;; Convert physical pixels to logical pixels
-  (let [scale @src/scale
-        ww @src/window-width
-        mx (/ (:x event) scale)
-        my (/ (:y event) scale)]
-
-    ;; Handle slider dragging - grid auto-recomputes via Flex signal
-    (when-let [slider @src/dragging-slider]
-      (case slider
-        :x (src/circles-x (slider-value-from-x mx (slider-x-bounds ww)))
-        :y (src/circles-y (slider-value-from-x mx (slider-y-bounds ww)))))
-
-    ;; Handle demo circle dragging (X-axis only)
-    (when @src/demo-dragging?
-      ;; Move circle with offset (no jump!) - velocity calculated in tick
-      (reset! anim/demo-circle-x (+ mx @anim/demo-drag-offset-x)))))

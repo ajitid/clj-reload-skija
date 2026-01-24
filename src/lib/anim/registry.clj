@@ -32,7 +32,7 @@
 (defn- get-type [anim]
   (cond
     (:stiffness anim) :spring
-    (:deceleration anim) :decay
+    (:rate anim) :decay        ;; decay uses :rate for deceleration
     (:duration anim) :tween
     :else (throw (ex-info "Unknown animation type" {:anim anim}))))
 
