@@ -629,7 +629,9 @@
         (println "  clj -M:connect --port" (:port active))
         (println "\nOr with your editor's nREPL client on port" (:port active))
         (println "\nFor watchexec auto-reload:")
-        (println "  watchexec -qnrc -e clj -w src -w dev -- rep -p $(cat .jvm-pool/active-port) \"(reload)\""))
+        (if windows?
+          (println "  watchexec -qnrc -e clj -w src -w dev -- scripts\\reload.cmd")
+          (println "  watchexec -qnrc -e clj -w src -w dev -- ./scripts/reload.sh")))
       (println "No active JVM. Use 'bb pool.clj open' first."))))
 
 (defn cmd-help []
