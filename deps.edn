@@ -17,28 +17,28 @@
  {;; Platform-specific Skija + LWJGL natives
   :macos-arm64
   {:extra-deps
-   {io.github.humbleui/skija-macos-arm64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}
+   {io.github.humbleui/skija-macos-arm64 {:mvn/version "0.143.5" :exclusions [io.github.humbleui/types]}
     org.lwjgl/lwjgl$natives-macos-arm64 {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-sdl$natives-macos-arm64 {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-opengl$natives-macos-arm64 {:mvn/version "3.4.0"}}}
 
   :macos-x64
   {:extra-deps
-   {io.github.humbleui/skija-macos-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}
+   {io.github.humbleui/skija-macos-x64 {:mvn/version "0.143.5" :exclusions [io.github.humbleui/types]}
     org.lwjgl/lwjgl$natives-macos {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-sdl$natives-macos {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-opengl$natives-macos {:mvn/version "3.4.0"}}}
 
   :windows
   {:extra-deps
-   {io.github.humbleui/skija-windows-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}
+   {io.github.humbleui/skija-windows-x64 {:mvn/version "0.143.5" :exclusions [io.github.humbleui/types]}
     org.lwjgl/lwjgl$natives-windows {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-sdl$natives-windows {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-opengl$natives-windows {:mvn/version "3.4.0"}}}
 
   :linux
   {:extra-deps
-   {io.github.humbleui/skija-linux-x64 {:mvn/version "0.116.2" :exclusions [io.github.humbleui/types]}
+   {io.github.humbleui/skija-linux-x64 {:mvn/version "0.143.5" :exclusions [io.github.humbleui/types]}
     org.lwjgl/lwjgl$natives-linux {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-sdl$natives-linux {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-opengl$natives-linux {:mvn/version "3.4.0"}}}
@@ -46,19 +46,19 @@
   :dev
   {:extra-paths ["dev"]
    :extra-deps
-   {io.github.tonsky/clj-reload {:mvn/version "0.7.1"}
-    nrepl/nrepl {:mvn/version "1.1.1"}
-    cider/cider-nrepl {:mvn/version "0.50.2"}}}
+   {io.github.tonsky/clj-reload {:mvn/version "1.0.0"}
+    nrepl/nrepl {:mvn/version "1.5.1"}
+    cider/cider-nrepl {:mvn/version "0.58.0"}}}
 
   ;; Connect to running nREPL (doesn't load dev/ to avoid port conflict)
   :connect
-  {:extra-deps {nrepl/nrepl {:mvn/version "1.1.1"}}
+  {:extra-deps {nrepl/nrepl {:mvn/version "1.5.1"}}
    :main-opts ["-m" "nrepl.cmdline" "--connect" "--port" "7888"]}
 
   :run
   {:main-opts ["-m" "app.core"]}
 
   :repl
-  {:extra-deps {cider/cider-nrepl {:mvn/version "0.50.2"}}
+  {:extra-deps {cider/cider-nrepl {:mvn/version "0.58.0"}}
    :main-opts ["-m" "nrepl.cmdline"
                "--middleware" "[cider.nrepl/cider-middleware]"]}}}

@@ -16,7 +16,11 @@
             [app.state.system :as sys]
             [app.util :refer [cfg]]
             [clojure.string :as str]
+            [lib.error.core :as err]
+            [lib.error.overlay :as err-overlay]
             [lib.flex.core :as flex]
+            [lib.graphics.batch :as batch]
+            [lib.graphics.shapes :as shapes]
             [lib.layout.core :as layout]
             [lib.layout.mixins :as mixins]
             [lib.layout.render :as layout-render]
@@ -24,9 +28,8 @@
             [lib.window.core :as window]
             [lib.window.events :as e]
             [lib.window.macos :as macos])
-  (:import [io.github.humbleui.skija Canvas Paint PaintMode PaintStrokeCap Font Typeface]
+  (:import [io.github.humbleui.skija Canvas Paint PaintMode Font Typeface]
            [io.github.humbleui.types Rect]
-           [java.io StringWriter PrintWriter]
            [lib.window.events EventClose EventResize EventMouseButton EventMouseMove EventMouseWheel
             EventKey EventFrameSkija EventFingerDown EventFingerMove EventFingerUp]))
 
@@ -60,15 +63,6 @@
 ;; Drawing helpers
 ;; ============================================================
 
-(defn draw-circle
-  "Draw a circle at the given position."
-  [^Canvas canvas x y radius]
-  (with-open [paint (doto (Paint.)
-                      (.setColor (unchecked-int (cfg 'app.config/circle-color)))
-                      (.setMode PaintMode/FILL)
-                      (.setAntiAlias true))]
-    (.drawCircle canvas (float x) (float y) (float radius) paint)))
-
 (defn draw-circle-grid
   "Draw a grid of circles using batched points API.
    Uses the grid-positions signal which auto-recomputes."
@@ -77,150 +71,17 @@
     (when (seq positions)
       (let [;; All circles same radius - use first one
             radius (:radius (first positions))
-            ;; Build float array of x,y pairs
-            points (float-array (mapcat (fn [{:keys [cx cy]}] [cx cy]) positions))]
-        (with-open [paint (doto (Paint.)
-                            (.setColor (unchecked-int (cfg 'app.config/circle-color)))
-                            (.setMode PaintMode/STROKE)
-                            (.setStrokeWidth (float (* 2 radius)))  ; diameter
-                            (.setStrokeCap PaintStrokeCap/ROUND)
-                            (.setAntiAlias true))]
-          (.drawPoints canvas points paint))))))
-
-(defn get-root-cause
-  "Traverse exception chain to find root cause."
-  [^Throwable e]
-  (if-let [cause (.getCause e)]
-    (recur cause)
-    e))
-
-(defn get-compiler-location
-  "Extract file:line:column from Clojure CompilerException ex-data."
-  [^Throwable e]
-  (when-let [data (ex-data e)]
-    (let [source (:clojure.error/source data)
-          line (:clojure.error/line data)
-          column (:clojure.error/column data)]
-      (when (and source line)
-        (str source ":" line (when column (str ":" column)))))))
-
-(defn clj-reload-parse-error?
-  "Check if exception is from clj-reload's file reading/parsing (scan function)."
-  [^Throwable e]
-  (let [stack-trace (.getStackTrace e)]
-    (some #(str/includes? (.getClassName ^StackTraceElement %) "clj_reload.core$scan")
-          stack-trace)))
-
-(defn get-error-info
-  "Extract useful error information from exception chain.
-   Returns {:message :location :root-message :type}."
-  [^Throwable e]
-  (let [root (get-root-cause e)
-        ;; Try to find CompilerException in the chain for location info
-        compiler-ex (loop [ex e]
-                      (cond
-                        (nil? ex) nil
-                        (instance? clojure.lang.Compiler$CompilerException ex) ex
-                        :else (recur (.getCause ex))))
-        location (when compiler-ex (get-compiler-location compiler-ex))
-        ;; Get the message
-        root-msg (.getMessage root)
-        msg-empty? (or (nil? root-msg) (= root-msg "null") (empty? root-msg))
-        ;; Only suggest console for clj-reload parse errors with empty messages
-        best-msg (if (and msg-empty? (clj-reload-parse-error? e))
-                   "(see console for details)"
-                   root-msg)]
-    {:type (.getSimpleName (.getClass root))
-     :message best-msg
-     :location location
-     :original-message (.getMessage e)}))
-
-(defn get-stack-trace-string
-  "Get stack trace as a string."
-  [^Throwable e]
-  (let [sw (StringWriter.)
-        pw (PrintWriter. sw)]
-    (.printStackTrace e pw)
-    (.toString sw)))
-
-(defn copy-to-clipboard!
-  "Copy text to system clipboard using SDL3."
-  [^String text]
-  (window/set-clipboard-text! text))
-
-(defn format-error-for-clipboard
-  "Format error with full stack trace for clipboard."
-  [^Throwable e]
-  (let [{:keys [type message location original-message]} (get-error-info e)
-        lines [(str "ERROR")
-               (when location (str "Location: " location))
-               (str type ": " message)
-               (when (and original-message (not= original-message message))
-                 (str "Context: " original-message))
-               ""
-               "Stack trace:"
-               (get-stack-trace-string e)]]
-    (str/join "\n" (remove nil? lines))))
-
-(defn truncate-with-ellipsis
-  "Truncate string to max-len, adding ellipsis if truncated."
-  [s max-len]
-  (if (> (count s) max-len)
-    (str (subs s 0 max-len) "…")
-    s))
+            ;; Build sequence of {:x :y} maps for batch API
+            points (mapv (fn [{:keys [cx cy]}] {:x cx :y cy}) positions)]
+        (batch/points canvas points radius
+                      {:color (cfg 'app.config/circle-color)})))))
 
 (defn copy-current-error-to-clipboard!
   "Copy the current error (if any) to clipboard.
    Prioritizes reload error over runtime error."
   []
   (when-let [err (or @sys/last-reload-error @sys/last-runtime-error)]
-    (copy-to-clipboard! (format-error-for-clipboard err))))
-
-(defn draw-error
-  "Draw error message and stack trace on canvas with red background."
-  [^Canvas canvas ^Exception e]
-  (let [bg-color    0xFFCC4444
-        text-color  0xFFFFFFFF
-        font-size   14
-        padding     20
-        line-height 18
-        {:keys [type message location original-message]} (get-error-info e)]
-    ;; Red background
-    (.clear canvas (unchecked-int bg-color))
-    ;; Draw error text
-    (with-open [typeface (Typeface/makeDefault)
-                font (Font. typeface (float font-size))
-                paint (doto (Paint.)
-                        (.setColor (unchecked-int text-color)))]
-      ;; Header
-      (.drawString canvas "ERROR (Ctrl+E or middle-click to copy)" (float padding) (float (+ padding line-height)) font paint)
-      ;; Location (file:line:column) if available (for compile errors)
-      (when location
-        (.drawString canvas (str "at " location) (float padding) (float (+ padding (* 2.5 line-height))) font paint))
-      ;; Root cause message (the actual error like "Unable to resolve symbol: forma")
-      (let [root-msg (str type ": " message)
-            y-offset (if location 4.0 2.5)]
-        (.drawString canvas root-msg (float padding) (float (+ padding (* y-offset line-height))) font paint))
-      ;; Original message if different (shows context like "Failed to load namespace")
-      (let [base-y-offset (if location 5.5 4.0)
-            has-context? (and original-message (not= original-message message))]
-        (when has-context?
-          (.drawString canvas
-                       (str "(while: " (truncate-with-ellipsis original-message 80) ")")
-                       (float padding)
-                       (float (+ padding (* base-y-offset line-height)))
-                       font paint))
-        ;; Stack trace
-        (let [stack-lines (-> (get-stack-trace-string e)
-                              (str/split #"\n")
-                              (->> (take 15)))
-              stack-y-offset (if has-context? (+ base-y-offset 1.5) base-y-offset)]
-          (doseq [[idx line] (map-indexed vector stack-lines)]
-            (.drawString canvas
-                         (truncate-with-ellipsis line 100)
-                         (float padding)
-                         (float (+ padding (* (+ stack-y-offset idx) line-height)))
-                         font paint)))))))
+    (err/copy-to-clipboard! (err/format-error-for-clipboard err))))
 
 ;; ============================================================
 ;; Love2D-style callbacks (hot-reloadable!)
@@ -294,12 +155,10 @@
   (let [x @anim/demo-anchor-x
         y @anim/demo-anchor-y
         radius (or (cfg 'app.config/demo-circle-radius) 25)]
-    (with-open [paint (doto (Paint.)
-                        (.setColor (unchecked-int (or (cfg 'app.config/demo-anchor-color) 0x44FFFFFF)))
-                        (.setMode PaintMode/STROKE)
-                        (.setStrokeWidth 2.0)
-                        (.setAntiAlias true))]
-      (.drawCircle canvas (float x) (float y) (float radius) paint))))
+    (shapes/circle canvas x y radius
+                  {:color (or (cfg 'app.config/demo-anchor-color) 0x44FFFFFF)
+                   :mode :stroke
+                   :stroke-width 2.0})))
 
 (defn draw-demo-circle
   "Draw the draggable demo circle."
@@ -307,11 +166,8 @@
   (let [x @anim/demo-circle-x
         y @anim/demo-circle-y
         radius (or (cfg 'app.config/demo-circle-radius) 25)]
-    (with-open [paint (doto (Paint.)
-                        (.setColor (unchecked-int (or (cfg 'app.config/demo-circle-color) 0xFF4A90D9)))
-                        (.setMode PaintMode/FILL)
-                        (.setAntiAlias true))]
-      (.drawCircle canvas (float x) (float y) (float radius) paint))))
+    (shapes/circle canvas x y radius
+                  {:color (or (cfg 'app.config/demo-circle-color) 0xFF4A90D9)})))
 
 ;; ============================================================
 ;; Layout Demo
@@ -529,7 +385,7 @@
                 (.scale canvas (float scale) (float scale))
                 ;; Check for pending reload error
                 (if-let [reload-err @sys/last-reload-error]
-                  (draw-error canvas reload-err)
+                  (err-overlay/draw-error canvas reload-err)
                   (do
                     (reset! sys/last-runtime-error nil)
                     (when-let [tick-fn (requiring-resolve 'app.core/tick)]
@@ -539,7 +395,7 @@
                 (catch Exception e
                   (reset! sys/last-runtime-error e)
                   (let [error-to-show (or @sys/last-reload-error e)]
-                    (draw-error canvas error-to-show))
+                    (err-overlay/draw-error canvas error-to-show))
                   (println "Render error:" (.getMessage e)))
                 (finally
                   (.restore canvas)))

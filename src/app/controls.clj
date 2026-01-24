@@ -2,8 +2,11 @@
   "Control panel UI - sliders and drawing.
    Drawing logic for the control panel."
   (:require [app.state.sources :as src]
-            [app.util :refer [cfg]])
-  (:import [io.github.humbleui.skija Canvas Paint PaintMode Font Typeface Path]
+            [app.util :refer [cfg]]
+            [lib.graphics.batch :as batch]
+            [lib.graphics.shapes :as shapes]
+            [lib.graphics.text :as gfx-text])
+  (:import [io.github.humbleui.skija Canvas Paint PaintMode]
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
@@ -63,11 +66,8 @@
         fill-w (* sw ratio)
         font-size (or (cfg 'app.config/font-size) 18)]
     ;; Draw label and value ABOVE the slider
-    (with-open [typeface (Typeface/makeDefault)
-                font (Font. typeface (float font-size))
-                text-paint (doto (Paint.)
-                             (.setColor (unchecked-int (cfg 'app.config/panel-text-color))))]
-      (.drawString canvas (str label " " value) (float sx) (float (- sy 6)) font text-paint))
+    (gfx-text/text canvas (str label " " value) sx (- sy 6)
+                   {:size font-size :color (cfg 'app.config/panel-text-color)})
     ;; Draw track
     (with-open [track-paint (doto (Paint.)
                               (.setColor (unchecked-int (cfg 'app.config/slider-track-color))))]
@@ -128,7 +128,7 @@
           (aset lines (+ base 2) (float curr-x))
           (aset lines (+ base 3) (float curr-y))
           (recur (inc i) curr-x curr-y))))
-    (.drawLines canvas lines fps-graph-stroke-paint)))
+    (batch/lines canvas lines {:paint fps-graph-stroke-paint})))
 
 (defn draw-panel
   "Draw control panel with sliders at top-right."
@@ -144,15 +144,11 @@
                            (.setColor (unchecked-int (cfg 'app.config/panel-bg-color))))]
       (.drawRect canvas (Rect/makeXYWH (float px) (float py) (float pw) (float ph)) bg-paint))
     ;; Draw FPS text at top
-    (with-open [typeface (Typeface/makeDefault)
-                font (Font. typeface (float font-size))
-                fps-paint (doto (Paint.)
-                            (.setColor (unchecked-int (cfg 'app.config/panel-text-color))))]
-      (.drawString canvas
+    (gfx-text/text canvas
                    (format "FPS: %.0f" (double @src/fps))
-                   (float (+ px pad))
-                   (float (+ py pad 14))
-                   font fps-paint))
+                   (+ px pad)
+                   (+ py pad 14)
+                   {:size font-size :color (cfg 'app.config/panel-text-color)})
     ;; Draw FPS graph below FPS text
     (let [graph-y (+ py pad 20)
           graph-h (cfg 'app.config/fps-graph-height)
