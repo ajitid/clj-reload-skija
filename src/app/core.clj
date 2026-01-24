@@ -503,10 +503,11 @@
                   w @state/window-width
                   h @state/window-height
                   now (System/nanoTime)
-                  dt (/ (- now @last-time) 1e9)]
+                  raw-dt (/ (- now @last-time) 1e9)
+                  dt (min raw-dt 0.033)]  ;; Clamp to 30 FPS floor to prevent animation jumps
               (reset! last-time now)
-              (when (pos? dt)
-                (let [current-fps (/ 1.0 dt)
+              (when (pos? raw-dt)
+                (let [current-fps (/ 1.0 raw-dt)
                       smoothing 0.9]
                   (reset! state/fps (+ (* smoothing @state/fps)
                                        (* (- 1.0 smoothing) current-fps)))))

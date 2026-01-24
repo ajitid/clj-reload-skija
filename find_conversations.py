@@ -6,7 +6,7 @@ Usage:
     ./find_conversations.py list [--project PATH]           # List all conversations
     ./find_conversations.py recent [N] [--project PATH]     # List N most recent (default 10)
     ./find_conversations.py search "scroll" [--project PATH]  # Search for keyword
-    ./find_conversations.py export SESSION_ID               # Export specific conversation
+    ./find_conversations.py export SESSION_ID [OUTPUT_PATH] # Export specific conversation
     ./find_conversations.py copy-last [--project PATH]      # Copy last assistant message to clipboard
 
 Options:
