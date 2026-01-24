@@ -94,7 +94,7 @@
 
 (defn activate-app!
   "Activate the macOS application, bringing it to foreground focus.
-   This is needed to receive keyboard/mouse input when launched from Terminal."
+   This is needed to receive keyboard/mouse input when launched from Ghostty."
   []
   (ensure-loaded!)
   (MainThread/activateApp))

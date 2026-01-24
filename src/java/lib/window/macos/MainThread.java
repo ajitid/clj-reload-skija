@@ -69,7 +69,7 @@ public class MainThread {
     /**
      * Activate the application, bringing it to foreground focus.
      * This is needed on macOS to receive keyboard/mouse input when
-     * launched from Terminal.
+     * launched from Ghostty.
      */
     public static native void activateApp();
 }

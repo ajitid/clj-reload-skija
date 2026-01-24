@@ -181,11 +181,27 @@ JNIEXPORT jboolean JNICALL Java_lib_window_macos_MainThread_isMainThread
 /**
  * JNI: Activate the application, bringing it to foreground focus.
  * This is needed on macOS to receive keyboard/mouse input when
- * launched from Terminal (SDL_RaiseWindow only changes z-order).
+ * launched from Ghostty (SDL_RaiseWindow only changes z-order).
+ *
+ * macOS 14+ deprecated activateIgnoringOtherApps: in favor of a cooperative
+ * activation model using [NSApp activate] + yieldActivation. However, since
+ * Ghostty doesn't cooperatively yield, we use the modern API when available
+ * and fall back to the deprecated method which still works.
  */
 JNIEXPORT void JNICALL Java_lib_window_macos_MainThread_activateApp
   (JNIEnv *env, jclass cls) {
     @autoreleasepool {
+        // Check if running macOS 14+ (Sonoma)
+        if (@available(macOS 14.0, *)) {
+            // Modern API: [NSApp activate] - requires cooperative yielding
+            // This may not always work from Terminal, but it's the "correct" way
+            [NSApp activate];
+        }
+        // Always also call the deprecated method as fallback
+        // This still works on macOS 14+ and is more reliable for Terminal launches
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         [NSApp activateIgnoringOtherApps:YES];
+#pragma clang diagnostic pop
     }
 }

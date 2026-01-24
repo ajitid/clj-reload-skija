@@ -34,6 +34,11 @@
 ;; Helpers
 ;; ============================================================
 
+(defn- macos?
+  "Check if running on macOS."
+  []
+  (str/includes? (str/lower-case (System/getProperty "os.name" "")) "mac"))
+
 (defn config-loaded?
   "Check if app.config namespace is loaded and ready."
   []
@@ -489,6 +494,11 @@
         ;; Returns nil if skipped (preserves previous frame - no flicker)
         (instance? EventFrameSkija event)
         (do
+          ;; On macOS, activate app on first frame when window is fully visible
+          ;; (must happen after event loop starts, not before)
+          (when (and (macos?) (not @sys/app-activated?))
+            (macos/activate-app!)
+            (reset! sys/app-activated? true))
           ;; Always request next frame - keeps render loop alive during reload
           (window/request-frame! win)
           ;; Only draw when not reloading
@@ -660,11 +670,6 @@
         ;; Unknown event - ignore
         :else nil))))
 
-(defn- macos?
-  "Check if running on macOS."
-  []
-  (str/includes? (str/lower-case (System/getProperty "os.name" "")) "mac"))
-
 (defn- start-app-impl
   "Internal: Start the application - creates window and runs event loop.
    Must be called on macOS main thread for SDL3 compatibility."
@@ -676,10 +681,8 @@
                                    :resizable? true
                                    :high-dpi? true})]
     (reset! sys/window win)
-    ;; On macOS, activate app to receive keyboard/mouse focus
-    ;; (SDL_RaiseWindow alone only raises z-order, doesn't grant input focus)
-    (when (macos?)
-      (macos/activate-app!))
+    ;; Reset activation state for new window (will activate on first frame)
+    (reset! sys/app-activated? false)
     ;; Initialize window title state for recording indicator
     (reset! sys/window-title "Skija Demo - Hot Reload with clj-reload")
     ;; Initialize scale and dimensions from window (Flex sources)
