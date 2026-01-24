@@ -402,14 +402,23 @@
           true)
         ;; Not thumb - check for track click (jump)
         (if-let [{:keys [container-id axis geometry click-pos]} (find-scrollbar-track-at x y tree)]
-          ;; Track click: jump scroll to position
+          ;; Track click: jump scroll to position, then start drag from there
           (let [max-scroll (:max-scroll geometry)
-                  new-scroll (* click-pos max-scroll)
-                  current (scroll/get-scroll container-id)]
-              (scroll/set-scroll! container-id
-                (if (= axis :y)
-                  {:x (:x current) :y new-scroll}
-                  {:x new-scroll :y (:y current)}))
+                new-scroll (* click-pos max-scroll)
+                current (scroll/get-scroll container-id)
+                start-pos (if (= axis :y) y x)]
+            ;; Jump to the clicked position
+            (scroll/set-scroll! container-id
+              (if (= axis :y)
+                {:x (:x current) :y new-scroll}
+                {:x new-scroll :y (:y current)}))
+            ;; Start drag state so holding and dragging continues to scroll
+            (reset! state/scrollbar-drag
+              {:container-id container-id
+               :axis axis
+               :start-mouse-pos start-pos
+               :start-scroll new-scroll
+               :scroll-per-pixel (:scroll-per-pixel geometry)})
             true)
           ;; No scrollbar hit
           nil)))))
