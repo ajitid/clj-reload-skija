@@ -79,7 +79,7 @@
     items - vector of all items (data, not layout nodes)
     item-height - fixed height per item (px)
     render-item - (fn [item index] layout-node) returns tree node for item
-    opts - optional {:buffer 3 :padding {:before 0 :after 0}}
+    opts - optional {:buffer 3}
 
   Returns:
     Mixin map with :compute-children function
@@ -89,25 +89,26 @@
       @all-items
       50
       (fn [item i] {:fill (:color item) :label (:name item)})
-      {:buffer 5 :padding {:before 10 :after 10}})
+      {:buffer 5})
 
   Usage:
-    The mixin provides compute-visible-children which you call during render:
+    The mixin provides compute-visible-children which you call during render.
+    Pass the padding from your children-layout so scroll math is correct:
 
-    (let [visible (mixins/compute-visible-children mixin-instance id viewport-height)]
+    (let [visible (mixins/compute-visible-children mixin-instance id viewport-height
+                    {:before 10 :after 10})]
       {:id id
-       :children-layout {:mode :stack-y :overflow {:y :scroll}}
+       :children-layout {:mode :stack-y :overflow {:y :scroll}
+                         :y {:before 10 :after 10}}
        :children visible})"
   [items item-height render-item & [opts]]
   (let [buffer (:buffer opts 3)
-        padding-before (get-in opts [:padding :before] 0)
-        padding-after (get-in opts [:padding :after] 0)
-        total-items (count items)
-        ;; Content height = before + items + after (matches normal scroll behavior)
-        total-height (+ padding-before (* total-items item-height) padding-after)]
+        total-items (count items)]
     {:item-height item-height
-     :total-height total-height
      :total-items total-items
+     :buffer buffer
+     :items items
+     :render-item render-item
 
      :did-mount
      (fn [node]
@@ -116,39 +117,7 @@
 
      :will-unmount
      (fn [node]
-       (scroll/destroy! (:id node)))
-
-     :compute-children
-     (fn [id viewport-height]
-       ;; Update scroll dimensions FIRST - this clamps scroll to valid range
-       (scroll/set-dimensions! id
-         {:w 0 :h viewport-height}
-         {:w 0 :h total-height})
-
-       ;; Now read scroll-y (clamped to valid range by set-dimensions!)
-       (let [scroll-y (:y (scroll/get-scroll id) 0)
-
-             ;; Calculate visible range (account for padding-before in scroll content)
-             ;; Items start at content position padding-before, not 0
-             effective-scroll (- scroll-y padding-before)
-             start-idx (max 0 (- (int (/ effective-scroll item-height)) buffer))
-             visible-count (int (Math/ceil (/ viewport-height item-height)))
-             end-idx (min total-items (+ start-idx visible-count (* 2 buffer)))
-
-             ;; Get slice of visible items
-             visible-items (subvec (vec items) start-idx end-idx)]
-
-         ;; Render visible items with absolute positioning
-         ;; y-offset is relative to content area (which already has padding from children-layout)
-         ;; So item 0 at y-offset 0 appears at container_y + children-layout-before
-         (vec (for [[i item] (map-indexed vector visible-items)]
-                (let [actual-idx (+ start-idx i)
-                      y-offset (* actual-idx item-height)]
-                  (merge (render-item item actual-idx)
-                         {:layout {:mode :pop-out
-                                   :anchor :top-left
-                                   :x {:offset 0 :size "100%"}
-                                   :y {:offset y-offset :size item-height}}}))))))}))
+       (scroll/destroy! (:id node)))}))
 
 (defn compute-visible-children
   "Compute visible children for a virtual scroll mixin.
@@ -157,8 +126,42 @@
     mixin - virtual-scroll mixin instance
     id - container id
     viewport-height - height of visible area
+    padding - {:before N :after N} from children-layout :y axis (optional)
 
   Returns: vector of layout nodes for visible items"
-  [mixin id viewport-height]
-  (when-let [compute-fn (:compute-children mixin)]
-    (compute-fn id viewport-height)))
+  [mixin id viewport-height & [padding]]
+  (let [{:keys [item-height total-items buffer items render-item]} mixin
+        padding-before (or (:before padding) 0)
+        padding-after (or (:after padding) 0)
+        ;; Content height = before + items + after (matches normal scroll behavior)
+        total-height (+ padding-before (* total-items item-height) padding-after)]
+
+    ;; Update scroll dimensions FIRST - this clamps scroll to valid range
+    (scroll/set-dimensions! id
+      {:w 0 :h viewport-height}
+      {:w 0 :h total-height})
+
+    ;; Now read scroll-y (clamped to valid range by set-dimensions!)
+    (let [scroll-y (:y (scroll/get-scroll id) 0)
+
+          ;; Calculate visible range (account for padding-before in scroll content)
+          ;; Items start at content position padding-before, not 0
+          effective-scroll (- scroll-y padding-before)
+          start-idx (max 0 (- (int (/ effective-scroll item-height)) buffer))
+          visible-count (int (Math/ceil (/ viewport-height item-height)))
+          end-idx (min total-items (+ start-idx visible-count (* 2 buffer)))
+
+          ;; Get slice of visible items
+          visible-items (subvec (vec items) start-idx end-idx)]
+
+      ;; Render visible items with absolute positioning
+      ;; y-offset is relative to content area (which already has padding from children-layout)
+      ;; So item 0 at y-offset 0 appears at container_y + children-layout-before
+      (vec (for [[i item] (map-indexed vector visible-items)]
+             (let [actual-idx (+ start-idx i)
+                   y-offset (* actual-idx item-height)]
+               (merge (render-item item actual-idx)
+                      {:layout {:mode :pop-out
+                                :anchor :top-left
+                                :x {:offset 0 :size "100%"}
+                                :y {:offset y-offset :size item-height}}})))))))

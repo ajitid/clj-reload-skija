@@ -324,8 +324,7 @@
     40                     ;; 40px per item
     (fn [item idx]
       {:fill (+ 0xFF303050 (* (mod idx 5) 0x101010))
-       :label (str "Item " idx)})
-    {:padding {:before 10 :after 10}}))
+       :label (str "Item " idx)})))
 
 (defn demo-ui
   "Layout system demo using new Subform-style API."
@@ -381,14 +380,15 @@
              :label (str "Item " (inc i))}))}
 
     ;; Right column: Virtual scroll demo (10,000 items)
-    {:id :virtual-list
-     :layout {:x {:size 180} :y {:size "100%"}}
-     :fill 0x20FFFFFF
-     :children-layout {:mode :stack-y
-                       :overflow {:y :scroll}
-                       :y {:before 10 :after 10}
-                       :x {:before 10 :after 10}}
-     :children (mixins/compute-visible-children virtual-scroll-mixin :virtual-list (- viewport-height 40))}]})
+    (let [y-padding {:before 10 :after 10}]
+      {:id :virtual-list
+       :layout {:x {:size 180} :y {:size "100%"}}
+       :fill 0x20FFFFFF
+       :children-layout {:mode :stack-y
+                         :overflow {:y :scroll}
+                         :y y-padding
+                         :x {:before 10 :after 10}}
+       :children (mixins/compute-visible-children virtual-scroll-mixin :virtual-list (- viewport-height 40) y-padding)})]})
 
 (defn- find-node-by-id
   "Find a node in laid-out tree by :id."
