@@ -551,13 +551,16 @@
       (do
         (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
         (println "Sending (open) + replenishing in parallel...")
-        (let [cmd-future (future (send-nrepl-command! (:port jvm) "(open)"))
+        (let [start-time (System/currentTimeMillis)
+              cmd-future (future (send-nrepl-command! (:port jvm) "(open)"))
               ;; ensure-pool-size! uses fine-grained locking internally,
               ;; so this won't block other open commands (lock only held briefly)
               replenish-future (future (ensure-pool-size! pool-size))]
           ;; Must wait for replenish, otherwise process exits and future is killed
           @replenish-future
-          (let [result (deref cmd-future 100 {:success true :blocking true})]
+          (let [elapsed (- (System/currentTimeMillis) start-time)
+                remaining (max 0 (- 100 elapsed))
+                result (deref cmd-future remaining {:success true :blocking true})]
             (print-nrepl-result result)
             (if (:success result)
               (do
