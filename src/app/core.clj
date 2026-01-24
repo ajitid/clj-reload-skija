@@ -324,7 +324,8 @@
     40                     ;; 40px per item
     (fn [item idx]
       {:fill (+ 0xFF303050 (* (mod idx 5) 0x101010))
-       :label (str "Item " idx)})))
+       :label (str "Item " idx)})
+    {:padding {:before 10 :after 10}}))
 
 (defn demo-ui
   "Layout system demo using new Subform-style API."
@@ -398,13 +399,16 @@
       (some #(find-node-by-id % id) (:children tree)))))
 
 (defn- calculate-content-height
-  "Calculate total content height from children."
+  "Calculate total content height from children.
+   Includes :after padding from children-layout."
   [node]
   (if-let [children (:children node)]
     (let [bounds (map :bounds children)
           max-bottom (reduce max 0 (map #(+ (:y %) (:h %)) bounds))
-          parent-top (get-in node [:bounds :y] 0)]
-      (- max-bottom parent-top))
+          parent-top (get-in node [:bounds :y] 0)
+          ;; Add :after padding from children-layout
+          after-padding (get-in node [:children-layout :y :after] 0)]
+      (+ (- max-bottom parent-top) after-padding))
     0))
 
 (defn draw-layout-demo

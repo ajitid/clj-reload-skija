@@ -79,7 +79,7 @@
     items - vector of all items (data, not layout nodes)
     item-height - fixed height per item (px)
     render-item - (fn [item index] layout-node) returns tree node for item
-    opts - optional {:buffer 3} items to render beyond viewport
+    opts - optional {:buffer 3 :padding {:before 0 :after 0}}
 
   Returns:
     Mixin map with :compute-children function
@@ -89,7 +89,7 @@
       @all-items
       50
       (fn [item i] {:fill (:color item) :label (:name item)})
-      {:buffer 5})
+      {:buffer 5 :padding {:before 10 :after 10}})
 
   Usage:
     The mixin provides compute-visible-children which you call during render:
@@ -100,8 +100,11 @@
        :children visible})"
   [items item-height render-item & [opts]]
   (let [buffer (:buffer opts 3)
+        padding-before (get-in opts [:padding :before] 0)
+        padding-after (get-in opts [:padding :after] 0)
         total-items (count items)
-        total-height (* total-items item-height)]
+        ;; Content height = before + items + after (matches normal scroll behavior)
+        total-height (+ padding-before (* total-items item-height) padding-after)]
     {:item-height item-height
      :total-height total-height
      :total-items total-items
@@ -125,8 +128,10 @@
        ;; Now read scroll-y (clamped to valid range by set-dimensions!)
        (let [scroll-y (:y (scroll/get-scroll id) 0)
 
-             ;; Calculate visible range
-             start-idx (max 0 (- (int (/ scroll-y item-height)) buffer))
+             ;; Calculate visible range (account for padding-before in scroll content)
+             ;; Items start at content position padding-before, not 0
+             effective-scroll (- scroll-y padding-before)
+             start-idx (max 0 (- (int (/ effective-scroll item-height)) buffer))
              visible-count (int (Math/ceil (/ viewport-height item-height)))
              end-idx (min total-items (+ start-idx visible-count (* 2 buffer)))
 
@@ -134,6 +139,8 @@
              visible-items (subvec (vec items) start-idx end-idx)]
 
          ;; Render visible items with absolute positioning
+         ;; y-offset is relative to content area (which already has padding from children-layout)
+         ;; So item 0 at y-offset 0 appears at container_y + children-layout-before
          (vec (for [[i item] (map-indexed vector visible-items)]
                 (let [actual-idx (+ start-idx i)
                       y-offset (* actual-idx item-height)]
