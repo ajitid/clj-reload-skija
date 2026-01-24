@@ -44,3 +44,9 @@
 
 ;; Smoothed FPS - updated every frame with exponential moving average
 (flex/defsource fps 0.0)
+
+;; FPS history for graph - primitive float array (true zero allocations)
+;; Frame-based: one sample per frame, time window varies with FPS (industry standard)
+(def fps-history-size 120)
+(defonce fps-history (float-array fps-history-size))
+(defonce fps-history-idx (atom 0))

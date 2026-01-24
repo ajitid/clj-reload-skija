@@ -517,9 +517,13 @@
               (reset! last-time now)
               (when (pos? raw-dt)
                 (let [current-fps (/ 1.0 raw-dt)
-                      smoothing 0.8]
-                  (src/fps (+ (* smoothing @src/fps)
-                             (* (- 1.0 smoothing) current-fps)))))
+                      smoothing 0.8
+                      new-fps (+ (* smoothing @src/fps)
+                                 (* (- 1.0 smoothing) current-fps))]
+                  (src/fps new-fps)
+                  ;; Frame-based sampling: direct array write (zero allocations)
+                  (let [idx (swap! src/fps-history-idx #(mod (inc %) src/fps-history-size))]
+                    (aset ^floats src/fps-history idx (float new-fps)))))
               (try
                 (.save canvas)
                 (.scale canvas (float scale) (float scale))

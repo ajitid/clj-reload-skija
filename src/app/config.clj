@@ -22,7 +22,7 @@
 (def panel-right-offset 20)    ;; Distance from right edge
 (def panel-y 20)
 (def panel-width 200)
-(def panel-height 170)
+(def panel-height 220)
 (def panel-padding 15)
 (def panel-bg-color 0xDD333333)
 (def panel-text-color 0xFFFFFFFF)
@@ -31,6 +31,14 @@
 (def slider-height 16)
 (def slider-width 160)
 (def font-size 18)
+
+;; FPS graph settings
+(def fps-graph-height 40)
+(def fps-graph-samples 120)        ;; Number of samples to display (~2 sec at 60fps)
+(def fps-graph-color 0xFF4AE88C)   ;; Green
+(def fps-graph-low-color 0xFFE84A4A) ;; Red for low FPS
+(def fps-graph-bg-color 0xFF1A1A1A)
+(def fps-target 60)                ;; Target FPS for reference line
 
 ;; Spring demo settings
 (def demo-circle-radius 25)
