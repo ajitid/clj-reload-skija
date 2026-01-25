@@ -1,66 +1,166 @@
-# Conversation: Can I check? Does skija supports like me writing shaders and it rendering them and also check when I
+# Conversation: see notes-shaders.md
 
-**Date:** 2026-01-24T13:44:55.906Z
-**Project:** /Users/as186073/Downloads/Skija-master
-**Messages:** 3
+**Date:** 2026-01-24T23:33:10.832Z
+**Project:** /Users/as186073/Downloads/vvvv-clj/clj-reload-skija
+**Messages:** 9
 
 ## Table of Contents
 
-1. [Can I check? Does skija supports like me writing shaders and it rendering them and also check when I...](#user-1)
+1. [see notes-shaders.md](#user-1)
+2. [yep i'd prefer a idiomatic clojure approach.](#user-2)
 
 ---
 
 ## <a id="user-1"></a>User #1
 
-Can I check? Does skija supports like me writing shaders and it rendering them and also check when I mess something in the shaders, mess up something in the shaders, then does the original skier reports errors and this skija reports errors. if skija reports errors too tell me how it does it does it send the error as is or it does one conversion because of java/jvm.
+see notes-shaders.md
+can you tell if our graphics lib provide an easy way to specify a runtime shader, fragment shader, sksl shader, runtimeeffect shader
 
 ---
 
 **Assistant:**
 
-I'll explore the Skija codebase to answer your questions about shader support and error reporting.
+Let me check the existing graphics library files to see what shader support is already there:
 
 ---
 
 **Assistant:**
 
-## Yes, Skija supports custom shaders!
-
-You can write shaders using **SkSL** (Skia Shading Language) through the `RuntimeEffect` class. There are three types:
-
-| Type | Factory Method | Entry Point |
-|------|----------------|-------------|
-| Shader | `RuntimeEffect.makeForShader(sksl)` | `vec4 main(vec2 coords)` |
-| Color Filter | `RuntimeEffect.makeForColorFilter(sksl)` | `vec4 main(vec4 color)` |
-| Blender | `RuntimeEffect.makeForBlender(sksl)` | `vec4 main(vec4 src, vec4 dst)` |
-
-You can also use `RuntimeEffectBuilder` for a builder pattern with uniforms and child effects.
+Let me check if there's any RuntimeEffect usage in the codebase:
 
 ---
 
-## Error Reporting
+**Assistant:**
 
-**Yes, Skija reports shader errors** — and it passes them **as-is** from Skia with minimal conversion.
+## RuntimeEffect / SKSL Shader Support
 
-Here's how it works (from `platform/cc/RuntimeEffect.cc:33-40`):
+**Yes, Skija supports runtime shaders** via the `RuntimeEffect` class with three types:
 
-```cpp
-SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForShader(skslProper, options);
-if (result.errorText.isEmpty()) {
-    return ptrToJlong(result.effect.release());
-} else {
-    env->ThrowNew(java::lang::RuntimeException::cls, result.errorText.c_str());
-    return 0;
-}
+| Type | Factory | Entry Point |
+|------|---------|-------------|
+| Shader | `RuntimeEffect/makeForShader` | `vec4 main(vec2 coords)` |
+| Color Filter | `RuntimeEffect/makeForColorFilter` | `vec4 main(vec4 color)` |
+| Blender | `RuntimeEffect/makeForBlender` | `vec4 main(vec4 src, vec4 dst)` |
+
+**However**, your current `lib.graphics.*` doesn't wrap this yet. The files I checked (`filters.clj`, `gradients.clj`, `state.clj`) provide blur, shadows, gradients, and color matrix filters - but no `RuntimeEffect` wrapper.
+
+### How to use it now (escape hatch)
+
+You can already use it via the `:shader` escape hatch in `make-paint`:
+
+```clojure
+(:import [io.github.humbleui.skija RuntimeEffect])
+
+;; Create a RuntimeEffect from SkSL string
+(def my-effect
+  (RuntimeEffect/makeForShader
+    "uniform float2 iResolution;
+     half4 main(float2 fragCoord) {
+       float2 uv = fragCoord / iResolution;
+       return half4(uv.x, uv.y, 0.5, 1.0);
+     }"))
+
+;; Make a shader with uniforms
+(def my-shader
+  (.makeShader my-effect
+    (Data/makeFromBytes (-> (ByteBuffer/allocate 8)
+                            (.order ByteOrder/LITTLE_ENDIAN)
+                            (.putFloat width)
+                            (.putFloat height)
+                            .array))))
+
+;; Use it in the graphics API
+(shapes/circle canvas 100 100 50 {:shader my-shader})
 ```
 
-**Key points:**
-1. Skia's native SkSL compiler produces the error text
-2. Skija takes that `errorText` C++ string and directly passes it to a Java `RuntimeException`
-3. **No conversion or modification** of the error message — you get Skia's original compiler errors verbatim
-4. The only "conversion" is the C++ `char*` → Java String (standard JNI string conversion)
+### Error handling
 
-So if you mess up your shader syntax, you'll catch a `RuntimeException` with Skia's exact error message describing what went wrong (syntax errors, type mismatches, invalid signatures, etc.).
+Skija passes Skia's SkSL compiler errors as-is via `RuntimeException` - you get the exact error message from Skia when syntax/type errors occur.
+
+---
+
+Would you like me to add a convenient wrapper in `lib.graphics` that makes this more idiomatic (e.g., `{:sksl "..."}`)?
+
+---
+
+## <a id="user-2"></a>User #2
+
+yep i'd prefer a idiomatic clojure approach. 
+
+---
+
+**Assistant:**
+
+I'll create an idiomatic shader wrapper. Let me first check the existing imports pattern and then build the new module.
+
+---
+
+**Assistant:**
+
+Now let me integrate with `make-paint` in `state.clj`:
+
+---
+
+**Assistant:**
+
+Now let me update the `make-paint` docstring to document the new `:sksl` option:
+
+---
+
+**Assistant:**
+
+Done! Created `lib.graphics.shaders` with an idiomatic Clojure API:
+
+## New API
+
+### Quick inline usage (via make-paint)
+```clojure
+;; Simple - just a string
+(shapes/circle canvas 100 100 50
+  {:sksl "half4 main(float2 c) { return half4(c/800, 0.5, 1); }"})
+
+;; With uniforms - map with :source and :uniforms
+(shapes/rectangle canvas 0 0 w h
+  {:sksl {:source "uniform float2 res; uniform float t;
+                   half4 main(float2 c) { 
+                     float2 uv = c / res;
+                     return half4(uv, sin(t)*0.5+0.5, 1); 
+                   }"
+          :uniforms {:res [800 600] :t @game-time}}})
+```
+
+### For performance (compile once, reuse)
+```clojure
+(require '[lib.graphics.shaders :as shaders])
+
+;; Compile once
+(def my-effect
+  (shaders/effect
+    "uniform float2 iResolution;
+     uniform float iTime;
+     half4 main(float2 c) { ... }"))
+
+;; Create shader instances with current uniforms
+(def my-shader 
+  (shaders/make-shader my-effect 
+    {:iResolution [800 600] :iTime @game-time}))
+
+(shapes/rect canvas 0 0 800 600 {:shader my-shader})
+```
+
+### Built-in helpers
+```clojure
+(shaders/noise-shader 0.1)           ; noise pattern
+(shaders/gradient-shader w h)        ; UV debug gradient  
+(shaders/animated-shader w h time)   ; animated waves
+```
+
+### Also supports
+- **Color filters**: `(shaders/effect :color-filter "half4 main(half4 c) {...}")`
+- **Blenders**: `(shaders/effect :blender "half4 main(half4 src, half4 dst) {...}")`
+- **Child shaders**: for sampling other shaders
+
+Errors from invalid SkSL throw `RuntimeException` with Skia's exact compiler error message.
 
 ---
 

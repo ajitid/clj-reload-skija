@@ -282,6 +282,25 @@
       (require 'lib.graphics.filters)
       (set-path-effect paint ((resolve 'lib.graphics.filters/dash-path-effect) intervals)))
 
+    ;; SkSL Runtime Shaders
+    :sksl
+    (let [shader (cond
+                   ;; String: compile directly
+                   (string? effect-value)
+                   (do (require 'lib.graphics.shaders)
+                       ((resolve 'lib.graphics.shaders/shader) effect-value))
+
+                   ;; Map with :source and optional :uniforms
+                   (map? effect-value)
+                   (do (require 'lib.graphics.shaders)
+                       ((resolve 'lib.graphics.shaders/shader)
+                        (:source effect-value)
+                        (:uniforms effect-value {})))
+
+                   ;; Already a Shader instance
+                   :else effect-value)]
+      (set-shader paint shader))
+
     ;; Low-level (for advanced users)
     :shader (set-shader paint effect-value)
     :color-filter (set-color-filter paint effect-value)
@@ -322,6 +341,7 @@
      :gradient      - {:type :linear/:radial/:sweep ...}, see gradients.clj
      :dash          - [on off] or number, e.g. [10 5] or 10
      :blend-mode    - :multiply, :screen, :overlay, etc.
+     :sksl          - SkSL shader source or {:source \"...\" :uniforms {...}}
 
    Low-Level (for advanced users):
      :shader        - Shader instance
@@ -349,7 +369,14 @@
 
      ;; Gradient fill
      (make-paint {:gradient {:type :linear :x0 0 :y0 0 :x1 100 :y1 0
-                             :colors [0xFFFF0000 0xFF0000FF]}})"
+                             :colors [0xFFFF0000 0xFF0000FF]}})
+
+     ;; Custom SkSL shader
+     (make-paint {:sksl \"half4 main(float2 c) { return half4(c.x/800, c.y/600, 0.5, 1); }\"})
+
+     ;; SkSL with uniforms
+     (make-paint {:sksl {:source \"uniform float2 res; half4 main(float2 c) { return half4(c/res, 0.5, 1); }\"
+                         :uniforms {:res [800 600]}}})"
   ([] (make-paint {}))
   ([opts]
    (let [paint (Paint.)

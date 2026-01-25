@@ -24,7 +24,8 @@
             [lib.graphics.text :as gfx-text]
             [lib.graphics.batch :as batch]
             [lib.graphics.filters :as filters]
-            [lib.graphics.gradients :as gradients]))
+            [lib.graphics.gradients :as gradients]
+            [lib.graphics.shaders :as shaders]))
 
 ;; ============================================================
 ;; Basic Shapes
@@ -220,3 +221,69 @@
                             :colors [0xFFFF00FF 0xFF00FFFF]}
                  :shadow {:dx 5 :dy 5 :blur 10 :color 0x80000000}
                  :blend-mode :screen}))
+
+;; ============================================================
+;; Custom SkSL Shaders (GPU Programmable Effects)
+;; ============================================================
+
+(comment
+  ;; Simple inline shader - UV gradient
+  (shapes/circle canvas 100 100 50
+                {:sksl "half4 main(float2 coord) {
+                          return half4(coord.x / 800, coord.y / 600, 0.5, 1.0);
+                        }"})
+
+  ;; Shader with uniforms - animated wave
+  (shapes/rectangle canvas 0 0 800 600
+                   {:sksl {:source "uniform float2 iResolution;
+                                    uniform float iTime;
+
+                                    half4 main(float2 coord) {
+                                      float2 uv = coord / iResolution;
+                                      float wave = sin(uv.x * 10.0 + iTime) * 0.5 + 0.5;
+                                      return half4(uv.x, wave, uv.y, 1.0);
+                                    }"
+                           :uniforms {:iResolution [800 600]
+                                      :iTime @game-time}}})
+
+  ;; Pre-compiled effect for better performance
+  ;; (compile once, reuse with different uniforms)
+  (def plasma-effect
+    (shaders/effect
+      "uniform float2 iResolution;
+       uniform float iTime;
+
+       half4 main(float2 coord) {
+         float2 uv = coord / iResolution - 0.5;
+         float t = iTime * 0.5;
+
+         float v = sin(uv.x * 10.0 + t);
+         v += sin((uv.y * 10.0 + t) * 0.5);
+         v += sin((uv.x * 10.0 + uv.y * 10.0 + t) * 0.5);
+
+         float3 col = float3(sin(v), sin(v + 2.0), sin(v + 4.0)) * 0.5 + 0.5;
+         return half4(col, 1.0);
+       }"))
+
+  ;; Use the pre-compiled effect
+  (shapes/rectangle canvas 0 0 800 600
+                   {:shader (shaders/make-shader plasma-effect
+                              {:iResolution [800 600]
+                               :iTime @game-time})})
+
+  ;; Color filter shader (works on existing colors)
+  (def invert-filter
+    (shaders/color-filter
+      "half4 main(half4 color) {
+         return half4(1.0 - color.rgb, color.a);
+       }"))
+
+  ;; Built-in shader helpers
+  (shapes/rectangle canvas 0 0 800 600
+                   {:shader (shaders/noise-shader 0.1)})
+
+  (shapes/rectangle canvas 0 0 800 600
+                   {:shader (shaders/gradient-shader 800 600)})
+
+  (shapes/rectangle canvas 0 0 800 600
+                   {:shader (shaders/animated-shader 800 600 @game-time)}))
