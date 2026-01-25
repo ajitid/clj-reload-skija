@@ -190,3 +190,66 @@
    (discrete-path-effect seg-length deviation 0))
   ([seg-length deviation seed]
    (PathEffect/makeDiscrete (float seg-length) (float deviation) (int seed))))
+
+;; ============================================================
+;; Mask Filters (Advanced)
+;; ============================================================
+
+(defn mask-shader
+  "Create a mask filter from a shader.
+
+   The shader's alpha channel controls masking:
+   - White (alpha=1) = fully visible
+   - Black (alpha=0) = fully masked
+
+   Args:
+     shader - Shader instance
+
+   Example:
+     (mask-shader my-gradient-shader)"
+  [^Shader shader]
+  (MaskFilter/makeShader shader))
+
+(defn mask-table
+  "Create a mask filter using a lookup table.
+
+   The 256-element table maps input alpha values (0-255) to output alpha values.
+
+   Args:
+     table - byte array or sequence of 256 values (0-255)
+
+   Example:
+     ;; Posterize alpha to 4 levels
+     (mask-table (mapcat #(repeat 64 (* % 85)) (range 4)))"
+  [table]
+  (let [byte-arr (if (bytes? table)
+                   table
+                   (byte-array (map unchecked-byte table)))]
+    (MaskFilter/makeTable byte-arr)))
+
+(defn mask-gamma
+  "Create a gamma correction mask filter.
+
+   Applies gamma curve to alpha channel. Values < 1 brighten, > 1 darken.
+
+   Args:
+     gamma - gamma exponent (typically 0.5-2.0)
+
+   Example:
+     (mask-gamma 2.2)  ; sRGB gamma correction"
+  [gamma]
+  (MaskFilter/makeGamma (float gamma)))
+
+(defn mask-clip
+  "Create a clipping mask filter.
+
+   Maps alpha values outside [min, max] to 0, inside range stays unchanged.
+
+   Args:
+     min-val - minimum alpha (0-255)
+     max-val - maximum alpha (0-255)
+
+   Example:
+     (mask-clip 128 255)  ; Only show alpha >= 50%"
+  [min-val max-val]
+  (MaskFilter/makeClip (int min-val) (int max-val)))

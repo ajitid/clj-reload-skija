@@ -3,7 +3,7 @@
 
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern)."
   (:require [lib.graphics.state :as gfx])
-  (:import [io.github.humbleui.skija Canvas Paint PaintMode]
+  (:import [io.github.humbleui.skija Canvas Paint PaintMode Path]
            [io.github.humbleui.types Rect RRect]))
 
 ;; ============================================================
@@ -115,3 +115,28 @@
        (.drawLine canvas (float x1) (float y1) (float x2) (float y2) paint)
        (gfx/with-paint [paint opts]
          (.drawLine canvas (float x1) (float y1) (float x2) (float y2) paint))))))
+
+;; ============================================================
+;; Path
+;; ============================================================
+
+(defn path
+  "Draw a path on canvas.
+
+   Args:
+     canvas - drawing canvas
+     p      - Path instance (from lib.graphics.path)
+     opts   - optional map (all paint options supported, see circle)
+
+   Examples:
+     (path canvas my-path)
+     (path canvas my-path {:color 0xFF4A90D9})
+     (path canvas my-path {:mode :stroke :stroke-width 2})
+     (path canvas star-path {:gradient {:type :linear ...}})"
+  ([^Canvas canvas ^Path p]
+   (path canvas p {}))
+  ([^Canvas canvas ^Path p opts]
+   (if-let [paint (:paint opts)]
+     (.drawPath canvas p paint)
+     (gfx/with-paint [paint opts]
+       (.drawPath canvas p paint)))))
