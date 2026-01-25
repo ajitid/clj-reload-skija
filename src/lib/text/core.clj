@@ -5,7 +5,8 @@
   (:require [lib.graphics.state :as gfx])
   (:import [io.github.humbleui.skija
             Canvas Paint Font FontMgr FontStyle FontSlant FontWeight FontWidth Typeface
-            FontVariation FontVariationAxis FontHinting]))
+            FontVariation FontVariationAxis FontHinting TextLine FontFeature]
+           [io.github.humbleui.skija.shaper ShapingOptions]))
 
 ;; ============================================================
 ;; Weight/Slant Mappings
@@ -224,6 +225,26 @@
 ;; Text Drawing
 ;; ============================================================
 
+(defn- draw-text-simple
+  "Draw text using simple drawString (no font features)."
+  [^Canvas canvas text-str ^Font font x y paint-opts]
+  (if-let [paint (:paint paint-opts)]
+    (.drawString canvas text-str (float x) (float y) font paint)
+    (gfx/with-paint [paint paint-opts]
+      (.drawString canvas text-str (float x) (float y) font paint))))
+
+(defn- draw-text-with-features
+  "Draw text using TextLine with font features (e.g., tnum for tabular numbers)."
+  [^Canvas canvas text-str ^Font font x y features paint-opts]
+  (let [shaping-opts (.withFeatures ShapingOptions/DEFAULT features)
+        text-line (TextLine/make text-str font shaping-opts)
+        blob (.getTextBlob text-line)]
+    (when blob
+      (if-let [paint (:paint paint-opts)]
+        (.drawTextBlob canvas blob (float x) (float y) paint)
+        (gfx/with-paint [paint paint-opts]
+          (.drawTextBlob canvas blob (float x) (float y) paint))))))
+
 (defn text
   "Draw text at the given position.
 
@@ -241,6 +262,7 @@
      :typeface   - explicit Typeface (overrides family/weight/slant)
      :variations - variable font axes {:wght 700 :wdth 85}
      :align      - :left, :center, :right (default: :left)
+     :features   - OpenType features string, e.g. \"tnum\" for tabular numbers
 
    Paint Options (same as shapes):
      :color, :shadow, :blur, :gradient, :alphaf, etc.
@@ -250,16 +272,19 @@
      (text canvas \"Hello\" 10 20 {:color 0xFF4A90D9})
      (text canvas \"Bold\" 10 50 {:size 24 :weight :bold})
      (text canvas \"Centered\" 200 80 {:align :center})
-     (text canvas \"Variable\" 10 110 {:size 48 :variations {:wght 600}})"
+     (text canvas \"Variable\" 10 110 {:size 48 :variations {:wght 600}})
+     (text canvas \"123\" 10 140 {:features \"tnum\"})  ;; tabular numbers"
   ([^Canvas canvas text x y]
    (text canvas text x y {}))
   ([^Canvas canvas text x y opts]
    (let [font (resolve-font opts)
          align (get opts :align :left)
-         final-x (align-x font text x align)
+         text-str (str text)
+         final-x (align-x font text-str x align)
+         features (:features opts)
          ;; Remove text-specific opts before passing to paint
-         paint-opts (dissoc opts :size :weight :slant :family :typeface :variations :align :font)]
-     (if-let [paint (:paint opts)]
-       (.drawString canvas (str text) (float final-x) (float y) font paint)
-       (gfx/with-paint [paint paint-opts]
-         (.drawString canvas (str text) (float final-x) (float y) font paint))))))
+         paint-opts (dissoc opts :size :weight :slant :family :typeface
+                           :variations :align :font :features :animated)]
+     (if features
+       (draw-text-with-features canvas text-str font final-x y features paint-opts)
+       (draw-text-simple canvas text-str font final-x y paint-opts)))))

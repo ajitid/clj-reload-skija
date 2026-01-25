@@ -81,13 +81,15 @@
                 :family font-family
                 :variations {:wght weight}
                 :align :center
-                :color 0xFFFFFFFF})
+                :color 0xFFFFFFFF
+                :animated true})
     ;; Current weight indicator
+    ;; Current weight indicator (tabular numbers for stable width)
     (text/text canvas (format "wght: %.0f" weight)
                (/ width 2) (+ y-center 60)
                {:size 20
                 :family font-family
-                :variations {:wght weight}
+                :features "tnum"  ;; tabular numbers - fixed width digits
                 :align :center
                 :color 0xFF4A90D9})))
 
