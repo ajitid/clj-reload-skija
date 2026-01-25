@@ -277,7 +277,7 @@
 ;; Worker Thread for Async FFmpeg Writes
 ;; ============================================================
 
-(def ^:private queue-capacity 4)  ; ~32MB at 1080p RGBA
+(def ^:private queue-capacity 30)  ; ~240MB at 1080p RGBA, 500ms buffer at 60fps
 
 (defn- write-frame-data!
   "Write frame data to FFmpeg stdin. Called from worker thread."
@@ -453,6 +453,8 @@
      (println "[capture] WARNING: Cannot take screenshot while recording is in progress")
      (do
        (check-ffmpeg!)
+       ;; Reset primed? to skip stale PBO data on next frame
+       (swap! pbo-state assoc :primed? false)
        (swap! capture-state assoc
               :mode :screenshot
               :screenshot-path path
