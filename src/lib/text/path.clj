@@ -75,6 +75,9 @@
 (defn text-on-path
   "Draw text along a path using RSXform (GPU-optimized single draw call).
 
+   Uses animation-optimized font settings (subpixel positioning, no hinting)
+   for smooth movement without glyph jumping.
+
    Args:
      canvas - drawing canvas
      text   - string to draw
@@ -102,7 +105,8 @@
   ([^Canvas canvas text path opts]
    (let [{:keys [offset spacing]
           :or {offset 0 spacing 0}} opts
-         font (#'core/resolve-font opts)
+         ;; Always use animated font for text-on-path (smooth rotation/movement)
+         font (#'core/resolve-font (assoc opts :animated true))
          [glyphs widths] (get-glyphs-and-widths font (str text))
          measure (PathMeasure. path false)]
      (when-let [rsxforms (compute-rsxforms measure glyphs widths offset spacing)]
@@ -129,7 +133,7 @@
        (text-on-path canvas \"Hello World\" my-path {:size 24}))"
   [text path opts]
   (let [{:keys [offset spacing] :or {offset 0 spacing 0}} opts
-        font (#'core/resolve-font opts)
+        font (#'core/resolve-font (assoc opts :animated true))
         [glyphs widths] (get-glyphs-and-widths font (str text))
         measure (PathMeasure. path false)
         path-length (.getLength measure)

@@ -5,7 +5,7 @@
   (:require [lib.graphics.state :as gfx])
   (:import [io.github.humbleui.skija
             Canvas Paint Font FontMgr FontStyle FontSlant FontWeight FontWidth Typeface
-            FontVariation FontVariationAxis]))
+            FontVariation FontVariationAxis FontHinting]))
 
 ;; ============================================================
 ;; Weight/Slant Mappings
@@ -156,15 +156,26 @@
    Args:
      typeface - Typeface instance
      size     - font size in points
+     animated - if true, configure for smooth animation (no hinting, subpixel)
 
    Returns: Font instance (cached, do not close)"
-  [typeface size]
-  (let [cache-key [typeface size]]
-    (if-let [cached (get @font-cache cache-key)]
-      cached
-      (let [new-font (Font. typeface (float size))]
-        (swap! font-cache assoc cache-key new-font)
-        new-font))))
+  ([typeface size]
+   (get-font typeface size false))
+  ([typeface size animated]
+   (let [cache-key [typeface size animated]]
+     (if-let [cached (get @font-cache cache-key)]
+       cached
+       (let [new-font (Font. typeface (float size))]
+         (when animated
+           ;; Configure for smooth animation:
+           ;; - Subpixel positioning for smooth horizontal movement
+           ;; - No hinting to prevent glyph snapping/jumping
+           ;; - No baseline snapping for smooth vertical movement
+           (.setSubpixel new-font true)
+           (.setHinting new-font FontHinting/NONE)
+           (.setBaselineSnapped new-font false))
+         (swap! font-cache assoc cache-key new-font)
+         new-font)))))
 
 (defn- resolve-font
   "Resolve font from options map.
@@ -176,16 +187,17 @@
      :family     - font family name (default: system)
      :typeface   - explicit Typeface (overrides family/weight/slant)
      :variations - variable font axes {:wght 700 :wdth 85}
+     :animated   - if true, configure for smooth animation (default: false)
 
    Returns: Font instance"
   [opts]
-  (let [{:keys [size weight slant family typeface variations]
-         :or {size 14 weight :normal slant :upright}} opts
+  (let [{:keys [size weight slant family typeface variations animated]
+         :or {size 14 weight :normal slant :upright animated false}} opts
         base-typeface (or typeface (get-typeface family weight slant))
         final-typeface (if (and variations (seq variations))
                          (vary base-typeface variations)
                          base-typeface)]
-    (get-font final-typeface size)))
+    (get-font final-typeface size animated)))
 
 ;; ============================================================
 ;; Alignment
