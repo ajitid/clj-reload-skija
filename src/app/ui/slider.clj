@@ -3,7 +3,7 @@
 
    A slider displays a label, value, and draggable track.
    Examples can use this to create parameter controls."
-  (:require [lib.graphics.text :as gfx-text])
+  (:require [lib.text.core :as text])
   (:import [io.github.humbleui.skija Canvas Paint]
            [io.github.humbleui.types Rect]))
 
@@ -62,7 +62,7 @@
         ratio (/ (- value min-val) (- max-val min-val))
         fill-w (* sw ratio)]
     ;; Draw label and value ABOVE the slider
-    (gfx-text/text canvas (str label " " value) sx (- sy 6)
+    (text/text canvas (str label " " value) sx (- sy 6)
                    {:size font-size :color text-color})
     ;; Draw track
     (with-open [track-paint (doto (Paint.)

@@ -5,7 +5,7 @@
    Press Ctrl+` to toggle visibility."
   (:require [app.shell.state :as state]
             [lib.graphics.batch :as batch]
-            [lib.graphics.text :as gfx-text])
+            [lib.text.core :as text])
   (:import [io.github.humbleui.skija Canvas Paint PaintMode]
            [io.github.humbleui.types Rect]))
 
@@ -102,7 +102,7 @@
                            (.setColor (unchecked-int panel-bg-color)))]
       (.drawRect canvas (Rect/makeXYWH (float px) (float py) (float pw) (float ph)) bg-paint))
     ;; Draw FPS text at top
-    (gfx-text/text canvas
+    (text/text canvas
                    (format "FPS: %.0f" (double @state/fps))
                    (+ px pad)
                    (+ py pad 14)

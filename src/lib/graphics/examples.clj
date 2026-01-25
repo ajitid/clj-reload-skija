@@ -21,7 +21,8 @@
    NOT MEANT TO BE EXECUTED - just documentation/reference."
   (:require [lib.graphics.state :as gfx]
             [lib.graphics.shapes :as shapes]
-            [lib.graphics.text :as gfx-text]
+            [lib.text.core :as text]
+            [lib.text.measure :as text-measure]
             [lib.graphics.batch :as batch]
             [lib.graphics.filters :as filters]
             [lib.graphics.gradients :as gradients]
@@ -59,15 +60,15 @@
 
 (comment
   ;; Simple text
-  (gfx-text/text canvas "Hello World" 10 50)
+  (text/text canvas "Hello World" 10 50)
 
   ;; Colored text with custom size
-  (gfx-text/text canvas "Hello" 10 50
+  (text/text canvas "Hello" 10 50
                 {:size 24
                  :color 0xFFFF0000})
 
   ;; Measure text width
-  (gfx-text/measure-text "Hello" {:size 24}))
+  (text-measure/text-width "Hello" {:size 24}))
 
 ;; ============================================================
 ;; Batch Drawing (High Performance)
@@ -186,7 +187,7 @@
 
 (comment
   ;; Glowing text with drop shadow - just use :shadow!
-  (gfx-text/text canvas "GLOW" 50 100
+  (text/text canvas "GLOW" 50 100
                 {:size 48
                  :color 0xFF00FFFF
                  :shadow {:dx 0 :dy 0 :blur 10 :color 0xFF00FFFF}})
