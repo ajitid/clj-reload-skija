@@ -21,6 +21,7 @@
    NOT MEANT TO BE EXECUTED - just documentation/reference."
   (:require [lib.graphics.state :as gfx]
             [lib.graphics.shapes :as shapes]
+            [lib.graphics.atlas :as atlas]
             [lib.text.core :as text]
             [lib.text.measure :as text-measure]
             [lib.graphics.batch :as batch]
@@ -288,3 +289,84 @@
 
   (shapes/rectangle canvas 0 0 800 600
                    {:shader (shaders/animated-shader 800 600 @game-time)}))
+
+;; ============================================================
+;; Sprite Atlas & Image Drawing (Love2D Style)
+;; ============================================================
+;; NOTE: Skija doesn't expose Skia's native drawAtlas, so we use
+;; drawImageRect under the hood. The API follows Love2D conventions.
+
+(comment
+  (require '[lib.graphics.atlas :as atlas])
+
+  ;; Load a sprite sheet
+  (def sheet (atlas/load-image "assets/sprites.png"))
+
+  ;; Define quads (sprite regions within the sheet)
+  (def player-idle (atlas/quad 0 0 32 32))
+  (def player-walk (atlas/quad 32 0 32 32))
+  (def player-jump (atlas/quad 64 0 32 32))
+
+  ;; Create a grid of quads from a regular sprite sheet
+  ;; (4 columns, 2 rows of 32x32 sprites)
+  (def all-sprites (atlas/quad-grid 32 32 4 2))
+
+  ;; Simple sprite drawing
+  (atlas/draw canvas sheet player-idle 100 100)
+
+  ;; Draw with rotation (radians), centered on sprite
+  (atlas/draw canvas sheet player-idle 100 100
+              {:rotation (/ Math/PI 4)
+               :origin [16 16]})
+
+  ;; Draw with scale (uniform or [sx sy])
+  (atlas/draw canvas sheet player-idle 100 100
+              {:scale 2.0})
+  (atlas/draw canvas sheet player-idle 100 100
+              {:scale [2.0 1.5]})
+
+  ;; Draw flipped (useful for character facing direction)
+  (atlas/draw canvas sheet player-walk 100 100
+              {:flip-x true
+               :origin [16 16]})
+
+  ;; Semi-transparent sprite
+  (atlas/draw canvas sheet player-idle 100 100
+              {:alpha 0.5})
+
+  ;; Combined transforms
+  (atlas/draw canvas sheet player-jump 100 100
+              {:rotation 0.3
+               :scale 1.5
+               :origin [16 16]
+               :alpha 0.8})
+
+  ;; Draw entire image (no quad)
+  (atlas/draw-image canvas logo 10 10)
+  (atlas/draw-image canvas logo 10 10 {:scale 0.5})
+
+  ;; Animation helper - get current frame based on time
+  (def walk-cycle (atlas/quad-grid 32 32 8))  ; 8-frame animation
+  (let [frame (atlas/animation-frame walk-cycle @game-time 12)] ; 12 FPS
+    (atlas/draw canvas sheet frame player-x player-y))
+
+  ;; Batch drawing - draw many sprites efficiently
+  (atlas/draw-batch canvas sheet
+                    [[player-idle 100 100]
+                     [player-walk 200 100 {:flip-x true}]
+                     [player-jump 300 100 {:rotation 0.5}]])
+
+  ;; RSXform helpers (for advanced/future use)
+  ;; RSXform encodes rotation+scale as a 2x3 matrix
+  (def xform (atlas/rsxform-from-radians
+               1.0      ; scale
+               0.5      ; rotation in radians
+               100 100  ; position
+               16 16))  ; anchor point
+
+  ;; Batch with RSXform transforms
+  (atlas/draw-batch-rsxform canvas sheet
+                            [sprite-quad sprite-quad sprite-quad]
+                            [(atlas/rsxform-from-radians 1.0 0.0 100 100 16 16)
+                             (atlas/rsxform-from-radians 1.5 0.5 200 100 16 16)
+                             (atlas/rsxform-from-radians 2.0 1.0 300 100 16 16)]))
