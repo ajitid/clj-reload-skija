@@ -234,16 +234,26 @@
       (.drawString canvas text-str (float x) (float y) font paint))))
 
 (defn- draw-text-with-features
-  "Draw text using TextLine with font features (e.g., tnum for tabular numbers)."
-  [^Canvas canvas text-str ^Font font x y features paint-opts]
+  "Draw text using TextLine with font features (e.g., tnum for tabular numbers).
+
+   Note: alignment must be calculated using TextLine width (which respects features)
+   rather than Font.measureTextWidth (which doesn't apply features)."
+  [^Canvas canvas text-str ^Font font x y align features paint-opts]
   (let [shaping-opts (.withFeatures ShapingOptions/DEFAULT features)
         text-line (TextLine/make text-str font shaping-opts)
+        ;; Use TextLine width for alignment - this respects font features like tnum
+        text-width (.getWidth text-line)
+        final-x (case align
+                  :left x
+                  :center (- x (/ text-width 2))
+                  :right (- x text-width)
+                  x)
         blob (.getTextBlob text-line)]
     (when blob
       (if-let [paint (:paint paint-opts)]
-        (.drawTextBlob canvas blob (float x) (float y) paint)
+        (.drawTextBlob canvas blob (float final-x) (float y) paint)
         (gfx/with-paint [paint paint-opts]
-          (.drawTextBlob canvas blob (float x) (float y) paint))))))
+          (.drawTextBlob canvas blob (float final-x) (float y) paint))))))
 
 (defn text
   "Draw text at the given position.
@@ -280,11 +290,14 @@
    (let [font (resolve-font opts)
          align (get opts :align :left)
          text-str (str text)
-         final-x (align-x font text-str x align)
          features (:features opts)
          ;; Remove text-specific opts before passing to paint
          paint-opts (dissoc opts :size :weight :slant :family :typeface
                            :variations :align :font :features :animated)]
      (if features
-       (draw-text-with-features canvas text-str font final-x y features paint-opts)
-       (draw-text-simple canvas text-str font final-x y paint-opts)))))
+       ;; When features are used, alignment is calculated inside draw-text-with-features
+       ;; using TextLine width (which respects features like tnum)
+       (draw-text-with-features canvas text-str font x y align features paint-opts)
+       ;; Without features, use Font.measureTextWidth for alignment
+       (let [final-x (align-x font text-str x align)]
+         (draw-text-simple canvas text-str font final-x y paint-opts))))))
