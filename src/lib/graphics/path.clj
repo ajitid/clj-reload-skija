@@ -65,22 +65,29 @@
   (oval (- cx r) (- cy r) (* 2 r) (* 2 r)))
 
 (defn polygon
-  "Create a polygon path from points."
+  "Create a polygon path from points.
+
+   Points can be:
+     - Flat list: [x1 y1 x2 y2 ...]
+     - Nested pairs: [[x1 y1] [x2 y2] ...]
+
+   Args:
+     points  - list of coordinates
+     closed? - whether to close the path (default: true)"
   ([points]
    (polygon points true))
   ([points closed?]
    (let [flat (if (vector? (first points)) (flatten points) points)
-         coords (float-array flat)]
-     (if closed?
-       (Path/makeFromPolygon coords)
-       (let [pb (PathBuilder.)
-             pairs (partition 2 flat)]
-         (when (seq pairs)
-           (let [[x y] (first pairs)]
-             (.moveTo pb (float x) (float y)))
-           (doseq [[x y] (rest pairs)]
-             (.lineTo pb (float x) (float y))))
-         (.build pb))))))
+         pairs (partition 2 flat)
+         pb (PathBuilder.)]
+     (when (seq pairs)
+       (let [[x y] (first pairs)]
+         (.moveTo pb (float x) (float y)))
+       (doseq [[x y] (rest pairs)]
+         (.lineTo pb (float x) (float y)))
+       (when closed?
+         (.closePath pb)))
+     (.build pb))))
 
 (defn line
   "Create a line segment path."
@@ -88,6 +95,45 @@
   (let [pb (PathBuilder.)]
     (.moveTo pb (float x1) (float y1))
     (.lineTo pb (float x2) (float y2))
+    (.build pb)))
+
+(defn arc
+  "Create an arc path.
+
+   Args:
+     cx, cy      - center coordinates
+     radius      - arc radius
+     start-angle - start angle in degrees (0 = right, 90 = bottom)
+     sweep-angle - sweep angle in degrees (positive = clockwise)
+
+   Returns: Path object"
+  [cx cy radius start-angle sweep-angle]
+  (let [oval (Rect/makeLTRB (float (- cx radius)) (float (- cy radius))
+                            (float (+ cx radius)) (float (+ cy radius)))]
+    (-> (PathBuilder.)
+        (.addArc oval (float start-angle) (float sweep-angle))
+        (.build))))
+
+(defn wave
+  "Create a sinusoidal wave path.
+
+   Args:
+     x, y      - start coordinates
+     width     - total width of wave
+     amplitude - wave amplitude (height from center)
+     frequency - number of complete wave cycles
+
+   Returns: Path object"
+  [x y width amplitude frequency]
+  (let [pb (PathBuilder.)
+        segments 100
+        step (/ width segments)]
+    (.moveTo pb (float x) (float y))
+    (doseq [i (range 1 (inc segments))]
+      (let [px (+ x (* i step))
+            angle (* 2 Math/PI frequency (/ i segments))
+            py (+ y (* amplitude (Math/sin angle)))]
+        (.lineTo pb (float px) (float py))))
     (.build pb)))
 
 (defn from-svg
@@ -175,7 +221,7 @@
 ;; Queries
 ;; ============================================================
 
-(defn contains?
+(defn contains-point?
   "Check if a point is inside the path."
   [^Path p x y]
   (.contains p (float x) (float y)))
@@ -186,7 +232,7 @@
   (let [^Rect r (.getBounds p)]
     [(.getLeft r) (.getTop r) (.getWidth r) (.getHeight r)]))
 
-(defn empty?
+(defn path-empty?
   "Check if path is empty."
   [^Path p]
   (.isEmpty p))
