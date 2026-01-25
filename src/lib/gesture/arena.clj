@@ -128,7 +128,7 @@
                                      :time time}
                 {:keys [arena effects]} (maybe-resolve new-arena)]
             {:arena arena
-             :effects (cons pointer-down-effect effects)})))))))
+             :effects (cons pointer-down-effect effects)}))))))
 
 (defn arena-on-pointer-move
   "Pure: process pointer move event.

@@ -4,7 +4,7 @@
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern)."
   (:require [lib.graphics.state :as gfx])
   (:import [io.github.humbleui.skija
-            Canvas Paint Font FontMgr FontStyle FontSlant FontWeight Typeface
+            Canvas Paint Font FontMgr FontStyle FontSlant FontWeight FontWidth Typeface
             FontVariation FontVariationAxis]))
 
 ;; ============================================================
@@ -43,17 +43,14 @@
 ;; Font Caches
 ;; ============================================================
 
-(defonce ^:private typeface-cache
-  "Cache: [family weight slant] -> Typeface"
-  (atom {}))
+;; Cache: [family weight slant] -> Typeface
+(defonce ^:private typeface-cache (atom {}))
 
-(defonce ^:private varied-typeface-cache
-  "Cache: [base-typeface variations-map] -> Typeface"
-  (atom {}))
+;; Cache: [base-typeface variations-map] -> Typeface
+(defonce ^:private varied-typeface-cache (atom {}))
 
-(defonce ^:private font-cache
-  "Cache: [typeface size] -> Font"
-  (atom {}))
+;; Cache: [typeface size] -> Font
+(defonce ^:private font-cache (atom {}))
 
 (defn clear-font-cache!
   "Clear all font caches (useful for memory cleanup)."
@@ -89,7 +86,7 @@
          cache-key [family w s]]
      (if-let [cached (get @typeface-cache cache-key)]
        cached
-       (let [style (FontStyle. w FontStyle/WIDTH_NORMAL s)
+       (let [style (FontStyle. w FontWidth/NORMAL s)
              typeface (.matchFamilyStyle (FontMgr/getDefault) family style)]
          (swap! typeface-cache assoc cache-key typeface)
          typeface)))))
@@ -101,8 +98,10 @@
      path - path to font file (.ttf, .otf, etc.)
 
    Returns: Typeface instance (do not close)"
-  [path]
-  (Typeface/makeFromFile path))
+  ([path]
+   (load-typeface path 0))
+  ([path ttc-index]
+   (.makeFromFile (FontMgr/getDefault) path ttc-index)))
 
 ;; ============================================================
 ;; Variable Font Support
