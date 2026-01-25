@@ -1,258 +1,136 @@
 (ns lib.graphics.clip
-  "Clipping functions and macros - Love2D-style graphics API.
+  "Clipping functions - Love2D-style graphics API.
 
-   NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern).
+   NOTE: Not hot-reloadable (lib.* namespaces require restart).
 
    ## Quick Start
 
    ```clojure
-   ;; Clip to rectangle
-   (with-clip [canvas [10 10 100 100]]
+   ;; Clip INSIDE region (default)
+   (clip/with-clip [canvas [10 10 100 100]]
      (draw-stuff...))
 
-   ;; Clip to rounded rectangle
-   (with-clip [canvas {:rect [10 10 100 100] :radius 5}]
+   ;; Clip OUTSIDE region (cutout/spotlight)
+   (clip/with-clip-out [canvas [50 50 100 100]]
+     (shapes/rect canvas 0 0 w h {:color 0x80000000}))
+
+   ;; Rounded rectangle
+   (clip/with-clip [canvas [10 10 100 100 5]]
      (draw-stuff...))
 
-   ;; Clip to path
-   (with-clip [canvas my-path]
+   ;; Path
+   (clip/with-clip [canvas my-path]
      (draw-stuff...))
-
-   ;; Explicit API
-   (clip-rect canvas [10 10 100 100])
-   (clip-path canvas my-path)
    ```"
-  (:import [io.github.humbleui.skija Canvas ClipMode Path Region]
+  (:import [io.github.humbleui.skija Canvas ClipMode Path]
            [io.github.humbleui.types Rect RRect]))
 
 ;; ============================================================
-;; Clip Mode Helper
+;; Clipping Functions
 ;; ============================================================
 
-(defn- resolve-clip-mode
-  "Convert keyword to ClipMode enum."
-  [mode]
-  (case mode
-    :intersect ClipMode/INTERSECT
-    :difference ClipMode/DIFFERENCE
-    nil ClipMode/INTERSECT
-    mode))
-
-;; ============================================================
-;; Rectangle Clipping
-;; ============================================================
-
-(defn clip-rect
-  "Clip to a rectangle.
-
-   Args:
-     canvas      - drawing canvas
-     rect        - [x y w h] rectangle
-     mode        - clip mode: :intersect (default) or :difference
-     anti-alias? - whether to anti-alias edges (default true)
-
-   Examples:
-     (clip-rect canvas [10 10 100 100])
-     (clip-rect canvas [10 10 100 100] :difference)
-     (clip-rect canvas [10 10 100 100] :intersect false)"
-  ([^Canvas canvas [x y w h]]
-   (clip-rect canvas [x y w h] :intersect true))
-  ([^Canvas canvas [x y w h] mode]
-   (clip-rect canvas [x y w h] mode true))
-  ([^Canvas canvas [x y w h] mode anti-alias?]
-   (let [rect (Rect/makeXYWH (float x) (float y) (float w) (float h))]
-     (.clipRect canvas rect (resolve-clip-mode mode) (boolean anti-alias?)))
+(defn rect
+  "Clip to a rectangle."
+  ([^Canvas canvas x y w h]
+   (.clipRect canvas (Rect/makeXYWH (float x) (float y) (float w) (float h)))
+   canvas)
+  ([^Canvas canvas x y w h mode]
+   (let [clip-mode (if (= mode :difference) ClipMode/DIFFERENCE ClipMode/INTERSECT)]
+     (.clipRect canvas (Rect/makeXYWH (float x) (float y) (float w) (float h)) clip-mode))
    canvas))
 
-;; ============================================================
-;; Rounded Rectangle Clipping
-;; ============================================================
-
-(defn clip-rrect
-  "Clip to a rounded rectangle.
-
-   Args:
-     canvas      - drawing canvas
-     rect        - [x y w h] rectangle
-     radius      - corner radius (single value or [rx ry])
-     mode        - clip mode: :intersect (default) or :difference
-     anti-alias? - whether to anti-alias edges (default true)
-
-   Examples:
-     (clip-rrect canvas [10 10 100 100] 5)
-     (clip-rrect canvas [10 10 100 100] [5 3] :difference)"
-  ([^Canvas canvas [x y w h] radius]
-   (clip-rrect canvas [x y w h] radius :intersect true))
-  ([^Canvas canvas [x y w h] radius mode]
-   (clip-rrect canvas [x y w h] radius mode true))
-  ([^Canvas canvas [x y w h] radius mode anti-alias?]
+(defn rrect
+  "Clip to a rounded rectangle."
+  ([^Canvas canvas x y w h radius]
    (let [[rx ry] (if (vector? radius) radius [radius radius])
-         rrect (RRect/makeXYWH (float x) (float y) (float w) (float h) (float rx) (float ry))]
-     (.clipRRect canvas rrect (resolve-clip-mode mode) (boolean anti-alias?)))
+         r (RRect/makeXYWH (float x) (float y) (float w) (float h) (float rx) (float ry))]
+     (.clipRRect canvas r))
+   canvas)
+  ([^Canvas canvas x y w h radius mode]
+   (let [[rx ry] (if (vector? radius) radius [radius radius])
+         r (RRect/makeXYWH (float x) (float y) (float w) (float h) (float rx) (float ry))
+         clip-mode (if (= mode :difference) ClipMode/DIFFERENCE ClipMode/INTERSECT)]
+     (.clipRRect canvas r clip-mode))
+   canvas))
+
+(defn path
+  "Clip to a path."
+  ([^Canvas canvas ^Path p]
+   (.clipPath canvas p)
+   canvas)
+  ([^Canvas canvas ^Path p mode]
+   (let [clip-mode (if (= mode :difference) ClipMode/DIFFERENCE ClipMode/INTERSECT)]
+     (.clipPath canvas p clip-mode))
    canvas))
 
 ;; ============================================================
-;; Path Clipping
+;; Internal: Apply clip shape (public for macro expansion)
 ;; ============================================================
 
-(defn clip-path
-  "Clip to a path.
-
-   Args:
-     canvas      - drawing canvas
-     path        - Path instance
-     mode        - clip mode: :intersect (default) or :difference
-     anti-alias? - whether to anti-alias edges (default true)
-
-   Examples:
-     (clip-path canvas my-path)
-     (clip-path canvas my-path :difference)"
-  ([^Canvas canvas ^Path path]
-   (clip-path canvas path :intersect true))
-  ([^Canvas canvas ^Path path mode]
-   (clip-path canvas path mode true))
-  ([^Canvas canvas ^Path path mode anti-alias?]
-   (.clipPath canvas path (resolve-clip-mode mode) (boolean anti-alias?))
-   canvas))
-
-;; ============================================================
-;; Region Clipping
-;; ============================================================
-
-(defn clip-region
-  "Clip to a region.
-
-   Args:
-     canvas - drawing canvas
-     region - Region instance
-     mode   - clip mode: :intersect (default) or :difference
-
-   Note: Regions are axis-aligned and don't support anti-aliasing."
-  ([^Canvas canvas ^Region region]
-   (clip-region canvas region :intersect))
-  ([^Canvas canvas ^Region region mode]
-   (.clipRegion canvas region (resolve-clip-mode mode))
-   canvas))
-
-;; ============================================================
-;; Shape Resolution
-;; ============================================================
-
-(defn- resolve-clip-shape
-  "Apply a clip shape to the canvas.
-
-   Shape can be:
-   - [x y w h] - Rectangle
-   - {:rect [x y w h] :radius r} - Rounded rectangle
-   - {:rect [x y w h] :radius r :mode :difference} - With clip mode
-   - Path instance - Path clipping
-   - {:path path :mode :difference} - Path with clip mode"
-  [^Canvas canvas shape]
+(defn apply-clip
+  "Apply a clip shape to the canvas. Used by with-clip macros.
+   Shape: [x y w h], [x y w h radius], or Path instance."
+  [canvas shape mode]
   (cond
-    ;; Vector = rectangle [x y w h]
-    (and (vector? shape) (number? (first shape)))
-    (clip-rect canvas shape)
-
-    ;; Map with :rect = rounded rectangle or rectangle with options
-    (and (map? shape) (:rect shape))
-    (let [{:keys [rect radius mode anti-alias?]
-           :or {mode :intersect anti-alias? true}} shape]
-      (if radius
-        (clip-rrect canvas rect radius mode anti-alias?)
-        (clip-rect canvas rect mode anti-alias?)))
-
     ;; Path instance
     (instance? Path shape)
-    (clip-path canvas shape)
+    (path canvas shape mode)
 
-    ;; Map with :path
-    (and (map? shape) (:path shape))
-    (let [{:keys [path mode anti-alias?]
-           :or {mode :intersect anti-alias? true}} shape]
-      (clip-path canvas path mode anti-alias?))
+    ;; [x y w h radius] = rounded rect
+    (and (vector? shape) (= 5 (count shape)))
+    (let [[x y w h r] shape]
+      (rrect canvas x y w h r mode))
 
-    ;; Region instance
-    (instance? Region shape)
-    (clip-region canvas shape)
+    ;; [x y w h] = rect
+    (and (vector? shape) (= 4 (count shape)))
+    (let [[x y w h] shape]
+      (rect canvas x y w h mode))
 
     :else
-    (throw (ex-info "Unknown clip shape type"
-                    {:shape shape :type (type shape)}))))
+    (throw (ex-info "Unknown clip shape" {:shape shape}))))
 
 ;; ============================================================
-;; Clipping Macro
+;; Clipping Macros
 ;; ============================================================
 
 (defmacro with-clip
-  "Execute body with clipping applied. Automatically saves and restores canvas state.
+  "Clip INSIDE the shape. Everything outside is hidden.
 
-   Args:
-     canvas - drawing canvas
-     shape  - clip shape (see resolve-clip-shape for options)
+   Shape:
+     [x y w h]        - Rectangle
+     [x y w h radius] - Rounded rectangle
+     Path instance    - Path
 
-   Shape can be:
-     - [x y w h] - Rectangle
-     - {:rect [x y w h] :radius r} - Rounded rectangle
-     - {:rect [x y w h] :mode :difference} - Rectangle with clip mode
-     - path-instance - Path
-     - {:path path :mode :difference} - Path with clip mode
-
-   Examples:
-     ;; Clip to rectangle
+   Example:
      (with-clip [canvas [10 10 100 100]]
-       (shapes/circle canvas 50 50 40 {:color 0xFF0000FF}))
-
-     ;; Clip to rounded rectangle
-     (with-clip [canvas {:rect [10 10 100 100] :radius 5}]
-       (draw-content...))
-
-     ;; Clip to path
-     (with-clip [canvas my-star-path]
-       (draw-gradient-fill...))
-
-     ;; Inverse clip (draw outside region)
-     (with-clip [canvas {:rect [50 50 100 100] :mode :difference}]
-       (draw-stuff...))"
+       (shapes/circle canvas 50 50 40 {:color 0xFF0000FF}))"
   [[canvas shape] & body]
   `(let [c# ~canvas]
      (.save c#)
      (try
-       (resolve-clip-shape c# ~shape)
+       (apply-clip c# ~shape :intersect)
        ~@body
        (finally
          (.restore c#)))))
 
-;; ============================================================
-;; Utility Functions
-;; ============================================================
+(defmacro with-clip-out
+  "Clip OUTSIDE the shape (cutout/spotlight effect).
+   Everything inside the shape is hidden.
 
-(defn get-clip-bounds
-  "Get the current clip bounds as [x y w h].
+   Shape:
+     [x y w h]        - Rectangle
+     [x y w h radius] - Rounded rectangle
+     Path instance    - Path
 
-   Args:
-     canvas - drawing canvas
-
-   Returns: [x y w h] bounding rectangle of current clip"
-  [^Canvas canvas]
-  (let [^Rect r (.getLocalClipBounds canvas)]
-    [(.getLeft r) (.getTop r) (.getWidth r) (.getHeight r)]))
-
-(defn clip-empty?
-  "Check if the current clip is empty (nothing will be drawn).
-
-   Args:
-     canvas - drawing canvas
-
-   Returns: true if clip region is empty"
-  [^Canvas canvas]
-  (.isClipEmpty canvas))
-
-(defn clip-rect?
-  "Check if the current clip is a rectangle (for optimization hints).
-
-   Args:
-     canvas - drawing canvas
-
-   Returns: true if clip is a simple rectangle"
-  [^Canvas canvas]
-  (.isClipRect canvas))
+   Example:
+     ;; Spotlight - darken everything except focus area
+     (with-clip-out [canvas [50 50 100 100]]
+       (shapes/rect canvas 0 0 w h {:color 0x80000000}))"
+  [[canvas shape] & body]
+  `(let [c# ~canvas]
+     (.save c#)
+     (try
+       (apply-clip c# ~shape :difference)
+       ~@body
+       (finally
+         (.restore c#)))))
