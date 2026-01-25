@@ -40,6 +40,27 @@
         :iTime 1.5}))
    ```
 
+   ## Custom Blenders
+
+   ```clojure
+   ;; Simple custom blend (one-liner)
+   (def my-blend
+     (blender \"half4 main(half4 src, half4 dst) { return src * dst; }\"))
+
+   ;; With uniforms
+   (def mix-blend
+     (blender
+       \"uniform float ratio;
+        half4 main(half4 src, half4 dst) { return mix(src, dst, ratio); }\"
+       {:ratio 0.5}))
+
+   ;; Arithmetic blender (efficient built-in formula)
+   (def multiply (arithmetic-blender 1 0 0 0))  ; k1*src*dst + k2*src + k3*dst + k4
+
+   ;; Use with paint
+   (draw/rect {:x 0 :y 0 :w 100 :h 100 :fill :red :blender my-blend})
+   ```
+
    ## SkSL Entry Points
 
    | Effect Type   | Entry Point                      |
@@ -47,7 +68,7 @@
    | Shader        | `half4 main(float2 fragCoord)`   |
    | Color Filter  | `half4 main(half4 color)`        |
    | Blender       | `half4 main(half4 src, half4 dst)`|"
-  (:import [io.github.humbleui.skija RuntimeEffect Data Shader ColorFilter]
+  (:import [io.github.humbleui.skija RuntimeEffect Data Shader ColorFilter Blender]
            [java.nio ByteBuffer ByteOrder]))
 
 ;; ============================================================
@@ -208,6 +229,31 @@
                         (into-array ColorFilter children))]
      (.makeColorFilter effect data children-arr))))
 
+(defn make-blender
+  "Create a Blender from a RuntimeEffect.
+
+   Args:
+     effect   - RuntimeEffect (must be :blender type)
+     uniforms - map of uniform name -> value (optional)
+     children - vector of child blenders (optional)
+
+   Example:
+     (def mix-effect
+       (effect :blender
+         \"uniform float ratio;
+          half4 main(half4 src, half4 dst) { return mix(src, dst, ratio); }\"))
+
+     (def half-blend (make-blender mix-effect {:ratio 0.5}))"
+  ([effect]
+   (make-blender effect {}))
+  ([effect uniforms]
+   (make-blender effect uniforms nil))
+  ([effect uniforms children]
+   (let [data (encode-uniforms effect uniforms)
+         children-arr (when (seq children)
+                        (into-array Blender children))]
+     (.makeBlender effect data children-arr))))
+
 ;; ============================================================
 ;; Convenience: One-liner shader from string
 ;; ============================================================
@@ -249,6 +295,56 @@
    (make-color-filter (effect :color-filter sksl)))
   ([sksl uniforms]
    (make-color-filter (effect :color-filter sksl) uniforms)))
+
+(defn blender
+  "Create a blender directly from SkSL source code.
+
+   This is a convenience function that compiles and creates in one step.
+   For blenders used multiple times with different uniforms, prefer
+   (effect :blender ...) + (make-blender ...) to compile only once.
+
+   Args:
+     sksl     - SkSL source code string
+     uniforms - map of uniform name -> value (optional)
+
+   Examples:
+     ;; Custom 50% blend
+     (blender
+       \"half4 main(half4 src, half4 dst) { return mix(src, dst, 0.5); }\")
+
+     ;; Parameterized blend ratio
+     (blender
+       \"uniform float ratio;
+        half4 main(half4 src, half4 dst) { return mix(src, dst, ratio); }\"
+       {:ratio 0.3})"
+  ([sksl]
+   (make-blender (effect :blender sksl)))
+  ([sksl uniforms]
+   (make-blender (effect :blender sksl) uniforms)))
+
+(defn arithmetic-blender
+  "Create an arithmetic blender using Skia's built-in formula:
+   result = k1 * src * dst + k2 * src + k3 * dst + k4
+
+   This is more efficient than an equivalent SkSL blender.
+
+   Args:
+     k1, k2, k3, k4  - coefficients for the formula
+     enforce-premul? - if true, clamps RGB to calculated alpha (default true)
+
+   Examples:
+     ;; Multiply: src * dst
+     (arithmetic-blender 1 0 0 0)
+
+     ;; Screen: src + dst - src*dst
+     (arithmetic-blender -1 1 1 0)
+
+     ;; Average: (src + dst) / 2
+     (arithmetic-blender 0 0.5 0.5 0)"
+  ([k1 k2 k3 k4]
+   (arithmetic-blender k1 k2 k3 k4 true))
+  ([k1 k2 k3 k4 enforce-premul?]
+   (Blender/makeArithmetic (float k1) (float k2) (float k3) (float k4) enforce-premul?)))
 
 ;; ============================================================
 ;; Common Shader Patterns (Ready to Use)
