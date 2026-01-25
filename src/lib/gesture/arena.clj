@@ -120,8 +120,15 @@
                                  :pointer-id 0
                                  :recognizers recs
                                  :winner nil
-                                 :state :tracking)]
-            (maybe-resolve new-arena)))))))
+                                 :state :tracking)
+                ;; Emit immediate pointer-down effect for the hit target
+                pointer-down-effect {:type :deliver-pointer-down
+                                     :target target
+                                     :pos [px py]
+                                     :time time}
+                {:keys [arena effects]} (maybe-resolve new-arena)]
+            {:arena arena
+             :effects (cons pointer-down-effect effects)})))))))
 
 (defn arena-on-pointer-move
   "Pure: process pointer move event.
@@ -178,10 +185,19 @@
                   [{:type :deliver-gesture
                     :recognizer sweep-winner
                     :event-type (:state sweep-winner)}]
-                  [])))]
+                  [])))
+            ;; Emit pointer-up effect if we were tracking a target
+            pointer-up-effect (when (and (= state :tracking) (seq recognizers))
+                                {:type :deliver-pointer-up
+                                 :target (:target (first recognizers))
+                                 :pos pos
+                                 :time time})
+            all-effects (if pointer-up-effect
+                          (conj (vec effects) pointer-up-effect)
+                          effects)]
         ;; Reset arena on pointer up, but preserve blocked-layers
         {:arena (assoc idle-arena :blocked-layers (:blocked-layers arena))
-         :effects effects}))))
+         :effects all-effects}))))
 
 (defn arena-check-time-thresholds
   "Pure: check time-based thresholds (for long-press).

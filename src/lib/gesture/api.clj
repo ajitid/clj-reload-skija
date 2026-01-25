@@ -89,6 +89,16 @@
     [:long-press :ended] :on-long-press-end
     nil))
 
+(defn- make-pointer-event
+  "Create a pointer event map for pointer-down/up handlers."
+  [target pos time]
+  (let [[px py] pos]
+    {:type :pointer
+     :target-id (:id target)
+     :pointer {:x px :y py}
+     :time time
+     :target target}))
+
 (defn- execute-effect!
   "Execute a single effect. Effects are data descriptions of side effects."
   [effect time]
@@ -99,6 +109,19 @@
           handler-key (gesture-handler-key (:type recognizer) event-type)]
       (when-let [handler (get handlers handler-key)]
         (handler (make-gesture-event recognizer event-type time))))
+
+    :deliver-pointer-down
+    (let [{:keys [target pos]} effect
+          handlers (:handlers target)]
+      (when-let [handler (:on-pointer-down handlers)]
+        (handler (make-pointer-event target pos time))))
+
+    :deliver-pointer-up
+    (let [{:keys [target pos]} effect
+          handlers (:handlers target)]
+      (when-let [handler (:on-pointer-up handlers)]
+        (handler (make-pointer-event target pos time))))
+
     ;; Unknown effect type - ignore
     nil))
 
