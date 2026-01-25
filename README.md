@@ -1,22 +1,31 @@
 # Clojure Hot-Reloadable Skija Demo
 
-A Clojure demo showcasing hot-reloading with LWJGL/SDL3 (windowing) and [Skija](https://github.com/HumbleUI/Skija) (2D graphics).
+A Clojure demo showcasing hot-reloading with LWJGL/SDL3 (windowing) and [Skija](https://github.com/HumbleUI/Skija) (2D graphics). Organized as a multi-example prototyping system.
 
 ## Project Structure
 
 ```
 clj-reloadable-skija-on-window/
-├── deps.edn              # Dependencies (JWM, Skija, clj-reload)
+├── deps.edn              # Dependencies (LWJGL, Skija, clj-reload)
 ├── src/
-│   └── app/
-│       ├── state.clj     # Persistent state (defonce) - survives reload
-│       ├── config.clj    # Reloadable config (def) - visual params
-│       ├── controls.clj  # Reloadable UI (defn) - sliders, mouse
-│       └── core.clj      # Reloadable app (defn) - game loop callbacks
+│   ├── app/
+│   │   ├── core.clj          # Entry point, window infrastructure
+│   │   ├── shell/            # Dev infrastructure (debug panel, FPS)
+│   │   │   ├── core.clj      # Shell lifecycle, wraps examples
+│   │   │   ├── debug_panel.clj
+│   │   │   └── state.clj
+│   │   ├── ui/               # Reusable widgets
+│   │   │   └── slider.clj
+│   │   ├── projects/         # Examples organized by project
+│   │   │   └── playground/
+│   │   │       └── ball_spring.clj  # Default demo
+│   │   └── state/
+│   │       └── system.clj    # System state (window, errors)
+│   └── lib/                  # Library systems (animation, gesture, layout)
 ├── dev/
-│   └── user.clj          # REPL namespace (excluded from reload)
+│   └── user.clj              # REPL namespace (excluded from reload)
 └── scripts/
-    └── check_state.bb    # Babashka script to check state consistency
+    └── pool.clj              # JVM pool manager
 ```
 
 ## Requirements
@@ -111,16 +120,16 @@ clj -J-Dnrepl.port=7888 -M:dev:macos-arm64
 
 The `:connect` alias defaults to port 7888, so using that port simplifies connecting.
 
-In the REPL, open the window:
+In the REPL, open an example:
 
 ```clojure
-(open)
+(open :playground/ball-spring)
 ```
 
 or directly open using:
 
 ```bash
-clj -M:dev:macos-arm64 -e "(open)"
+clj -M:dev:macos-arm64 -e "(open :playground/ball-spring)"
 ```
 
 The window opens and the REPL blocks (this is normal).
@@ -130,15 +139,13 @@ The window opens and the REPL blocks (this is normal).
 For demos or quick testing without keeping the REPL alive, use `quick-open` which exits when the window closes:
 
 ```bash
-clj -M:dev:macos-arm64 -e "(quick-open)"
+clj -M:dev:macos-arm64 -e "(quick-open :playground/ball-spring)"
 ```
 
-### Other REPL Commands
+### Example Key Resolution
 
-```clojure
-(close)   ;; Close window, reset state (can reopen)
-(reopen)  ;; Close + open new window
-```
+Example keys are resolved to namespaces:
+- `:playground/ball-spring` → `app.projects.playground.ball-spring`
 
 ## Hot Reloading
 
@@ -152,13 +159,13 @@ clj -M:connect
 clj -M:connect --port <port>
 ```
 
-Now edit ANY source file - `config.clj`, `controls.clj`, or even `core.clj`:
+Now edit ANY source file in `src/app/`:
 
 ```clojure
-;; Example: change config values
+;; Example: change colors in an example file
 (def circle-color 0xFFFF6B6B)  ;; Red circles
 
-;; Example: change draw function in core.clj
+;; Example: change draw function
 (defn draw [canvas w h]
   (.clear canvas 0xFF000000)  ;; Black background
   ...)
@@ -210,13 +217,17 @@ Now every time you save a `.clj` file, reload happens automatically.
 
 ### Error Recovery
 
-If you introduce a syntax or runtime error (e.g., typo like `forma` instead of `format`), the window shows a **red screen** (`0xFFFF6B6B`) as immediate visual feedback. The error message is printed to the console.
+If you introduce a syntax or runtime error, the window shows a **red error overlay** with the stack trace. The error message is also printed to the console.
 
 To recover:
 
 1. Fix the error in your code
 2. Call `(reload)` in the connected REPL
 3. Drawing resumes automatically
+
+**Keyboard shortcuts:**
+- `Ctrl+E` or Middle-click — Copy error to clipboard
+- `Ctrl+\`` — Toggle debug panel (FPS graph)
 
 ## Using Calva (VS Code)
 
@@ -225,7 +236,7 @@ To recover:
 ### Option 1: Connect to Running REPL
 
 1. Start the REPL from terminal: `NREPL_PORT=7888 clj -M:dev:macos-arm64` (or your platform)
-2. Run `(open)` to launch the window
+2. Run `(open :playground/ball-spring)` to launch the window
 3. In VS Code, run **Calva: Connect to a Running REPL Server in the Project** (`Ctrl+Alt+C Ctrl+Alt+C`)
 4. Select "deps.edn" → "localhost:7888"
 
@@ -234,88 +245,53 @@ To recover:
 1. Run **Calva: Start a Project REPL and Connect (aka Jack-In)** (`Ctrl+Alt+C Ctrl+Alt+J`)
 2. Select "deps.edn"
 3. Check the aliases: `:dev` and your platform (e.g., `:macos-arm64`)
-4. Once connected, evaluate `(open)` in the REPL
+4. Once connected, evaluate `(open :playground/ball-spring)` in the REPL
 
 ### Workflow
 
-- Edit `src/app/config.clj`
+- Edit files in `src/app/projects/`
 - Evaluate `(reload)` in the REPL (or `Ctrl+Alt+C Enter` to eval current form)
 - See changes instantly in the window
 
 ## Game Loop (Love2D-style)
 
-The app uses a Love2D-inspired game loop with three hot-reloadable callbacks:
+Each example provides three hot-reloadable callbacks:
 
 ```clojure
 (defn init []
-  "Called once at startup. Initialize your game state here.")
+  "Called once when example starts. Initialize your state here.")
 
 (defn tick [dt]
-  "Called every frame with delta time (seconds). Update game logic here.")
+  "Called every frame with delta time (seconds). Update logic here.")
 
 (defn draw [canvas width height]
-  "Called every frame for rendering. Draw your game here.")
+  "Called every frame for rendering. Draw your example here.")
+
+(defn cleanup []
+  "Optional: Called when switching to another example.")
 ```
 
 > Note: Named `init`/`tick` instead of `load`/`update` to avoid shadowing `clojure.core` functions.
 
-All three functions are hot-reloadable - edit them and call `(reload)` to see changes instantly.
-
-> why does love2d has different update and draw fn? does unity, godot, libgdx has it too?
-
-⏺ Great question! The separation exists for important reasons:
-
-Why separate update and draw?
-
-1. Fixed vs variable timestep - Update can run at fixed rate (e.g., 60 times/sec) for deterministic physics, while draw runs at screen refresh rate (30/60/144 fps)
-2. Frame skipping - If game runs slow, you can run update multiple times to catch up, but only draw once
-3. Interpolation - Draw can interpolate between physics states for smooth visuals even at lower update rates
-
-Other engines:
-
-| Engine       | Update                                     | Draw                          |
-| ------------ | ------------------------------------------ | ----------------------------- |
-| Unity        | Update(), FixedUpdate()                    | Automatic (or OnRenderObject) |
-| Godot        | \_process(delta), \_physics_process(delta) | \_draw() or automatic         |
-| LibGDX       | render() (you split it yourself)           | Same method                   |
-| Unreal       | Tick(DeltaTime)                            | Separate rendering system     |
-| MonoGame/XNA | Update(GameTime)                           | Draw(GameTime)                |
-
-Most engines have this pattern. LibGDX is notable for combining them - you typically write:
-
-```
-public void render() {
-    update(Gdx.graphics.getDeltaTime());
-    draw();
-}
-```
-
-Love2D just makes it explicit, which is beginner-friendly.
-
-### Example: Animation
-
-```clojure
-(defn tick [dt]
-  ;; Grow circle by 10 pixels per second
-  (swap! state/circle-radius + (* 10 dt)))
-```
+All functions are hot-reloadable - edit them and call `(reload)` to see changes instantly.
 
 ## How It Works
 
-| Namespace      | Uses      | Behavior on Reload                  |
-| -------------- | --------- | ----------------------------------- |
-| `app.state`    | `defonce` | **Persists** - atoms survive reload |
-| `app.config`   | `def`     | **Reloads** - values update         |
-| `app.controls` | `defn`    | **Reloads** - functions update      |
-| `app.core`     | `defn`    | **Reloads** - game loop updates     |
-| `user`         | -         | **Excluded** - keeps REPL stable    |
+| Namespace | Uses | Behavior on Reload |
+|-----------|------|-------------------|
+| `app.shell.*` | `defonce`, `defsource` | State **persists**, functions **reload** |
+| `app.projects.*.*` | `defonce`, `defsource` | State **persists**, functions **reload** |
+| `app.state.system` | `defonce` | **Persists** - window, errors |
+| `app.ui.*` | `defn` | **Reloads** - functions update |
+| `lib.*` | `defn` | **Restart required** (not hot-reloadable) |
+| `user` | - | **Excluded** - keeps REPL stable |
 
 Following [clj-reload](https://github.com/tonsky/clj-reload) best practices:
 
 - `defonce` for persistent state
-- `(resolve 'ns/sym)` for cross-namespace calls (vars are removed on unload)
+- `(requiring-resolve 'ns/sym)` for cross-namespace calls (vars are removed on unload)
 
-### Why `resolve`?
+### Why `requiring-resolve`?
 
 When clj-reload unloads a namespace, vars are **completely removed** (not just re-bound). Direct references become stale:
 
@@ -325,39 +301,11 @@ config/shadow-dx
 #'app.core/draw
 
 ;; Good - runtime lookup by symbol name
-@(resolve 'app.config/shadow-dx)
-(when-let [f (resolve 'app.core/draw)] (f canvas w h))
+@(requiring-resolve 'app.config/shadow-dx)
+(when-let [f (requiring-resolve 'app.shell.core/draw)] (f canvas w h))
 ```
 
-The event listener uses `resolve` for ALL callbacks, allowing every namespace to reload.
-
-## Scripts
-
-### State Consistency Check
-
-A Babashka script to verify that all keys in `initial-state` have corresponding `defonce` declarations:
-
-```bash
-# Check the default state file (src/app/state.clj)
-bb scripts/check_state.bb
-
-# Check a specific file
-bb scripts/check_state.bb path/to/state.clj
-```
-
-The script detects:
-
-- **Unused keys**: defined in `initial-state` but no `defonce` uses them
-- **Missing keys**: used in `defonce` but not defined in `initial-state`
-
-Example output when issues are found:
-
-```
-UNUSED keys (in initial-state but no defonce):
-  - :unused-key
-```
-
-Exits with code 0 if synchronized, code 1 if issues found.
+The event listener uses `requiring-resolve` for ALL callbacks, allowing every namespace to reload.
 
 ## References
 

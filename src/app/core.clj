@@ -1,57 +1,44 @@
 (ns app.core
-  "Main application - Love2D style game loop with SDL3/Skija.
+  "Main application entry point - SDL3/Skija game loop.
 
    Architecture (clj-reload pattern):
    - ALL callbacks use (resolve ...) for dynamic dispatch
-   - This allows hot-reloading of ALL namespaces including app.core
-   - Only defonce values in app.state persist across reloads
+   - Shell wraps examples and provides debug overlay
+   - Examples provide init/tick/draw/cleanup callbacks
 
-   Game loop callbacks (hot-reloadable):
-   - init - called once at startup
-   - tick - called every frame with delta time (dt)
-   - draw - called every frame for rendering"
-  (:require [app.state.sources :as src]
-            [app.state.signals :as sig]
-            [app.state.animations :as anim]
+   The window infrastructure lives here while the shell manages
+   example lifecycle and debug panel."
+  (:require [app.shell.state :as shell-state]
             [app.state.system :as sys]
-            [app.util :refer [cfg]]
             [clojure.string :as str]
             [lib.error.core :as err]
             [lib.error.overlay :as err-overlay]
             [lib.flex.core :as flex]
-            [lib.graphics.batch :as batch]
-            [lib.graphics.shapes :as shapes]
-            [lib.layout.core :as layout]
-            [lib.layout.mixins :as mixins]
-            [lib.layout.render :as layout-render]
-            [lib.layout.scroll :as scroll]
             [lib.window.core :as window]
             [lib.window.events :as e]
             [lib.window.macos :as macos])
-  (:import [io.github.humbleui.skija Canvas Paint PaintMode Font FontMgr FontStyle]
-           [io.github.humbleui.types Rect]
+  (:import [io.github.humbleui.skija Canvas]
            [lib.window.events EventClose EventResize EventMouseButton EventMouseMove EventMouseWheel
             EventKey EventFrameSkija EventFingerDown EventFingerMove EventFingerUp]))
+
+;; ============================================================
+;; Window state (local to this module)
+;; ============================================================
+
+(defonce window-width (atom 800))
+(defonce window-height (atom 600))
+(defonce scale (atom 1.0))
 
 ;; ============================================================
 ;; Helpers
 ;; ============================================================
 
-(defn- macos?
-  "Check if running on macOS."
-  []
+(defn- macos? []
   (str/includes? (str/lower-case (System/getProperty "os.name" "")) "mac"))
-
-(defn config-loaded?
-  "Check if app.config namespace is loaded and ready."
-  []
-  (some? (resolve 'app.config/circle-color)))
 
 ;; ============================================================
 ;; clj-reload hooks
 ;; ============================================================
-;; app.core is unloaded FIRST and loaded LAST (top of dependency tree)
-;; so these hooks bracket the entire reload process
 
 (defn before-ns-unload []
   (reset! sys/reloading? true))
@@ -60,438 +47,161 @@
   (reset! sys/reloading? false))
 
 ;; ============================================================
-;; Drawing helpers
+;; Error clipboard helper
 ;; ============================================================
 
-(defn draw-circle-grid
-  "Draw a grid of circles using batched points API.
-   Uses the grid-positions signal which auto-recomputes."
-  [^Canvas canvas]
-  (let [positions @sig/grid-positions]
-    (when (seq positions)
-      (let [;; All circles same radius - use first one
-            radius (:radius (first positions))
-            ;; Build sequence of {:x :y} maps for batch API
-            points (mapv (fn [{:keys [cx cy]}] {:x cx :y cy}) positions)]
-        (batch/points canvas points radius
-                      {:color (cfg 'app.config/circle-color)})))))
-
-(defn copy-current-error-to-clipboard!
-  "Copy the current error (if any) to clipboard.
-   Prioritizes reload error over runtime error."
-  []
+(defn copy-current-error-to-clipboard! []
   (when-let [err (or @sys/last-reload-error @sys/last-runtime-error)]
     (err/copy-to-clipboard! (err/format-error-for-clipboard err))))
-
-;; ============================================================
-;; Love2D-style callbacks (hot-reloadable!)
-;; ============================================================
-
-(defn init
-  "Called once when the game starts.
-   Initialize your game state here."
-  []
-  (println "Game loaded!")
-  ;; Point all libs to use game-time
-  (when-let [time-source (requiring-resolve 'lib.time/time-source)]
-    (reset! @time-source #(deref sys/game-time)))
-
-  ;; Set initial demo position at top of window (x-centered, y fixed near top)
-  (let [demo-y 50]
-    (reset! anim/demo-anchor-x (/ @src/window-width 2))
-    (reset! anim/demo-anchor-y demo-y)
-    (reset! anim/demo-circle-x (/ @src/window-width 2))
-    (reset! anim/demo-circle-y demo-y))
-
-  ;; Initialize scroll state for demos
-  (scroll/init! :scroll-demo)
-  (scroll/init! :virtual-list)
-
-  ;; Register gesture targets
-  (when-let [register-gestures! (requiring-resolve 'app.gestures/register-gestures!)]
-    (register-gestures!)))
-
-(defn tick
-  "Called every frame with delta time in seconds.
-   Update your game state here."
-  [dt]
-  ;; Advance game time (dt is in seconds, apply time scale)
-  (swap! sys/game-time + (* dt @sys/time-scale))
-
-  ;; Track velocity during drag (frame-based, not event-based)
-  ;; Uses a ring buffer of last 3 position samples to compute velocity.
-  ;; This captures momentum from "just before" mouse stops, solving the
-  ;; stale velocity problem where event-based sampling gives velocity ≈ 0
-  ;; when user stops moving before releasing.
-  (when @src/demo-dragging?
-    (let [history @anim/demo-position-history
-          current-x @anim/demo-circle-x
-          current-t @sys/game-time
-          new-history (-> history
-                          (conj {:x current-x :t current-t})
-                          (->> (take-last 3))
-                          vec)]
-      (reset! anim/demo-position-history new-history)
-      ;; Calculate velocity from oldest to newest sample
-      (when (>= (count new-history) 2)
-        (let [oldest (first new-history)
-              newest (last new-history)
-              dt-hist (- (:t newest) (:t oldest))]
-          (when (pos? dt-hist)
-            (reset! anim/demo-velocity-x
-                    (/ (- (:x newest) (:x oldest)) dt-hist)))))))
-
-  ;; Check long-press timers in gesture system
-  (when-let [check-long-press! (requiring-resolve 'lib.gesture.api/check-long-press!)]
-    (check-long-press!))
-
-  ;; Tick all registered animations (includes demo circle decay)
-  (when-let [tick-fn (requiring-resolve 'lib.anim.registry/tick-all!)]
-    (tick-fn)))
-
-(defn draw-demo-anchor
-  "Draw the anchor/rest position for the spring demo."
-  [^Canvas canvas]
-  (let [x @anim/demo-anchor-x
-        y @anim/demo-anchor-y
-        radius (or (cfg 'app.config/demo-circle-radius) 25)]
-    (shapes/circle canvas x y radius
-                  {:color (or (cfg 'app.config/demo-anchor-color) 0x44FFFFFF)
-                   :mode :stroke
-                   :stroke-width 2.0})))
-
-(defn draw-demo-circle
-  "Draw the draggable demo circle."
-  [^Canvas canvas]
-  (let [x @anim/demo-circle-x
-        y @anim/demo-circle-y
-        radius (or (cfg 'app.config/demo-circle-radius) 25)]
-    (shapes/circle canvas x y radius
-                  {:color (or (cfg 'app.config/demo-circle-color) 0xFF4A90D9)})))
-
-;; ============================================================
-;; Layout Demo
-;; ============================================================
-
-;; Virtual scroll mixin for 10,000 items
-(def virtual-scroll-mixin
-  (mixins/virtual-scroll
-    (vec (range 10000))   ;; 10,000 items
-    40                     ;; 40px per item
-    (fn [item idx]
-      {:fill (+ 0xFF303050 (* (mod idx 5) 0x101010))
-       :label (str "Item " idx)})))
-
-(defn demo-ui
-  "Layout system demo using new Subform-style API."
-  [viewport-height]
-  {:layout {:x {:size "100%"} :y {:size "100%"}}
-   :children-layout {:mode :stack-x
-                     :x {:before 20 :between 20 :after 20}
-                     :y {:before 20 :after 20}}
-   :children
-   [;; Left column: Original layout demo
-    {:layout {:x {:size "1s"} :y {:size "100%"}}
-     :children-layout {:mode :stack-y
-                       :y {:between 12}}
-     :children
-     [;; Row 1: Fixed + Spacer + Fixed
-      {:layout {:y {:size 50}}
-       :children-layout {:mode :stack-x :x {:between 10}}
-       :children
-       [{:layout {:x {:size 100}} :fill 0xFF4A90D9 :label "100px"}
-        {:layout {:x {:size "1s"}} :fill 0x20FFFFFF :label "spacer (1s)"}
-        {:layout {:x {:size 100}} :fill 0xFF4A90D9 :label "100px"}]}
-
-      ;; Row 2: Stretch weights 1:2:1
-      {:layout {:y {:size 60}}
-       :children-layout {:mode :stack-x :x {:between 10}}
-       :children
-       [{:layout {:x {:size "1s"}} :fill 0xFF44AA66 :label "1s"}
-        {:layout {:x {:size "2s"}} :fill 0xFF66CC88 :label "2s"}
-        {:layout {:x {:size "1s"}} :fill 0xFF44AA66 :label "1s"}]}
-
-      ;; Row 3: Percentages
-      {:layout {:y {:size 50}}
-       :children-layout {:mode :stack-x :x {:between 10}}
-       :children
-       [{:layout {:x {:size "30%"}} :fill 0xFFD94A4A :label "30%"}
-        {:layout {:x {:size "70%"}} :fill 0xFFD97A4A :label "70%"}]}
-
-      ;; Row 4: Vertical stretch (fills remaining)
-      {:layout {:y {:size "1s"}} :fill 0x15FFFFFF :label "stretch (1s)"}]}
-
-    ;; Middle column: Scrollable list demo (30 items)
-    {:id :scroll-demo
-     :layout {:x {:size 180} :y {:size "100%"}}
-     :fill 0x20FFFFFF
-     :children-layout {:mode :stack-y
-                       :overflow {:y :scroll}
-                       :y {:before 10 :between 8 :after 10}
-                       :x {:before 10 :after 10}}
-     :children
-     (vec (for [i (range 30)]
-            {:layout {:y {:size 40}}
-             :fill (+ 0xFF303050 (* (mod i 5) 0x101010))
-             :label (str "Item " (inc i))}))}
-
-    ;; Right column: Virtual scroll demo (10,000 items)
-    (let [y-padding {:before 10 :after 10}]
-      {:id :virtual-list
-       :layout {:x {:size 180} :y {:size "100%"}}
-       :fill 0x20FFFFFF
-       :children-layout {:mode :stack-y
-                         :overflow {:y :scroll}
-                         :y y-padding
-                         :x {:before 10 :after 10}}
-       :children (mixins/compute-visible-children virtual-scroll-mixin :virtual-list (- viewport-height 40) y-padding)})]})
-
-(defn- find-node-by-id
-  "Find a node in laid-out tree by :id."
-  [tree id]
-  (when tree
-    (if (= (:id tree) id)
-      tree
-      (some #(find-node-by-id % id) (:children tree)))))
-
-(defn- calculate-content-height
-  "Calculate total content height from children.
-   Includes :after padding from children-layout."
-  [node]
-  (if-let [children (:children node)]
-    (let [bounds (map :bounds children)
-          max-bottom (reduce max 0 (map #(+ (:y %) (:h %)) bounds))
-          parent-top (get-in node [:bounds :y] 0)
-          ;; Add :after padding from children-layout
-          after-padding (get-in node [:children-layout :y :after] 0)]
-      (+ (- max-bottom parent-top) after-padding))
-    0))
-
-(defn draw-layout-demo
-  "Draw the layout demo UI.
-   offset-y: vertical offset for layout bounds (screen space)"
-  [^Canvas canvas width height offset-y]
-  ;; Step 1: Layout (compute bounds in screen space, including offset)
-  (let [tree (demo-ui height)
-        parent-bounds {:x 0 :y offset-y :w width :h height}
-        laid-out (layout/layout tree parent-bounds)]
-
-    ;; Reconcile lifecycle (mount/unmount in correct order)
-    (layout/reconcile! laid-out)
-
-    ;; Step 2: Update scroll dimensions BEFORE rendering (this clamps scroll)
-    (when-let [scroll-node (find-node-by-id laid-out :scroll-demo)]
-      (let [bounds (:bounds scroll-node)
-            viewport {:w (:w bounds) :h (:h bounds)}
-            content-h (calculate-content-height scroll-node)
-            content {:w (:w bounds) :h content-h}]
-        (scroll/set-dimensions! :scroll-demo viewport content)))
-
-    ;; Store laid-out tree for scroll hit testing
-    (reset! sys/current-tree laid-out)
-
-    ;; Step 3: Render with clamped scroll position
-    (with-open [fill-paint (Paint.)
-                text-paint (doto (Paint.) (.setColor (unchecked-int 0xFFFFFFFF)))
-                font (Font. (.matchFamilyStyle (FontMgr/getDefault) nil FontStyle/NORMAL) (float 10))]
-      (layout-render/walk-layout laid-out canvas
-        (fn [node {:keys [x y w h]} _canvas]
-          ;; Draw fill
-          (when-let [color (:fill node)]
-            (.setColor fill-paint (unchecked-int color))
-            (.setMode fill-paint PaintMode/FILL)
-            (.drawRect canvas (Rect/makeXYWH x y w h) fill-paint))
-          ;; Draw label only on leaf nodes (no children)
-          (when (and (:label node) (not (:children node)))
-            (.drawString canvas (:label node) (float (+ x 4)) (float (+ y 12)) font text-paint)))))))
-
-(defn draw
-  "Called every frame for rendering.
-   Draw your game here."
-  [^Canvas canvas width height]
-  ;; Clear background
-  (.clear canvas (unchecked-int 0xFF222222))
-
-  ;; Demo ball area at top (100px reserved)
-  (let [demo-area-height 100]
-    ;; Draw demo ball in the reserved top area (x-axis draggable with momentum)
-    (draw-demo-anchor canvas)
-    (draw-demo-circle canvas)
-
-    ;; Draw layout demo below the demo area (bounds computed in screen space)
-    (draw-layout-demo canvas width (- height demo-area-height) demo-area-height))
-
-  ;; Draw control panel (on top) when visible
-  (when @src/panel-visible?
-    (when-let [draw-panel (requiring-resolve 'app.controls/draw-panel)]
-      (draw-panel canvas width))))
 
 ;; ============================================================
 ;; Game loop infrastructure
 ;; ============================================================
 
 (defn create-event-handler
-  "Create an event handler for the window.
-   Uses sys/reloading? guard to skip event handling during namespace reload."
+  "Create an event handler for the window."
   [win]
-  (let [last-time (atom (System/nanoTime))]
+  (let [last-time (atom (System/nanoTime))
+        recording-active? (atom false)]
     (fn [event]
       (cond
         ;; Close event
         (instance? EventClose event)
         (do
-          ;; Stop recording if active
-          (when @src/recording-active?
+          (when @recording-active?
             (when-let [stop-recording! (requiring-resolve 'lib.window.capture/stop-recording!)]
               (stop-recording!))
-            (src/recording-active? false))
+            (reset! recording-active? false))
           (reset! sys/running? false)
           (window/close! win))
 
-        ;; Frame event - always request next frame, draw only when not reloading
-        ;; This keeps the render loop alive during hot-reload
-        ;; Returns true if drew (signals render-frame! to swap buffers)
-        ;; Returns nil if skipped (preserves previous frame - no flicker)
+        ;; Frame event
         (instance? EventFrameSkija event)
         (do
-          ;; On macOS, activate app on first frame when window is fully visible
-          ;; (must happen after event loop starts, not before)
           (when (and (macos?) (not @sys/app-activated?))
             (macos/activate-app!)
             (reset! sys/app-activated? true))
-          ;; Always request next frame - keeps render loop alive during reload
           (window/request-frame! win)
-          ;; Only draw when not reloading
           (when-not @sys/reloading?
             (let [{:keys [canvas]} event
-                  scale @src/scale
-                  w @src/window-width
-                  h @src/window-height
+                  s @scale
+                  w @window-width
+                  h @window-height
                   now (System/nanoTime)
                   raw-dt (/ (- now @last-time) 1e9)
-                  dt (min raw-dt 0.033)]  ;; Clamp to 30 FPS floor to prevent animation jumps
+                  dt (min raw-dt 0.033)]
               (reset! last-time now)
+              ;; Update FPS
               (when (pos? raw-dt)
                 (let [current-fps (/ 1.0 raw-dt)
                       smoothing 0.8
-                      new-fps (+ (* smoothing @src/fps)
+                      new-fps (+ (* smoothing @shell-state/fps)
                                  (* (- 1.0 smoothing) current-fps))]
-                  (src/fps new-fps)
-                  ;; Frame-based sampling: direct array write (zero allocations)
-                  (let [idx (swap! src/fps-history-idx #(mod (inc %) src/fps-history-size))]
-                    (aset ^floats src/fps-history idx (float new-fps)))))
+                  (shell-state/fps new-fps)
+                  (let [idx (swap! shell-state/fps-history-idx #(mod (inc %) shell-state/fps-history-size))]
+                    (aset ^floats shell-state/fps-history idx (float new-fps)))))
               (try
                 (.save canvas)
-                (.scale canvas (float scale) (float scale))
-                ;; Check for pending reload error
+                (.scale canvas (float s) (float s))
                 (if-let [reload-err @sys/last-reload-error]
                   (err-overlay/draw-error canvas reload-err)
                   (do
                     (reset! sys/last-runtime-error nil)
-                    (when-let [tick-fn (requiring-resolve 'app.core/tick)]
+                    ;; Delegate to shell
+                    (when-let [tick-fn (requiring-resolve 'app.shell.core/tick)]
                       (tick-fn dt))
-                    (when-let [draw-fn (requiring-resolve 'app.core/draw)]
+                    (when-let [draw-fn (requiring-resolve 'app.shell.core/draw)]
                       (draw-fn canvas w h))))
                 (catch Exception e
                   (reset! sys/last-runtime-error e)
-                  (let [error-to-show (or @sys/last-reload-error e)]
-                    (err-overlay/draw-error canvas error-to-show))
+                  (err-overlay/draw-error canvas (or @sys/last-reload-error e))
                   (println "Render error:" (.getMessage e)))
                 (finally
                   (.restore canvas)))
-              ;; Return true to signal that we drew - render-frame! will swap buffers
               true)))
 
-        ;; Skip other events during reload (vars not available)
+        ;; Skip other events during reload
         @sys/reloading?
         nil
 
         ;; Resize event
         (instance? EventResize event)
         (let [{:keys [width height scale]} event]
-          ;; Update Flex sources - grid-positions signal auto-recomputes
-          (src/window-width width)
-          (src/window-height height)
-          (src/scale scale))
+          (reset! window-width width)
+          (reset! window-height height)
+          (reset! app.core/scale scale))
 
         ;; Mouse button event
         (instance? EventMouseButton event)
         (do
-          ;; Middle click copies error to clipboard (only if error exists)
           (when (and (= (:button event) :middle) (:pressed? event)
                      (or @sys/last-reload-error @sys/last-runtime-error))
             (copy-current-error-to-clipboard!))
           (when (= (:button event) :primary)
             (if (:pressed? event)
-              ;; Mouse down: check scrollbar first, then gesture system
               (let [scrollbar-handler (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-down)
-                    scrollbar-hit? (when scrollbar-handler
-                                     (scrollbar-handler event {:tree @sys/current-tree}))]
+                    tree-atom (requiring-resolve 'app.projects.playground.ball-spring/current-tree)
+                    scrollbar-hit? (when (and scrollbar-handler tree-atom)
+                                     (scrollbar-handler event {:tree @@tree-atom}))]
                 (when scrollbar-hit?
                   (window/request-frame! win))
-                ;; If not a scrollbar hit, pass to gesture system
                 (when-not scrollbar-hit?
                   (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
-                    (handle-fn event {:scale @src/scale
-                                      :window-width @src/window-width}))))
-              ;; Mouse up: end scrollbar drag, then gesture system
+                    (handle-fn event {:scale @scale
+                                      :window-width @window-width}))))
               (do
                 (when-let [end-scrollbar (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-up)]
                   (end-scrollbar))
                 (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
-                  (handle-fn event {:scale @src/scale
-                                    :window-width @src/window-width}))))))
+                  (handle-fn event {:scale @scale
+                                    :window-width @window-width}))))))
 
         ;; Mouse move event
         (instance? EventMouseMove event)
         (let [scrollbar-dragging? (when-let [f (requiring-resolve 'lib.gesture.api/scrollbar-dragging?)]
                                     (f))]
           (if scrollbar-dragging?
-            ;; Handle scrollbar drag movement
             (when-let [handle-scrollbar-move (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-move)]
               (when (handle-scrollbar-move event)
                 (window/request-frame! win)))
-            ;; Regular gesture system handling
             (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-move)]
-              (handle-fn event {:scale @src/scale
-                                :window-width @src/window-width}))))
+              (handle-fn event {:scale @scale
+                                :window-width @window-width}))))
 
         ;; Mouse wheel event
         (instance? EventMouseWheel event)
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-wheel)]
-          (when (handle-fn event {:scale @src/scale
-                                  :tree @sys/current-tree})
-            ;; Request frame redraw if scroll was handled
-            (window/request-frame! win)))
+          (let [tree-atom (requiring-resolve 'app.projects.playground.ball-spring/current-tree)]
+            (when (handle-fn event {:scale @scale
+                                    :tree (when tree-atom @@tree-atom)})
+              (window/request-frame! win))))
 
-        ;; Touch/finger events
+        ;; Touch events
         (instance? EventFingerDown event)
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-finger-down)]
-          (handle-fn event {:scale @src/scale
-                            :window-width @src/window-width}))
+          (handle-fn event {:scale @scale
+                            :window-width @window-width}))
 
         (instance? EventFingerMove event)
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-finger-move)]
-          (handle-fn event {:scale @src/scale
-                            :window-width @src/window-width}))
+          (handle-fn event {:scale @scale
+                            :window-width @window-width}))
 
         (instance? EventFingerUp event)
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-finger-up)]
-          (handle-fn event {:scale @src/scale
-                            :window-width @src/window-width}))
+          (handle-fn event {:scale @scale
+                            :window-width @window-width}))
 
         ;; Keyboard event
         (instance? EventKey event)
         (let [{:keys [key pressed? modifiers]} event]
           (when pressed?
-            ;; Ctrl+E copies error to clipboard (only if error exists)
-            ;; SDL3 'e' keycode = 0x65, CTRL modifier = 0x00C0 (LCTRL | RCTRL)
+            ;; Ctrl+E copies error
             (when (and (= key 0x65) (pos? (bit-and modifiers 0x00C0))
                        (or @sys/last-reload-error @sys/last-runtime-error))
               (copy-current-error-to-clipboard!))
 
             ;; Ctrl+S captures screenshot
-            ;; SDL3 's' keycode = 0x73
             (when (and (= key 0x73) (pos? (bit-and modifiers 0x00C0)))
               (when-let [screenshot! (requiring-resolve 'lib.window.capture/screenshot!)]
                 (let [timestamp (java.time.LocalDateTime/now)
@@ -501,81 +211,73 @@
                   (println "[keybind] Screenshot captured:" filename))))
 
             ;; Ctrl+R toggles recording
-            ;; SDL3 'r' keycode = 0x72
             (when (and (= key 0x72) (pos? (bit-and modifiers 0x00C0)))
-              (if @src/recording-active?
-                ;; Stop recording
+              (if @recording-active?
                 (do
                   (when-let [stop-recording! (requiring-resolve 'lib.window.capture/stop-recording!)]
                     (stop-recording!))
-                  (src/recording-active? false)
-                  ;; Restore original title
+                  (reset! recording-active? false)
                   (window/set-window-title! @sys/window @sys/window-title)
                   (println "[keybind] Recording stopped"))
-                ;; Start recording
                 (do
                   (when-let [start-recording! (requiring-resolve 'lib.window.capture/start-recording!)]
                     (let [timestamp (java.time.LocalDateTime/now)
                           formatter (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd_HH-mm-ss")
                           filename (str "recording_" (.format timestamp formatter) ".mp4")]
                       (start-recording! filename {:fps 60})
-                      (src/recording-active? true)
-                      ;; Update title with [Recording] indicator
+                      (reset! recording-active? true)
                       (window/set-window-title! @sys/window
                                                (str @sys/window-title " [Recording]"))
                       (println "[keybind] Recording started:" filename))))))
 
-            ;; Ctrl+` toggles panel visibility
-            ;; SDL3 '`' (grave/backtick) keycode = 0x60
+            ;; Ctrl+` toggles panel
             (when (and (= key 0x60) (pos? (bit-and modifiers 0x00C0)))
-              (src/panel-visible? (not @src/panel-visible?)))))
+              (shell-state/panel-visible? (not @shell-state/panel-visible?)))))
 
-        ;; Unknown event - ignore
         :else nil))))
 
 (defn- start-app-impl
-  "Internal: Start the application - creates window and runs event loop.
-   Must be called on macOS main thread for SDL3 compatibility."
-  []
+  "Internal: Start the application."
+  [example-key]
   (reset! sys/running? true)
-  (let [win (window/create-window {:title "Skija Demo - Hot Reload with clj-reload"
+  (let [title (str "Skija Demo - " (name example-key))
+        win (window/create-window {:title title
                                    :width 800
                                    :height 600
                                    :resizable? true
                                    :high-dpi? true})]
     (reset! sys/window win)
-    ;; Reset activation state for new window (will activate on first frame)
     (reset! sys/app-activated? false)
-    ;; Initialize window title state for recording indicator
-    (reset! sys/window-title "Skija Demo - Hot Reload with clj-reload")
-    ;; Initialize scale and dimensions from window (Flex sources)
-    (src/scale (window/get-scale win))
+    (reset! sys/window-title title)
+    (reset! scale (window/get-scale win))
     (let [[w h] (window/get-size win)]
-      (src/window-width w)
-      (src/window-height h))
-    ;; Call init once at startup
-    (when-let [init-fn (resolve 'app.core/init)]
+      (reset! window-width w)
+      (reset! window-height h))
+    ;; Switch to the example (loads ns, calls init)
+    (when-let [switch-fn (requiring-resolve 'app.shell.core/switch-example!)]
+      (switch-fn example-key))
+    ;; Initialize shell
+    (when-let [init-fn (requiring-resolve 'app.shell.core/init)]
       (init-fn))
-    ;; Set up event handler and request first frame
+    ;; Set up event loop
     (window/set-event-handler! win (create-event-handler win))
     (window/request-frame! win)
-    ;; Run event loop (blocks)
     (window/run! win)))
 
 (defn start-app
-  "Start the application - creates window and runs event loop.
-   On macOS, dispatches SDL operations to the main thread (thread 0)."
-  []
+  "Start the application with the given example key."
+  [example-key]
   (when-not @sys/running?
     (if (macos?)
-      ;; macOS: dispatch to main thread for SDL3/Cocoa compatibility
-      (macos/run-on-main-thread-sync! start-app-impl)
-      ;; Other platforms: run directly
-      (start-app-impl))))
+      (macos/run-on-main-thread-sync! #(start-app-impl example-key))
+      (start-app-impl example-key))))
 
 (defn -main
   "Entry point for running the application."
   [& args]
   (println "Starting Skija demo...")
   (println "Tip: Connect a REPL and use (user/reload) to hot-reload changes!")
-  (start-app))
+  (let [example-key (if (first args)
+                      (keyword (first args))
+                      :playground/ball-spring)]
+    (start-app example-key)))

@@ -531,7 +531,16 @@
   (when-let [ex (:ex result)]
     (println "Exception:" ex)))
 
-(defn cmd-open []
+(defn cmd-open
+  "Open app with example key.
+   Usage: bb pool.clj open <example-key>
+   Example: bb pool.clj open playground/ball-spring"
+  [example-key]
+  (when-not example-key
+    (println "Error: example key required")
+    (println "Usage: bb pool.clj open <example-key>")
+    (println "Example: bb pool.clj open playground/ball-spring")
+    (System/exit 1))
   ;; Critical section: kill active + acquire must be atomic
   (let [{:keys [jvm pool-size]}
         (with-state-lock
@@ -545,14 +554,16 @@
             ;; Acquire from pool
             (cleanup-dead-jvms!)
             (let [jvm (acquire-jvm!)]
-              {:jvm jvm :pool-size pool-size})))]
+              {:jvm jvm :pool-size pool-size})))
+        ;; Build the open command
+        open-cmd (str "(open :" example-key ")")]
     ;; Outside lock: send command + replenish (can run concurrently with other processes)
     (if jvm
       (do
         (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
-        (println "Sending (open) + replenishing in parallel...")
+        (println "Sending" open-cmd "+ replenishing in parallel...")
         (let [start-time (System/currentTimeMillis)
-              cmd-future (future (send-nrepl-command! (:port jvm) "(open)"))
+              cmd-future (future (send-nrepl-command! (:port jvm) open-cmd))
               ;; ensure-pool-size! uses fine-grained locking internally,
               ;; so this won't block other open commands (lock only held briefly)
               replenish-future (future (ensure-pool-size! pool-size))]
@@ -640,17 +651,20 @@
   (println "Usage: bb pool.clj <command> [options]")
   (println)
   (println "Commands:")
-  (println "  start    Start pool, warm up JVMs")
-  (println "  stop     Kill all JVMs, cleanup")
-  (println "  open     Open app (restarts if already running)")
-  (println "  close    Close app")
-  (println "  status   Show pool state")
-  (println "  connect  Print connection info for active JVM")
-  (println "  help     Show this help")
+  (println "  start              Start pool, warm up JVMs")
+  (println "  stop               Kill all JVMs, cleanup")
+  (println "  open <example>     Open app (restarts if already running)")
+  (println "  close              Close app")
+  (println "  status             Show pool state")
+  (println "  connect            Print connection info for active JVM")
+  (println "  help               Show this help")
   (println)
   (println "Options for 'start':")
   (println "  --spare N  Idle JVMs to keep ready (default: 2, minimum: 1)")
   (println "  --cmd CMD  Command to start JVM (default: auto-detected)")
+  (println)
+  (println "Example:")
+  (println "  bb pool.clj open playground/ball-spring")
   (println)
   (println "Detected platform:" (if windows? "Windows" "Unix"))
   (println "Default command:" (:cmd default-config)))
@@ -672,6 +686,10 @@
           (= "--cmd" arg)
           (recur (next rest) (assoc opts :cmd (first rest)))
 
+          ;; If we already have a command, this might be the example key
+          (and (:command opts) (= (:command opts) "open") (not (str/starts-with? arg "--")))
+          (recur rest (assoc opts :example arg))
+
           :else
           (recur rest (assoc opts :command arg)))))))
 
@@ -680,7 +698,7 @@
     (case (:command opts)
       "start" (cmd-start opts)
       "stop" (cmd-stop)
-      "open" (cmd-open)
+      "open" (cmd-open (:example opts))
       "close" (cmd-close)
       "status" (cmd-status)
       "connect" (cmd-connect)

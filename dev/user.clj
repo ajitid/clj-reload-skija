@@ -2,9 +2,9 @@
   "Development namespace - loaded automatically when REPL starts.
 
    Usage:
-   1. Open the app: (open)
+   1. Open an example: (open :playground/ball-spring)
    2. Open another terminal and connect: clj -M:connect
-   3. Edit ANY source file (config, controls, core, etc.)
+   3. Edit ANY source file
    4. In connected REPL: (reload)
    5. See changes immediately!
 
@@ -15,12 +15,7 @@
   (:require [clj-reload.core :as reload]
             [nrepl.server :as nrepl]))
 
-;; Start nREPL server for hot-reloading (connect from another terminal)
-;; Port can be specified via:
-;;   - NREPL_PORT env var: NREPL_PORT=7888 clj -M:dev:macos-arm64
-;;   - nrepl.port system property: clj -J-Dnrepl.port=7888 -M:dev:macos-arm64
-;; Note: These are custom properties read by THIS code, not built-in nREPL features.
-;; Default: port 0 (random available port, allows multiple JVM instances)
+;; Start nREPL server for hot-reloading
 (defonce nrepl-server
   (let [configured-port (or (some-> (System/getenv "NREPL_PORT") parse-long)
                             (some-> (System/getProperty "nrepl.port") parse-long)
@@ -34,72 +29,60 @@
     server))
 
 ;; Initialize clj-reload
-;; Only 'user' is excluded - app.core uses resolve for all callbacks so it can reload safely
 (reload/init
  {:dirs ["src" "dev"]
   :no-reload '#{user}})
 
 (defn reload
-  "Reload all changed namespaces.
-   - app.config values (blur, shadow) will update
-   - app.state values (sizes) will persist (defonce)"
+  "Reload all changed namespaces."
   []
   (println "Reloading...")
-  ;; Set guard BEFORE unload starts (protects against all namespace reloads)
-  ;; @(resolve ...) - deref var to get atom, then reset! the atom
   (reset! @(resolve 'app.state.system/reloading?) true)
   (try
-    ;; Dispose Flex effects first (before any namespaces are unloaded)
+    ;; Dispose Flex effects first
     (when-let [dispose-fn (resolve 'lib.flex.core/dispose-all-effects!)]
       (dispose-fn))
-    ;; Unmount all BEFORE reload (so will-unmount runs with OLD mixin code)
+    ;; Unmount all BEFORE reload
     (when-let [reset-fn (resolve 'lib.layout.core/reset-mounted-nodes!)]
       (reset-fn))
     (let [result (reload/reload)]
-      ;; Clear error on successful reload
       (reset! @(resolve 'app.state.system/last-reload-error) nil)
       (println "Reloaded:" (:loaded result))
       result)
     (catch Exception e
-      ;; Store compile error so UI can display it
       (reset! @(resolve 'app.state.system/last-reload-error) e)
-      (throw e))  ;; Re-throw for REPL feedback
+      (throw e))
     (finally
-      ;; Always clear guard, even on error
       (reset! @(resolve 'app.state.system/reloading?) false))))
 
 (defn open
-  "Open the application window. For interactive REPL use.
-   When window closes, returns to REPL prompt."
-  []
+  "Open the application window with an example.
+
+   Usage:
+     (open :playground/ball-spring)
+
+   Examples are resolved as:
+     :playground/ball-spring -> app.projects.playground.ball-spring"
+  [example-key]
   (require 'app.core)
   (try
-    ((resolve 'app.core/start-app))
+    ((resolve 'app.core/start-app) example-key)
     (finally
-      ;; Reset running state so app can be reopened
       (reset! @(resolve 'app.state.system/running?) false))))
 
 (defn quick-open
   "Open the application window and exit when closed. For quick demos/testing.
-   Usage: clj -M:dev:macos-arm64 -e \"(quick-open)\""
-  []
-  (open)
+   Usage: clj -M:dev:macos-arm64 -e \"(quick-open :playground/ball-spring)\""
+  [example-key]
+  (open example-key)
   (System/exit 0))
 
 (comment
   ;; Quick REPL commands:
 
-  ;; Open the app
-  (open)
+  ;; Open an example
+  (open :playground/ball-spring)
 
-  ;; After editing config.clj, reload to see changes
+  ;; After editing, reload to see changes
   (reload)
-
-  ;; Check current state values (these persist)
-  @(resolve 'app.state.sources/circles-x)
-  @(resolve 'app.state.sources/circles-y)
-
-  ;; You can also modify persistent state from REPL
-  (reset! @(resolve 'app.state.sources/circles-x) 5)
-  (reset! @(resolve 'app.state.sources/circles-y) 4)
   )
