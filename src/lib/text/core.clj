@@ -178,8 +178,8 @@
          (swap! font-cache assoc cache-key new-font)
          new-font)))))
 
-(defn- resolve-font
-  "Resolve font from options map.
+(defn make-font
+  "Create a Font from options map. Cached.
 
    Options:
      :size       - font size in points (default: 14)
@@ -190,15 +190,21 @@
      :variations - variable font axes {:wght 700 :wdth 85}
      :animated   - if true, configure for smooth animation (default: false)
 
-   Returns: Font instance"
-  [opts]
-  (let [{:keys [size weight slant family typeface variations animated]
-         :or {size 14 weight :normal slant :upright animated false}} opts
-        base-typeface (or typeface (get-typeface family weight slant))
-        final-typeface (if (and variations (seq variations))
-                         (vary base-typeface variations)
-                         base-typeface)]
-    (get-font final-typeface size animated)))
+   Returns: Font instance (cached, do not close)
+
+   Examples:
+     (make-font {:size 24})
+     (make-font {:size 24 :weight :bold})
+     (make-font {:family \"SF Pro\" :size 18 :variations {:wght 600}})"
+  ([] (make-font {}))
+  ([opts]
+   (let [{:keys [size weight slant family typeface variations animated]
+          :or {size 14 weight :normal slant :upright animated false}} opts
+         base-typeface (or typeface (get-typeface family weight slant))
+         final-typeface (if (and variations (seq variations))
+                          (vary base-typeface variations)
+                          base-typeface)]
+     (get-font final-typeface size animated))))
 
 ;; ============================================================
 ;; Alignment
@@ -287,7 +293,7 @@
   ([^Canvas canvas text x y]
    (text canvas text x y {}))
   ([^Canvas canvas text x y opts]
-   (let [font (resolve-font opts)
+   (let [font (make-font opts)
          align (get opts :align :left)
          text-str (str text)
          features (:features opts)

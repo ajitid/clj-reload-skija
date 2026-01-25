@@ -106,7 +106,7 @@
    (let [{:keys [offset spacing]
           :or {offset 0 spacing 0}} opts
          ;; Always use animated font for text-on-path (smooth rotation/movement)
-         font (#'core/resolve-font (assoc opts :animated true))
+         font (core/make-font (assoc opts :animated true))
          [glyphs widths] (get-glyphs-and-widths font (str text))
          measure (PathMeasure. path false)]
      (when-let [rsxforms (compute-rsxforms measure glyphs widths offset spacing)]
@@ -133,7 +133,7 @@
        (text-on-path canvas \"Hello World\" my-path {:size 24}))"
   [text path opts]
   (let [{:keys [offset spacing] :or {offset 0 spacing 0}} opts
-        font (#'core/resolve-font (assoc opts :animated true))
+        font (core/make-font (assoc opts :animated true))
         [glyphs widths] (get-glyphs-and-widths font (str text))
         measure (PathMeasure. path false)
         path-length (.getLength measure)

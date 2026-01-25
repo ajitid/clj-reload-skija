@@ -7,15 +7,6 @@
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
-;; Internal Helpers
-;; ============================================================
-
-(defn- resolve-font
-  "Resolve font from options map. Delegates to core."
-  [opts]
-  (#'core/resolve-font opts))
-
-;; ============================================================
 ;; Text Width
 ;; ============================================================
 
@@ -34,7 +25,7 @@
      (text-width \"Bold\" {:size 24 :weight :bold})"
   ([text] (text-width text {}))
   ([text opts]
-   (let [font (resolve-font opts)]
+   (let [font (core/make-font opts)]
      (.measureTextWidth font (str text)))))
 
 ;; ============================================================
@@ -56,7 +47,7 @@
      (text-bounds \"Hello\" {:size 24})"
   ([text] (text-bounds text {}))
   ([text opts]
-   (let [font (resolve-font opts)
+   (let [font (core/make-font opts)
          ^Rect rect (.measureText font (str text))]
      {:width (.getWidth rect)
       :height (.getHeight rect)
@@ -87,7 +78,7 @@
      (font-metrics {:size 24 :weight :bold})"
   ([] (font-metrics {}))
   ([opts]
-   (let [font (resolve-font opts)
+   (let [font (core/make-font opts)
          ^FontMetrics m (.getMetrics font)]
      {:ascent (.getAscent m)
       :descent (.getDescent m)
