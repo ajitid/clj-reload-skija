@@ -206,6 +206,12 @@
             in-loop-delay? (and (> time-in-iteration perceptual-dur)
                                 (< iteration (dec max-iterations)))
 
+            ;; Is this the last (or only) iteration?
+            ;; Non-looping (max-iterations=1): always true
+            ;; Finite loop last iteration: true
+            ;; Infinite loop (max-iterations=##Inf): always false (correct — no "last" iteration)
+            last-iteration? (>= iteration (dec max-iterations))
+
             ;; Direction (forward or backward based on alternate + reversed)
             base-forward? (if alternate
                             (even? iteration)
@@ -219,23 +225,31 @@
                                 [to from]
                                 [from to])
 
-            ;; Elapsed time within this iteration (clamped to perceptual duration)
-            iteration-elapsed (min time-in-iteration perceptual-dur)
+            ;; Elapsed time within this iteration
+            ;; Last/only iteration: unclamped so spring runs until physics rest
+            ;; Earlier iterations: clamped to perceptual duration
+            iteration-elapsed (if last-iteration?
+                                time-in-iteration
+                                (min time-in-iteration perceptual-dur))
 
             ;; Calculate spring physics for this iteration
             [value vel actual-at-rest?] (calculate-single-spring
                                           eff-from eff-to velocity
                                           omega0 zeta iteration-elapsed)
 
-            ;; At perceptual rest (one period elapsed)
-            at-rest? (>= iteration-elapsed perceptual-dur)
+            ;; At rest?
+            ;; Last/only iteration: physics-based (velocity + displacement thresholds)
+            ;; Earlier iterations: perceptual (one period elapsed)
+            at-rest? (if last-iteration?
+                       actual-at-rest?
+                       (>= iteration-elapsed perceptual-dur))
 
             ;; Phase and done?
             phase (cond
                     (>= iteration max-iterations) :done
-                    (and (not (true? loop))
-                         (>= active-elapsed (+ (* max-iterations perceptual-dur)
-                                               (* (dec max-iterations) loop-delay)))) :done
+                    (and last-iteration?
+                         (not (true? loop))
+                         actual-at-rest?) :done
                     in-loop-delay? :loop-delay
                     :else :active)
             done? (= phase :done)]

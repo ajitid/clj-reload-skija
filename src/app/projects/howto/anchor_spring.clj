@@ -168,10 +168,9 @@
             ;; Format a line for one axis
             fmt (fn [label state]
                   (when state
-                    (format "%s: perceptual-rest=%-5s  actual-rest=%-5s  vel=%7.1f  dist=%6.1f  phase=%s"
+                    (format "%s: at-rest=%-5s  vel=%7.1f  dist=%6.1f  phase=%s"
                             label
                             (str (:at-rest? state))
-                            (str (:actual-at-rest? state))
                             (double (:velocity state))
                             (double (Math/abs (- (:value state) (if (= label "X") @anchor-x @anchor-y))))
                             (name (:phase state)))))
