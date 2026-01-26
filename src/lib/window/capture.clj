@@ -267,16 +267,18 @@
 
 (defn- get-encoder-args
   "Get platform-specific FFmpeg encoder arguments.
-   Returns [encoder-args vf-extra] where vf-extra is prepended to vf filter."
+   Returns [encoder-args vf-extra] where vf-extra is prepended to vf filter.
+   All hardware encoders need explicit bitrate — defaults are unusable:
+   videotoolbox=200kbps, nvenc=2Mbps, vaapi=200kbps, amf=20Mbps."
   [encoder]
   (case encoder
-    "h264_videotoolbox" [["-c:v" "h264_videotoolbox"] nil]
+    "h264_videotoolbox" [["-c:v" "h264_videotoolbox" "-b:v" "10M"] nil]
     "h264_vaapi"        [["-vaapi_device" "/dev/dri/renderD128"
                           "-c:v" "h264_vaapi"] "format=nv12,hwupload,"]
-    "h264_nvenc"        [["-c:v" "h264_nvenc" "-preset" "p4"] nil]
-    "h264_amf"          [["-c:v" "h264_amf" "-quality" "balanced"] nil]
+    "h264_nvenc"        [["-c:v" "h264_nvenc" "-preset" "p4" "-b:v" "10M"] nil]
+    "h264_amf"          [["-c:v" "h264_amf" "-quality" "balanced" "-b:v" "10M"] nil]
     ;; Fallback: libx264
-    [["-c:v" "libx264" "-preset" "fast"] nil]))
+    [["-c:v" "libx264" "-preset" "ultrafast" "-crf" "18"] nil]))
 
 ;; ============================================================
 ;; Encoder Warm-up
@@ -458,9 +460,25 @@
 ;; Screenshot API
 ;; ============================================================
 
+(defn- set-image-dpi!
+  "Set DPI metadata on an image file using sips (macOS only).
+   On Retina displays, DPI = scale * 72 (e.g. 144 for 2x) tells Preview
+   to display the image at logical size instead of physical pixel size."
+  [path scale]
+  (when (and scale (> scale 1.0)
+             (str/includes? (System/getProperty "os.name") "Mac"))
+    (try
+      (let [dpi (str (int (* scale 72)))
+            result (shell/sh "sips" "-s" "dpiWidth" dpi "-s" "dpiHeight" dpi path)]
+        (when (not= 0 (:exit result))
+          (println "[capture] sips DPI set failed:" (:err result))))
+      (catch Exception e
+        (println "[capture] sips error (non-fatal):" (.getMessage e))))))
+
 (defn- save-screenshot!
-  "Save pixels as PNG or JPEG using FFmpeg (supports scaling)."
-  [^ByteBuffer pixels src-width src-height path format opts]
+  "Save pixels as PNG or JPEG using FFmpeg (supports scaling).
+   Sets DPI metadata on macOS so images display at logical size."
+  [^ByteBuffer pixels src-width src-height path format opts scale]
   (try
     (let [{:keys [width height]} opts
           vf (build-vf-filter {:width width :height height})
@@ -485,7 +503,9 @@
       (.close stdin)
       (.waitFor process)
       (if (zero? (.exitValue process))
-        (println "[capture] Screenshot saved:" path)
+        (do
+          (set-image-dpi! path scale)
+          (println "[capture] Screenshot saved:" path))
         (println "[capture] Screenshot failed, FFmpeg exit code:" (.exitValue process))))
     (catch Exception e
       (println "[capture] Screenshot error:" (.getMessage e)))
@@ -555,7 +575,7 @@
                          ["-vaapi_device" "/dev/dri/renderD128"])
                        ["-vf" vf]
                        (if (= encoder "h264_vaapi")
-                         ["-c:v" "h264_vaapi"]
+                         ["-c:v" "h264_vaapi" "-b:v" "10M"]
                          encoder-args)
                        ["-pix_fmt" "yuv420p"
                         recording-path])))
@@ -711,8 +731,9 @@
 
 (defn process-frame!
   "Process frame capture. Call after flush, before swap.
-   This is the main hook called from the render loop."
-  [width height]
+   This is the main hook called from the render loop.
+   scale is the display scale factor (e.g. 2.0 on Retina)."
+  [width height scale]
   (let [{:keys [mode]} @capture-state]
     (when mode
       ;; Ensure PBOs are ready
@@ -724,7 +745,7 @@
           (case mode
             :screenshot
             (let [{:keys [screenshot-path screenshot-format screenshot-opts]} @capture-state]
-              (save-screenshot! pixels width height screenshot-path screenshot-format screenshot-opts)
+              (save-screenshot! pixels width height screenshot-path screenshot-format screenshot-opts scale)
               (swap! capture-state assoc :mode nil))
 
             :video

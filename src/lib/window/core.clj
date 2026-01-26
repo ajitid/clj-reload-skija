@@ -105,7 +105,7 @@
       ;; Zero overhead when not capturing (just an atom deref)
       (when @capture-active?
         (when-let [capture-fn (resolve 'lib.window.capture/process-frame!)]
-          (capture-fn pw ph)))
+          (capture-fn pw ph @(:scale window))))
       (sdl/swap-buffers! handle))))
 
 (defn run!
