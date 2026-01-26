@@ -49,6 +49,7 @@
 (def ^:private pad-x               5)
 (def ^:private pad-y               3)
 (def ^:private cursor-blink-ms     500)
+(def ^:private double-click-ms     500)
 
 ;; ============================================================
 ;; State (persists across hot-reloads)
@@ -70,6 +71,14 @@
 
 ;; Mouse drag state for text selection
 (defonce dragging? (atom false))
+
+;; Multi-click detection
+(defonce last-click-time (atom 0))       ;; System/currentTimeMillis of last mouse-down
+(defonce last-click-field (atom nil))     ;; field-id of last mouse-down
+(defonce click-count (atom 0))           ;; 1=single, 2=double, 3=triple
+
+;; Word-drag anchor: [word-start word-end] set during double-click
+(defonce drag-word-anchor (atom nil))
 
 ;; ============================================================
 ;; Value atom access (matching control panel pattern)
@@ -280,45 +289,97 @@
 (defn handle-mouse-down!
   "Handle a primary mouse button press on a text field.
    Focuses the field (if needed) and positions cursor at the clicked character.
+   Supports double-click (select word) and triple-click (select all).
    Begins drag-to-select by anchoring selection-start."
   [field-id x _y]
   (when-let [va (get @field-registry field-id)]
     (let [text-val (str (deref-value va))
+          len (count text-val)
           [bx _by _bw _bh] (get @field-bounds field-id)
           text-start-x (+ bx pad-x)
           char-pos (x-to-char-pos text-val x text-start-x)
-          already-focused? (= field-id (focused-field-id))]
-      (if already-focused?
-        ;; Already focused — just reposition cursor and start selection anchor
-        (do
-          (swap! focus-state assoc
-                 :cursor-pos char-pos
-                 :selection-start char-pos)
-          (reset-blink!))
-        ;; Not focused — focus at clicked position
-        (do
-          (reset! focus-state {:field-id field-id
-                               :cursor-pos char-pos
-                               :selection-start char-pos})
-          (reset-blink!)
-          (when-let [handle (get-window-handle)]
-            (when-let [start! (requiring-resolve 'lib.window.internal/start-text-input!)]
-              (start! handle)))))
+          already-focused? (= field-id (focused-field-id))
+          ;; Multi-click detection
+          now (System/currentTimeMillis)
+          prev-time @last-click-time
+          prev-field @last-click-field
+          same-target? (and (= field-id prev-field) already-focused?)
+          within-time? (< (- now prev-time) double-click-ms)
+          new-count (if (and same-target? within-time?)
+                      (min 3 (inc @click-count))
+                      1)]
+      (reset! last-click-time now)
+      (reset! last-click-field field-id)
+      (reset! click-count new-count)
+      ;; Ensure focused
+      (when-not already-focused?
+        (reset! focus-state {:field-id field-id
+                             :cursor-pos char-pos
+                             :selection-start char-pos})
+        (reset-blink!)
+        (when-let [handle (get-window-handle)]
+          (when-let [start! (requiring-resolve 'lib.window.internal/start-text-input!)]
+            (start! handle))))
+      ;; Branch on click count
+      (case (int new-count)
+        ;; Single click: position cursor
+        1 (do
+            (swap! focus-state assoc
+                   :cursor-pos char-pos
+                   :selection-start char-pos)
+            (reset! drag-word-anchor nil)
+            (reset-blink!))
+        ;; Double click: select word under cursor
+        2 (let [word-start (word-boundary-left text-val char-pos)
+                word-end (word-boundary-right text-val char-pos)]
+            (swap! focus-state assoc
+                   :cursor-pos word-end
+                   :selection-start word-start)
+            (reset! drag-word-anchor [word-start word-end])
+            (reset-blink!))
+        ;; Triple click: select all
+        3 (do
+            (swap! focus-state assoc
+                   :cursor-pos len
+                   :selection-start 0)
+            (reset! drag-word-anchor nil)
+            (reset-blink!)))
       (reset! dragging? true))))
 
 (defn handle-mouse-move!
   "Handle mouse move during a text-field drag-to-select.
-   Extends selection from the anchor to the character at current x."
+   Extends selection from the anchor to the character at current x.
+   In word-select mode (double-click drag), snaps to word boundaries."
   [x _y]
   (when @dragging?
-    (when-let [{:keys [field-id selection-start]} @focus-state]
+    (when-let [{:keys [field-id]} @focus-state]
       (when-let [va (get @field-registry field-id)]
         (let [text-val (str (deref-value va))
               [bx _by _bw _bh] (get @field-bounds field-id)
               text-start-x (+ bx pad-x)
-              char-pos (x-to-char-pos text-val x text-start-x)]
-          (swap! focus-state assoc :cursor-pos char-pos)
-          (reset-blink!))))))
+              char-pos (x-to-char-pos text-val x text-start-x)
+              cc @click-count]
+          (cond
+            ;; Triple-click: everything selected, drag does nothing
+            (= cc 3) nil
+            ;; Double-click drag: extend by word boundaries
+            (= cc 2)
+            (when-let [[anchor-start anchor-end] @drag-word-anchor]
+              (let [cur-word-start (word-boundary-left text-val char-pos)
+                    cur-word-end (word-boundary-right text-val char-pos)]
+                (if (>= char-pos anchor-end)
+                  (swap! focus-state assoc
+                         :selection-start anchor-start
+                         :cursor-pos cur-word-end)
+                  (swap! focus-state assoc
+                         :selection-start anchor-end
+                         :cursor-pos cur-word-start)))
+              (reset-blink!))
+            ;; Single-click drag: character-level selection
+            :else
+            (do
+              (swap! focus-state assoc :cursor-pos char-pos)
+              (reset-blink!))))))))
 
 (defn handle-mouse-up!
   "Handle mouse button release after a text-field drag.
