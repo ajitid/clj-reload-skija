@@ -118,6 +118,15 @@
   ;; This handles float, float2, float3, float4, etc.
   (* (.getCount uniform-info) 4))
 
+(defn- value-byte-size
+  "Get the byte size needed to encode a Clojure value as floats."
+  [value]
+  (cond
+    (number? value) 4
+    (vector? value) (* (count value) 4)
+    (sequential? value) (* (count (vec value)) 4)
+    :else 4))
+
 (defn- encode-value
   "Encode a Clojure value into the ByteBuffer at current position."
   [^ByteBuffer buffer value]
@@ -149,10 +158,18 @@
   (if (empty? uniforms-map)
     nil
     (let [uniform-infos (.getUniforms effect)
-          ;; Calculate total buffer size from uniform layout
+          ;; Calculate total buffer size from uniform layout + actual values.
+          ;; getCount returns array length (1 for non-array), not component count,
+          ;; so we use the actual value size when available for correct sizing
+          ;; of vector types (float2, float3, float4).
           total-size (reduce (fn [size info]
-                               (max size (+ (.getOffset info)
-                                            (get-uniform-size info))))
+                               (let [name (.getName info)
+                                     value (or (get uniforms-map (keyword name))
+                                               (get uniforms-map name))
+                                     byte-size (if value
+                                                 (value-byte-size value)
+                                                 (get-uniform-size info))]
+                                 (max size (+ (.getOffset info) byte-size))))
                              0
                              uniform-infos)
           buffer (doto (ByteBuffer/allocate (max 4 total-size))
@@ -413,3 +430,187 @@
       :iTime time
       :uSpeed speed
       :uFrequency frequency})))
+
+;; ============================================================
+;; 2D Pattern Shaders (GPU-accelerated)
+;; ============================================================
+
+(defn- argb->premul-float4
+  "Convert 0xAARRGGBB color integer to premultiplied [r g b a] for SkSL uniforms."
+  [color]
+  (let [c (unchecked-int color)
+        a (/ (double (bit-and (unsigned-bit-shift-right c 24) 0xFF)) 255.0)
+        r (* (/ (double (bit-and (unsigned-bit-shift-right c 16) 0xFF)) 255.0) a)
+        g (* (/ (double (bit-and (unsigned-bit-shift-right c 8) 0xFF)) 255.0) a)
+        b (* (/ (double (bit-and c 0xFF)) 255.0) a)]
+    [r g b a]))
+
+;; Pre-compiled effects (SkSL compiled once at load time)
+
+(def ^:private hatch-effect
+  (effect
+    "uniform float uLineWidth;
+     uniform float uSpacing;
+     uniform float uAngle;
+     uniform float4 uColor;
+
+     half4 main(float2 coord) {
+       float cs = cos(uAngle);
+       float sn = sin(uAngle);
+       float p = coord.x * sn - coord.y * cs;
+       float d = mod(p, uSpacing);
+       float dist = min(d, uSpacing - d);
+       float hw = uLineWidth * 0.5;
+       float a = smoothstep(hw + 0.5, hw - 0.5, dist);
+       return half4(uColor * a);
+     }"))
+
+(def ^:private grid-effect
+  (effect
+    "uniform float uLineWidth;
+     uniform float uSpacingX;
+     uniform float uSpacingY;
+     uniform float4 uColor;
+
+     half4 main(float2 coord) {
+       float dx = mod(coord.x, uSpacingX);
+       float dy = mod(coord.y, uSpacingY);
+       float distX = min(dx, uSpacingX - dx);
+       float distY = min(dy, uSpacingY - dy);
+       float dist = min(distX, distY);
+       float hw = uLineWidth * 0.5;
+       float a = smoothstep(hw + 0.5, hw - 0.5, dist);
+       return half4(uColor * a);
+     }"))
+
+(def ^:private dot-effect
+  (effect
+    "uniform float uRadius;
+     uniform float uSpacingX;
+     uniform float uSpacingY;
+     uniform float4 uColor;
+
+     half4 main(float2 coord) {
+       float2 cell = float2(mod(coord.x, uSpacingX), mod(coord.y, uSpacingY));
+       float2 center = float2(uSpacingX * 0.5, uSpacingY * 0.5);
+       float dist = length(cell - center);
+       float a = smoothstep(uRadius + 0.5, uRadius - 0.5, dist);
+       return half4(uColor * a);
+     }"))
+
+(def ^:private cross-hatch-effect
+  (effect
+    "uniform float uLineWidth;
+     uniform float uSpacing;
+     uniform float uAngle1;
+     uniform float uAngle2;
+     uniform float4 uColor;
+
+     half4 main(float2 coord) {
+       float hw = uLineWidth * 0.5;
+       float p1 = coord.x * sin(uAngle1) - coord.y * cos(uAngle1);
+       float d1 = mod(p1, uSpacing);
+       float a1 = smoothstep(hw + 0.5, hw - 0.5, min(d1, uSpacing - d1));
+       float p2 = coord.x * sin(uAngle2) - coord.y * cos(uAngle2);
+       float d2 = mod(p2, uSpacing);
+       float a2 = smoothstep(hw + 0.5, hw - 0.5, min(d2, uSpacing - d2));
+       float a = max(a1, a2);
+       return half4(uColor * a);
+     }"))
+
+(defn hatch-shader
+  "Create a parallel line hatching shader.
+
+   Args:
+     line-width - width of each line in pixels
+     spacing    - distance between line centers in pixels
+     opts       - optional map:
+                  :angle  - line rotation in radians (default 0, horizontal)
+                  :color  - 0xAARRGGBB integer (default 0xFFFFFFFF)
+
+   Examples:
+     (hatch-shader 2 10)                            ;; horizontal white lines
+     (hatch-shader 2 10 {:angle (/ Math/PI 4)})     ;; 45° diagonal
+     (hatch-shader 3 15 {:color 0xFF4A90D9})"
+  ([line-width spacing]
+   (hatch-shader line-width spacing nil))
+  ([line-width spacing opts]
+   (let [{:keys [angle color] :or {angle 0.0 color 0xFFFFFFFF}} opts]
+     (make-shader hatch-effect
+       {:uLineWidth (double line-width)
+        :uSpacing   (double spacing)
+        :uAngle     (double angle)
+        :uColor     (argb->premul-float4 color)}))))
+
+(defn grid-shader
+  "Create a grid pattern shader.
+
+   Args:
+     line-width - width of grid lines in pixels
+     spacing-x  - horizontal cell spacing in pixels
+     spacing-y  - vertical cell spacing in pixels
+     opts       - optional map:
+                  :color - 0xAARRGGBB integer (default 0xFFFFFFFF)
+
+   Examples:
+     (grid-shader 1 20 20)                        ;; white square grid
+     (grid-shader 2 30 15 {:color 0xFF9B59B6})"
+  ([line-width spacing-x spacing-y]
+   (grid-shader line-width spacing-x spacing-y nil))
+  ([line-width spacing-x spacing-y opts]
+   (let [{:keys [color] :or {color 0xFFFFFFFF}} opts]
+     (make-shader grid-effect
+       {:uLineWidth (double line-width)
+        :uSpacingX  (double spacing-x)
+        :uSpacingY  (double spacing-y)
+        :uColor     (argb->premul-float4 color)}))))
+
+(defn dot-pattern-shader
+  "Create a repeating dot pattern shader.
+
+   Args:
+     dot-radius - radius of each dot in pixels
+     spacing-x  - horizontal spacing between dot centers in pixels
+     spacing-y  - vertical spacing between dot centers in pixels
+     opts       - optional map:
+                  :color - 0xAARRGGBB integer (default 0xFFFFFFFF)
+
+   Examples:
+     (dot-pattern-shader 3 15 15)                        ;; white dots
+     (dot-pattern-shader 5 20 20 {:color 0xFFE67E22})"
+  ([dot-radius spacing-x spacing-y]
+   (dot-pattern-shader dot-radius spacing-x spacing-y nil))
+  ([dot-radius spacing-x spacing-y opts]
+   (let [{:keys [color] :or {color 0xFFFFFFFF}} opts]
+     (make-shader dot-effect
+       {:uRadius   (double dot-radius)
+        :uSpacingX (double spacing-x)
+        :uSpacingY (double spacing-y)
+        :uColor    (argb->premul-float4 color)}))))
+
+(defn cross-hatch-shader
+  "Create a cross-hatching shader (two overlaid line sets).
+
+   Args:
+     line-width - width of each line in pixels
+     spacing    - distance between line centers in pixels
+     opts       - optional map:
+                  :angle1 - first line set angle in radians (default π/4)
+                  :angle2 - second line set angle in radians (default -π/4)
+                  :color  - 0xAARRGGBB integer (default 0xFFFFFFFF)
+
+   Examples:
+     (cross-hatch-shader 2 12)                                ;; default 45°/-45°
+     (cross-hatch-shader 1.5 10 {:color 0xFFE74C3C})"
+  ([line-width spacing]
+   (cross-hatch-shader line-width spacing nil))
+  ([line-width spacing opts]
+   (let [pi4 (/ Math/PI 4.0)
+         {:keys [angle1 angle2 color]
+          :or {angle1 pi4 angle2 (- pi4) color 0xFFFFFFFF}} opts]
+     (make-shader cross-hatch-effect
+       {:uLineWidth (double line-width)
+        :uSpacing   (double spacing)
+        :uAngle1    (double angle1)
+        :uAngle2    (double angle2)
+        :uColor     (argb->premul-float4 color)}))))
