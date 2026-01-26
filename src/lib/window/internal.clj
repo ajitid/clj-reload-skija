@@ -107,6 +107,16 @@
       (SDLMouse/SDL_GetGlobalMouseState x y)
       [(int (.get x 0)) (int (.get y 0))])))
 
+(defn get-mouse-position
+  "Get the mouse position relative to the focused window.
+   Returns [x y] in logical pixels."
+  []
+  (with-open [stack (MemoryStack/stackPush)]
+    (let [x (.mallocFloat stack 1)
+          y (.mallocFloat stack 1)]
+      (SDLMouse/SDL_GetMouseState x y)
+      [(.get x 0) (.get y 0)])))
+
 (defn create-window!
   "Create an SDL window with the given options.
    Options:
@@ -399,6 +409,51 @@
    Returns boolean."
   []
   (SDLClipboard/SDL_HasClipboardText))
+
+;; ============================================================
+;; Cursor
+;; ============================================================
+
+(defn create-system-cursor
+  "Create a system cursor from an SDL_SystemCursor enum value.
+   Returns cursor handle (long pointer), 0 on failure."
+  [cursor-id]
+  (SDLMouse/SDL_CreateSystemCursor cursor-id))
+
+(defn set-cursor!
+  "Set the active cursor. Pass a cursor handle from create-system-cursor."
+  [cursor-handle]
+  (SDLMouse/SDL_SetCursor cursor-handle))
+
+(defn get-cursor
+  "Get the active cursor handle."
+  []
+  (SDLMouse/SDL_GetCursor))
+
+(defn get-default-cursor
+  "Get the default cursor handle."
+  []
+  (SDLMouse/SDL_GetDefaultCursor))
+
+(defn destroy-cursor!
+  "Free a cursor created with create-system-cursor."
+  [cursor-handle]
+  (SDLMouse/SDL_DestroyCursor cursor-handle))
+
+(defn hide-cursor!
+  "Hide the mouse cursor."
+  []
+  (SDLMouse/SDL_HideCursor))
+
+(defn show-cursor!
+  "Show the mouse cursor."
+  []
+  (SDLMouse/SDL_ShowCursor))
+
+(defn cursor-visible?
+  "Check if the mouse cursor is currently visible."
+  []
+  (SDLMouse/SDL_CursorVisible))
 
 ;; ============================================================
 ;; Window property setters

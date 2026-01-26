@@ -281,6 +281,12 @@
   []
   (sdl/get-global-mouse-position))
 
+(defn get-mouse-position
+  "Get the mouse position relative to the focused window.
+   Returns [x y] in logical pixels."
+  []
+  (sdl/get-mouse-position))
+
 ;; Window title functions (re-exported from internal)
 (defn set-window-title!
   "Set the window title."
