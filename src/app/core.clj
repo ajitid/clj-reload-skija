@@ -218,19 +218,32 @@
             (copy-current-error-to-clipboard!))
           (when (= (:button event) :primary)
             (if (:pressed? event)
-              (let [_ (when-let [unfocus! (requiring-resolve 'app.ui.text-field/unfocus!)]
-                        (unfocus!))
-                    scrollbar-handler (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-down)
-                    tree-atom (requiring-resolve 'app.projects.playground.ball-spring/current-tree)
-                    scrollbar-hit? (when (and scrollbar-handler tree-atom)
-                                     (scrollbar-handler event {:tree @@tree-atom}))]
-                (when scrollbar-hit?
-                  (window/request-frame! win))
-                (when-not scrollbar-hit?
-                  (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
-                    (handle-fn event {:scale @scale
-                                      :window-width @window-width}))))
+              ;; Mouse down: check text field hit-test BEFORE unfocusing
+              (let [hit-field (when-let [ht (requiring-resolve 'app.ui.text-field/hit-test)]
+                                (ht (:x event) (:y event)))]
+                (if hit-field
+                  ;; Clicked on a text field — position cursor, start drag-select
+                  (when-let [md! (requiring-resolve 'app.ui.text-field/handle-mouse-down!)]
+                    (md! hit-field (:x event) (:y event)))
+                  ;; Clicked outside text fields — unfocus and continue with gestures
+                  (let [_ (when-let [unfocus! (requiring-resolve 'app.ui.text-field/unfocus!)]
+                            (unfocus!))
+                        scrollbar-handler (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-down)
+                        tree-atom (requiring-resolve 'app.projects.playground.ball-spring/current-tree)
+                        scrollbar-hit? (when (and scrollbar-handler tree-atom)
+                                         (scrollbar-handler event {:tree @@tree-atom}))]
+                    (when scrollbar-hit?
+                      (window/request-frame! win))
+                    (when-not scrollbar-hit?
+                      (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
+                        (handle-fn event {:scale @scale
+                                          :window-width @window-width}))))))
+              ;; Mouse up
               (do
+                (when-let [dragging? (requiring-resolve 'app.ui.text-field/dragging-text?)]
+                  (when (dragging?)
+                    (when-let [mu! (requiring-resolve 'app.ui.text-field/handle-mouse-up!)]
+                      (mu!))))
                 (when-let [end-scrollbar (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-up)]
                   (end-scrollbar))
                 (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
@@ -239,15 +252,22 @@
 
         ;; Mouse move event
         (instance? EventMouseMove event)
-        (let [scrollbar-dragging? (when-let [f (requiring-resolve 'lib.gesture.api/scrollbar-dragging?)]
-                                    (f))]
-          (if scrollbar-dragging?
-            (when-let [handle-scrollbar-move (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-move)]
-              (when (handle-scrollbar-move event)
-                (window/request-frame! win)))
-            (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-move)]
-              (handle-fn event {:scale @scale
-                                :window-width @window-width}))))
+        (let [text-dragging? (when-let [f (requiring-resolve 'app.ui.text-field/dragging-text?)]
+                               (f))]
+          (if text-dragging?
+            ;; Drag-to-select in text field
+            (when-let [mm! (requiring-resolve 'app.ui.text-field/handle-mouse-move!)]
+              (mm! (:x event) (:y event)))
+            ;; Normal scrollbar / gesture flow
+            (let [scrollbar-dragging? (when-let [f (requiring-resolve 'lib.gesture.api/scrollbar-dragging?)]
+                                        (f))]
+              (if scrollbar-dragging?
+                (when-let [handle-scrollbar-move (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-move)]
+                  (when (handle-scrollbar-move event)
+                    (window/request-frame! win)))
+                (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-move)]
+                  (handle-fn event {:scale @scale
+                                    :window-width @window-width}))))))
 
         ;; Mouse wheel event
         (instance? EventMouseWheel event)

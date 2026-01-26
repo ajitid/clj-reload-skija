@@ -65,6 +65,12 @@
 ;; Last cursor activity time (game-time in seconds) — for blink reset
 (defonce last-activity-time (atom 0.0))
 
+;; Field bounds: {field-id [bx by bw bh]} — populated during draw
+(defonce field-bounds (atom {}))
+
+;; Mouse drag state for text selection
+(defonce dragging? (atom false))
+
 ;; ============================================================
 ;; Value atom access (matching control panel pattern)
 ;; ============================================================
@@ -237,6 +243,100 @@
   (:field-id @focus-state))
 
 ;; ============================================================
+;; Mouse interaction (cursor positioning & drag-to-select)
+;; ============================================================
+
+(defn hit-test
+  "Test if (x, y) is within any registered text field bounds.
+   Returns the field-id if hit, nil otherwise."
+  [x y]
+  (some (fn [[fid [bx by bw bh]]]
+          (when (and (>= x bx) (<= x (+ bx bw))
+                     (>= y by) (<= y (+ by bh)))
+            fid))
+        @field-bounds))
+
+(defn- x-to-char-pos
+  "Convert a pixel x coordinate to a character index within text.
+   Linear scan measuring prefix widths, picks nearest boundary."
+  [text click-x text-start-x]
+  (let [text-str (str text)
+        len (count text-str)
+        rel-x (- click-x text-start-x)]
+    (if (<= rel-x 0)
+      0
+      (loop [i 0
+             prev-w 0.0]
+        (if (> i len)
+          len
+          (let [w (measure/text-width (subs text-str 0 i) {:size font-size})]
+            (if (< rel-x w)
+              ;; Between prev boundary and this one — pick closest
+              (if (< (- rel-x prev-w) (- w rel-x))
+                (dec i)
+                i)
+              (recur (inc i) w))))))))
+
+(defn handle-mouse-down!
+  "Handle a primary mouse button press on a text field.
+   Focuses the field (if needed) and positions cursor at the clicked character.
+   Begins drag-to-select by anchoring selection-start."
+  [field-id x _y]
+  (when-let [va (get @field-registry field-id)]
+    (let [text-val (str (deref-value va))
+          [bx _by _bw _bh] (get @field-bounds field-id)
+          text-start-x (+ bx pad-x)
+          char-pos (x-to-char-pos text-val x text-start-x)
+          already-focused? (= field-id (focused-field-id))]
+      (if already-focused?
+        ;; Already focused — just reposition cursor and start selection anchor
+        (do
+          (swap! focus-state assoc
+                 :cursor-pos char-pos
+                 :selection-start char-pos)
+          (reset-blink!))
+        ;; Not focused — focus at clicked position
+        (do
+          (reset! focus-state {:field-id field-id
+                               :cursor-pos char-pos
+                               :selection-start char-pos})
+          (reset-blink!)
+          (when-let [handle (get-window-handle)]
+            (when-let [start! (requiring-resolve 'lib.window.internal/start-text-input!)]
+              (start! handle)))))
+      (reset! dragging? true))))
+
+(defn handle-mouse-move!
+  "Handle mouse move during a text-field drag-to-select.
+   Extends selection from the anchor to the character at current x."
+  [x _y]
+  (when @dragging?
+    (when-let [{:keys [field-id selection-start]} @focus-state]
+      (when-let [va (get @field-registry field-id)]
+        (let [text-val (str (deref-value va))
+              [bx _by _bw _bh] (get @field-bounds field-id)
+              text-start-x (+ bx pad-x)
+              char-pos (x-to-char-pos text-val x text-start-x)]
+          (swap! focus-state assoc :cursor-pos char-pos)
+          (reset-blink!))))))
+
+(defn handle-mouse-up!
+  "Handle mouse button release after a text-field drag.
+   Clears dragging state. If no actual selection was made (start == cursor),
+   clears selection-start."
+  []
+  (when @dragging?
+    (reset! dragging? false)
+    (when-let [{:keys [cursor-pos selection-start]} @focus-state]
+      (when (= cursor-pos selection-start)
+        (swap! focus-state assoc :selection-start nil)))))
+
+(defn dragging-text?
+  "Returns true if user is currently drag-selecting in a text field."
+  []
+  @dragging?)
+
+;; ============================================================
 ;; Text Editing
 ;; ============================================================
 
@@ -402,6 +502,8 @@
    - bounds: [x y w h] bounding box for the text input area
    - opts: Map of options (reserved for future use)"
   [^Canvas canvas label text-value field-id [bx by bw bh] opts]
+  ;; Store bounds for mouse hit-testing
+  (swap! field-bounds assoc field-id [bx by bw bh])
   (let [focused? (= field-id (focused-field-id))
         border-color (if focused? border-focused border-unfocused)]
     ;; Draw label above
