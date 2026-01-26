@@ -1,4 +1,4 @@
-(ns app.projects.playground.atlas-demo
+(ns app.projects.howto.atlas-demo
   "Atlas/sprite demo - shows sprite sheet rendering with transforms.
 
    Uses Kenney's Pixel Platformer assets (CC0 license).

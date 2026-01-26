@@ -229,9 +229,9 @@
                   (let [_ (when-let [unfocus! (requiring-resolve 'app.ui.text-field/unfocus!)]
                             (unfocus!))
                         scrollbar-handler (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-down)
-                        tree-atom (requiring-resolve 'app.projects.playground.ball-spring/current-tree)
-                        scrollbar-hit? (when (and scrollbar-handler tree-atom)
-                                         (scrollbar-handler event {:tree @@tree-atom}))]
+                        tree @sys/current-tree
+                        scrollbar-hit? (when (and scrollbar-handler tree)
+                                         (scrollbar-handler event {:tree tree}))]
                     (when scrollbar-hit?
                       (window/request-frame! win))
                     (when-not scrollbar-hit?
@@ -272,10 +272,9 @@
         ;; Mouse wheel event
         (instance? EventMouseWheel event)
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-wheel)]
-          (let [tree-atom (requiring-resolve 'app.projects.playground.ball-spring/current-tree)]
-            (when (handle-fn event {:scale @scale
-                                    :tree (when tree-atom @@tree-atom)})
-              (window/request-frame! win))))
+          (when (handle-fn event {:scale @scale
+                                  :tree @sys/current-tree})
+            (window/request-frame! win)))
 
         ;; Touch events
         (instance? EventFingerDown event)
@@ -424,13 +423,3 @@
     (if (macos?)
       (macos/run-on-main-thread-sync! #(start-app-impl example-key))
       (start-app-impl example-key))))
-
-(defn -main
-  "Entry point for running the application."
-  [& args]
-  (println "Starting Skija demo...")
-  (println "Tip: Connect a REPL and use (user/reload) to hot-reload changes!")
-  (let [example-key (if (first args)
-                      (keyword (first args))
-                      :playground/ball-spring)]
-    (start-app example-key)))

@@ -1,5 +1,5 @@
-(ns app.projects.playground.ball-spring
-  "Ball spring demo - draggable ball with momentum/decay animation.
+(ns app.projects.howto.layout-decay
+  "Layout decay demo - layout system with draggable ball and momentum/decay animation.
 
    Demonstrates:
    - Touch/drag gesture handling
@@ -7,7 +7,7 @@
    - Layout system with virtual scroll
    - Slider controls for grid configuration
 
-   This is the default example shown when no example key is specified."
+   Previously the default example (ball-spring). Renamed to reflect actual content."
   (:require [app.state.system :as sys]
             [app.ui.slider :as slider]
             [lib.flex.core :as flex]
@@ -58,9 +58,6 @@
 (defonce demo-position-history (atom []))
 (defonce demo-decay-x (atom nil))
 
-;; Layout tree for scroll hit testing
-(defonce current-tree (atom nil))
-
 ;; ============================================================
 ;; Computed Grid Positions (auto-recompute on deps change)
 ;; ============================================================
@@ -88,7 +85,7 @@
 (defn register-controls! []
   "Register example-specific controls with the shell control panel."
   (when-let [register! (requiring-resolve 'app.shell.control-panel/register-controls!)]
-    (register! :playground/ball-spring
+    (register! :howto/layout-decay
                [{:id :grid
                  :label "Grid Configuration"
                  :controls [{:type :slider
@@ -109,7 +106,7 @@
 (defn unregister-controls! []
   "Unregister controls from the shell control panel."
   (when-let [unregister! (requiring-resolve 'app.shell.control-panel/unregister-controls!)]
-    (unregister! :playground/ball-spring)))
+    (unregister! :howto/layout-decay)))
 
 ;; ============================================================
 ;; Gesture handlers
@@ -346,7 +343,7 @@
             content-h (calculate-content-height scroll-node)
             content {:w (:w bounds) :h content-h}]
         (scroll/set-dimensions! :scroll-demo viewport content)))
-    (reset! current-tree laid-out)
+    (reset! sys/current-tree laid-out)
     (with-open [fill-paint (Paint.)
                 text-paint (doto (Paint.) (.setColor (unchecked-int 0xFFFFFFFF)))
                 font (Font. (.matchFamilyStyle (FontMgr/getDefault) nil FontStyle/NORMAL) (float 10))]
@@ -365,7 +362,7 @@
 
 (defn init []
   "Called once when example starts."
-  (println "Ball spring demo loaded!")
+  (println "Layout decay demo loaded!")
   ;; Set initial demo position
   (let [demo-y 50]
     (reset! demo-anchor-x (/ @window-width 2))
@@ -415,6 +412,8 @@
 
 (defn cleanup []
   "Called when switching away from this example."
-  (println "Ball spring demo cleanup")
+  (println "Layout decay demo cleanup")
   ;; Unregister controls from control panel
-  (unregister-controls!))
+  (unregister-controls!)
+  ;; Clear shared tree so stale data doesn't leak to next example
+  (reset! sys/current-tree nil))

@@ -2,7 +2,7 @@
   "Development namespace - loaded automatically when REPL starts.
 
    Usage:
-   1. Open an example: (open :playground/ball-spring)
+   1. Open an example: (open :howto/anchor-spring)
    2. Open another terminal and connect: clj -M:connect
    3. Edit ANY source file
    4. In connected REPL: (reload)
@@ -59,10 +59,10 @@
   "Open the application window with an example.
 
    Usage:
-     (open :playground/ball-spring)
+     (open :howto/anchor-spring)
 
    Examples are resolved as:
-     :playground/ball-spring -> app.projects.playground.ball-spring"
+     :howto/anchor-spring -> app.projects.howto.anchor-spring"
   [example-key]
   (require 'app.core)
   (try
@@ -72,7 +72,7 @@
 
 (defn quick-open
   "Open the application window and exit when closed. For quick demos/testing.
-   Usage: clj -M:dev:macos-arm64 -e \"(quick-open :playground/ball-spring)\""
+   Usage: clj -M:dev:macos-arm64 -e \"(quick-open :howto/anchor-spring)\""
   [example-key]
   (open example-key)
   (System/exit 0))
@@ -81,7 +81,7 @@
   ;; Quick REPL commands:
 
   ;; Open an example
-  (open :playground/ball-spring)
+  (open :howto/anchor-spring)
 
   ;; After editing, reload to see changes
   (reload)

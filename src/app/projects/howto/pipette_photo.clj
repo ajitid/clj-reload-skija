@@ -1,4 +1,4 @@
-(ns app.projects.playground.pipette-photo
+(ns app.projects.howto.pipette-photo
   "Interactive pipette on downloaded photos.
 
    Demonstrates:

@@ -1,4 +1,4 @@
-(ns app.projects.playground.offscreen
+(ns app.projects.howto.offscreen
   "Off-screen rendering demo - animated ball with GPU snapshot capture.
 
    Demonstrates:

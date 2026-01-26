@@ -1,4 +1,4 @@
-(ns app.projects.playground.pipette
+(ns app.projects.howto.pipette
   "Pipette / color picker demo - sample colors from a gradient image.
 
    Demonstrates:

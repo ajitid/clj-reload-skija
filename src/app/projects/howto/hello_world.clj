@@ -1,4 +1,4 @@
-(ns app.projects.playground.hello-world
+(ns app.projects.howto.hello-world
   "Hello World - Minimal template with animation and interaction.
 
    Demonstrates:

@@ -1,4 +1,4 @@
-(ns app.projects.playground.animated-list
+(ns app.projects.howto.animated-list
   "Animated list demo - items animate when added, removed, or reordered.
 
    Demonstrates:
