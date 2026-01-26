@@ -13,10 +13,11 @@
 
 (def default-track-color 0xFF555555)
 (def default-fill-color 0xFFFF69B4)
-(def default-text-color 0xFFFFFFFF)
+(def default-label-color 0xFFAAAAAA)
+(def default-value-color 0xFFFFFFFF)
 (def default-height 16)
 (def default-width 160)
-(def default-font-size 18)
+(def default-font-size 14)
 
 ;; ============================================================
 ;; Value calculation
@@ -47,8 +48,9 @@
      - :max (default 100)
      - :track-color (default 0xFF555555)
      - :fill-color (default 0xFFFF69B4)
-     - :text-color (default 0xFFFFFFFF)
-     - :font-size (default 18)
+     - :label-color (default 0xFFAAAAAA)
+     - :value-color (default 0xFFFFFFFF)
+     - :font-size (default 14)
 
    Layout:  Label: <value>
             [====slider====]"
@@ -57,13 +59,18 @@
         max-val (or (:max opts) 100)
         track-color (or (:track-color opts) default-track-color)
         fill-color (or (:fill-color opts) default-fill-color)
-        text-color (or (:text-color opts) default-text-color)
+        label-color (or (:label-color opts) default-label-color)
+        value-color (or (:value-color opts) default-value-color)
         font-size (or (:font-size opts) default-font-size)
         ratio (/ (- value min-val) (- max-val min-val))
         fill-w (* sw ratio)]
-    ;; Draw label and value ABOVE the slider
-    (text/text canvas (str label " " value) sx (- sy 6)
-                   {:size font-size :color text-color})
+    ;; Draw label ABOVE the slider (dimmer color)
+    (text/text canvas (str label ":") sx (- sy 4)
+                   {:size font-size :color label-color})
+    ;; Draw value next to label (brighter color)
+    (let [label-width (* (count label) (/ font-size 1.5))]
+      (text/text canvas (str value) (+ sx label-width 8) (- sy 4)
+                     {:size font-size :color value-color}))
     ;; Draw track
     (with-open [track-paint (doto (Paint.)
                               (.setColor (unchecked-int track-color)))]

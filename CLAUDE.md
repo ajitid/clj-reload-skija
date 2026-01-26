@@ -27,6 +27,41 @@ clj -M:connect
 (reload)                         ;; Hot-reload changed namespaces (from connected REPL)
 ```
 
+## Syntax Validation Tools
+
+**IMPORTANT:** Always validate Clojure files after editing to catch parenthesis imbalances and syntax errors immediately.
+
+### Quick Check (Parenthesis Balance)
+```bash
+./scripts/check-parens.sh src/app/shell/control_panel.clj
+```
+- Fast parenthesis counting (opens vs closes)
+- Shows exact imbalance count
+- Runs full syntax validation if balanced
+
+### Full Validation (Clojure Reader)
+```bash
+bb scripts/validate-syntax.clj src/app/shell/control_panel.clj
+```
+- Uses Babashka's Clojure reader to parse file
+- Catches structural errors beyond simple paren counting
+- Shows exact error location and message
+
+### Workflow for Editing Clojure Files
+```bash
+# 1. Check file before editing
+./scripts/check-parens.sh src/app/projects/playground/ball_spring.clj
+
+# 2. Make your edits with Edit/Write tools
+
+# 3. IMMEDIATELY validate after editing
+./scripts/check-parens.sh src/app/projects/playground/ball_spring.clj
+
+# 4. If validation fails, fix before proceeding
+```
+
+**Why this matters:** Parenthesis imbalances in Clojure files cause cryptic runtime errors. These tools catch issues at edit-time, not runtime.
+
 ## Architecture
 
 Multi-example prototyping system with hot-reloading, organized by projects.

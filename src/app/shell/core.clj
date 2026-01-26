@@ -62,10 +62,13 @@
   (reset! state/current-example example-key))
 
 (defn init-example!
-  "Call the current example's init function."
+  "Call the current example's init function and register default control gestures."
   []
   (when-let [init-fn (example-fn "init")]
-    (init-fn)))
+    (init-fn))
+  ;; Register default control panel gestures (FPS checkbox, etc.)
+  (when-let [register-defaults! (requiring-resolve 'app.shell.control-panel/register-default-control-gestures!)]
+    (register-defaults!)))
 
 ;; ============================================================
 ;; Shell callbacks (delegating to active example)
@@ -105,6 +108,5 @@
   ;; Delegate to example draw
   (when-let [draw-fn (example-fn "draw")]
     (draw-fn canvas width height))
-  ;; Draw debug panel overlay when visible
-  (when @state/panel-visible?
-    (debug-panel/draw-panel canvas width)))
+  ;; Draw debug overlays (FPS display and control panel each check their own visibility)
+  (debug-panel/draw-panel canvas width))

@@ -32,18 +32,6 @@
 (def demo-circle-color 0xFF4A90D9)
 (def demo-anchor-color 0x44FFFFFF)
 
-;; Slider panel config
-(def panel-right-offset 20)
-(def panel-y 100)
-(def panel-width 200)
-(def panel-height 140)
-(def panel-padding 15)
-(def panel-bg-color 0xDD333333)
-(def slider-track-color 0xFF555555)
-(def slider-fill-color 0xFFFF69B4)
-(def slider-height 16)
-(def slider-width 160)
-
 ;; ============================================================
 ;; Example State (persists across hot-reloads)
 ;; ============================================================
@@ -56,8 +44,7 @@
 (flex/defsource circles-x 2)
 (flex/defsource circles-y 2)
 
-;; Slider interaction
-(flex/defsource dragging-slider nil)
+;; Demo circle interaction
 (flex/defsource demo-dragging? false)
 
 ;; Demo circle animation state
@@ -94,47 +81,39 @@
               :radius radius})))))
 
 ;; ============================================================
-;; Slider geometry
+;; ============================================================
+;; Control panel integration
 ;; ============================================================
 
-(defn calc-panel-x [w]
-  (- w panel-width panel-right-offset))
+(defn register-controls! []
+  "Register example-specific controls with the shell control panel."
+  (when-let [register! (requiring-resolve 'app.shell.control-panel/register-controls!)]
+    (register! :playground/ball-spring
+               [{:id :grid
+                 :label "Grid Configuration"
+                 :controls [{:type :slider
+                             :id :grid-x
+                             :label "X"
+                             :value-atom circles-x
+                             :min min-circles
+                             :max max-circles
+                             :height 44}
+                            {:type :slider
+                             :id :grid-y
+                             :label "Y"
+                             :value-atom circles-y
+                             :min min-circles
+                             :max max-circles
+                             :height 44}]}])))
 
-(defn slider-x-bounds [w]
-  [(+ (calc-panel-x w) panel-padding)
-   (+ panel-y panel-padding 30)
-   slider-width
-   slider-height])
-
-(defn slider-y-bounds [w]
-  [(+ (calc-panel-x w) panel-padding)
-   (+ panel-y panel-padding 30 slider-height 30)
-   slider-width
-   slider-height])
+(defn unregister-controls! []
+  "Unregister controls from the shell control panel."
+  (when-let [unregister! (requiring-resolve 'app.shell.control-panel/unregister-controls!)]
+    (unregister! :playground/ball-spring)))
 
 ;; ============================================================
 ;; Gesture handlers
 ;; ============================================================
-
-(defn make-slider-bounds-fn [bounds-sym]
-  (fn [ctx]
-    (when-let [bounds-fn (requiring-resolve bounds-sym)]
-      (bounds-fn (:window-width ctx)))))
-
-(defn make-slider-handlers [slider-key value-source bounds-sym]
-  (let [update! (fn [event]
-                  (let [mx (get-in event [:pointer :x])
-                        ww @window-width]
-                    (when-let [bounds-fn (requiring-resolve bounds-sym)]
-                      (let [bounds (bounds-fn ww)
-                            new-val (slider/value-from-x mx bounds min-circles max-circles)]
-                        (value-source new-val)))))]
-    {:on-drag-start (fn [event]
-                      (dragging-slider slider-key)
-                      (update! event))
-     :on-drag update!
-     :on-drag-end (fn [_] (dragging-slider nil))
-     :on-tap update!}))
 
 (defn demo-circle-bounds-fn [_ctx]
   (let [cx @demo-circle-x
@@ -172,22 +151,67 @@
                               :rate :normal})
                    {:target demo-circle-x}))))})
 
+(defn register-control-panel-gestures! []
+  "Register gesture handlers for example-specific control panel elements."
+  (when-let [register! (requiring-resolve 'lib.gesture.api/register-target!)]
+    (when-let [get-control-bounds (requiring-resolve 'app.shell.control-panel/get-control-bounds)]
+      (when-let [get-group-header-bounds (requiring-resolve 'app.shell.control-panel/get-group-header-bounds)]
+        (when-let [toggle-group! (requiring-resolve 'app.shell.state/toggle-group-collapse!)]
+          (when-let [slider-value-fn (requiring-resolve 'app.ui.slider/value-from-x)]
+            (when-let [panel-visible (requiring-resolve 'app.shell.state/panel-visible?)]
+              ;; Grid configuration group header
+                (register!
+                 {:id :group-header-grid
+                  :layer :overlay
+                  :z-index 20
+                  :bounds-fn (fn [_ctx]
+                               (when @panel-visible
+                                 (get-group-header-bounds :grid)))
+                  :gesture-recognizers [:tap]
+                  :handlers {:on-tap (fn [_] (toggle-group! :grid))}})
+                ;; Grid X slider
+                (register!
+                 {:id :grid-x-slider
+                  :layer :overlay
+                  :z-index 20
+                  :bounds-fn (fn [_ctx]
+                               (when @panel-visible
+                                 (get-control-bounds :grid :grid-x)))
+                  :gesture-recognizers [:drag :tap]
+                  :handlers {:on-drag (fn [event]
+                                        (when-let [bounds (get-control-bounds :grid :grid-x)]
+                                          (let [mx (get-in event [:pointer :x])
+                                                new-val (slider-value-fn mx bounds min-circles max-circles)]
+                                            (circles-x new-val))))
+                             :on-tap (fn [event]
+                                       (when-let [bounds (get-control-bounds :grid :grid-x)]
+                                         (let [mx (get-in event [:pointer :x])
+                                               new-val (slider-value-fn mx bounds min-circles max-circles)]
+                                           (circles-x new-val))))}})
+                ;; Grid Y slider
+                (register!
+                 {:id :grid-y-slider
+                  :layer :overlay
+                  :z-index 20
+                  :bounds-fn (fn [_ctx]
+                               (when @panel-visible
+                                 (get-control-bounds :grid :grid-y)))
+                  :gesture-recognizers [:drag :tap]
+                  :handlers {:on-drag (fn [event]
+                                        (when-let [bounds (get-control-bounds :grid :grid-y)]
+                                          (let [mx (get-in event [:pointer :x])
+                                                new-val (slider-value-fn mx bounds min-circles max-circles)]
+                                            (circles-y new-val))))
+                             :on-tap (fn [event]
+                                       (when-let [bounds (get-control-bounds :grid :grid-y)]
+                                         (let [mx (get-in event [:pointer :x])
+                                               new-val (slider-value-fn mx bounds min-circles max-circles)]
+                                           (circles-y new-val))))}}))))))))
+
 (defn register-gestures! []
   (when-let [register! (requiring-resolve 'lib.gesture.api/register-target!)]
     (when-let [clear! (requiring-resolve 'lib.gesture.api/clear-targets!)]
       (clear!))
-
-    ;; Sliders
-    (doseq [[id value-atom bounds-sym]
-            [[:slider-x circles-x 'app.projects.playground.ball-spring/slider-x-bounds]
-             [:slider-y circles-y 'app.projects.playground.ball-spring/slider-y-bounds]]]
-      (register!
-       {:id id
-        :layer :overlay
-        :z-index 10
-        :bounds-fn (make-slider-bounds-fn bounds-sym)
-        :gesture-recognizers [:drag :tap]
-        :handlers (make-slider-handlers id value-atom bounds-sym)}))
 
     ;; Demo Circle
     (register!
@@ -196,7 +220,10 @@
       :z-index 10
       :bounds-fn demo-circle-bounds-fn
       :gesture-recognizers [:drag]
-      :handlers demo-circle-handlers})))
+      :handlers demo-circle-handlers})
+
+    ;; Control panel gestures
+    (register-control-panel-gestures!)))
 
 ;; ============================================================
 ;; Layout demo
@@ -308,23 +335,6 @@
     (shapes/circle canvas x y demo-circle-radius
                   {:color demo-circle-color})))
 
-(defn draw-slider-panel [^Canvas canvas w]
-  (let [px (calc-panel-x w)
-        py panel-y]
-    ;; Draw panel background
-    (with-open [bg-paint (doto (Paint.)
-                           (.setColor (unchecked-int panel-bg-color)))]
-      (.drawRect canvas (Rect/makeXYWH (float px) (float py) (float panel-width) (float panel-height)) bg-paint))
-    ;; Draw sliders
-    (slider/draw canvas "X:" @circles-x (slider-x-bounds w)
-                 {:min min-circles :max max-circles
-                  :track-color slider-track-color
-                  :fill-color slider-fill-color})
-    (slider/draw canvas "Y:" @circles-y (slider-y-bounds w)
-                 {:min min-circles :max max-circles
-                  :track-color slider-track-color
-                  :fill-color slider-fill-color})))
-
 (defn draw-layout-demo [^Canvas canvas width height offset-y]
   (let [tree (demo-ui height)
         parent-bounds {:x 0 :y offset-y :w width :h height}
@@ -365,6 +375,8 @@
   ;; Initialize scroll state
   (scroll/init! :scroll-demo)
   (scroll/init! :virtual-list)
+  ;; Register controls with control panel
+  (register-controls!)
   ;; Register gesture targets
   (register-gestures!))
 
@@ -399,11 +411,10 @@
     (draw-demo-anchor canvas)
     (draw-demo-circle canvas)
     ;; Draw layout demo below the demo area
-    (draw-layout-demo canvas width (- height demo-area-height) demo-area-height))
-
-  ;; Draw slider panel
-  (draw-slider-panel canvas width))
+    (draw-layout-demo canvas width (- height demo-area-height) demo-area-height)))
 
 (defn cleanup []
   "Called when switching away from this example."
-  (println "Ball spring demo cleanup"))
+  (println "Ball spring demo cleanup")
+  ;; Unregister controls from control panel
+  (unregister-controls!))
