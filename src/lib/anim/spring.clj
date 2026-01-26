@@ -58,9 +58,13 @@
    Arguments:
      duration - perceptual duration in seconds (when key motion completes)
      bounce   - bounciness from -1 to 1 (-1=overdamped, 0=critical, 1=very bouncy)
-     mass     - optional, defaults to 1.0
+     mass     - optional, defaults to 1.0 (independent third knob)
 
    Returns: {:mass :stiffness :damping}
+
+   Mass is not involved in the duration/bounce equations (which assume mass=1).
+   Changing mass gives different physical behavior but stiffness and damping
+   stay fixed. See: https://www.kvin.me/posts/effortless-ui-spring-animations
 
    Example:
      (perceptual->physics 0.5 0.3)      ;; 0.5s bouncy spring
@@ -68,13 +72,12 @@
   ([duration bounce] (perceptual->physics duration bounce 1.0))
   ([duration bounce mass]
    (let [two-pi (* 2 Math/PI)
-         four-pi (* 4 Math/PI)
-         sqrt-mass (Math/sqrt mass)]
+         four-pi (* 4 Math/PI)]
      {:mass mass
-      :stiffness (* mass (Math/pow (/ two-pi duration) 2))
+      :stiffness (Math/pow (/ two-pi duration) 2)
       :damping (if (>= bounce 0)
-                 (/ (* sqrt-mass (- 1 bounce) four-pi) duration)
-                 (/ (* sqrt-mass four-pi) (* duration (+ 1 bounce))))})))
+                 (/ (* (- 1 bounce) four-pi) duration)
+                 (/ four-pi (* duration (+ 1 bounce))))})))
 
 (defn spring-perceptual-duration
   "Calculate perceptual duration from physics params.
