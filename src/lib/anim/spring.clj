@@ -99,54 +99,67 @@
         x0 (- to from)
         v0 (- initial-velocity)  ;; wobble uses negative velocity in equations
 
-        ;; Calculate position and velocity based on damping type
-        [oscillation vel]
+        ;; Calculate position, velocity, and at-rest? based on damping type
+        ;; Each branch returns [oscillation vel actual-at-rest?]
+        [oscillation vel actual-at-rest?]
         (cond
           ;; Underdamped (zeta < 1): oscillates with exponential decay
+          ;; Uses envelope-based rest check: bounds peak velocity for all future
+          ;; oscillations. The envelope e^(-zeta*omega0*t) is monotonically
+          ;; decreasing — once true, stays true forever (no flickering).
           (< zeta 1)
           (let [omega1 (* omega0 (Math/sqrt (- 1.0 (* zeta zeta))))
                 envelope (Math/exp (- (* zeta omega0 elapsed)))
                 sin-val (Math/sin (* omega1 elapsed))
-                cos-val (Math/cos (* omega1 elapsed))]
-            [(- to
-                (* envelope
-                   (+ (* (/ (+ v0 (* zeta omega0 x0)) omega1) sin-val)
-                      (* x0 cos-val))))
-             (- (* zeta omega0 envelope
-                   (+ (* (/ (+ v0 (* zeta omega0 x0)) omega1) sin-val)
-                      (* x0 cos-val)))
-                (* envelope
-                   (- (* (/ (+ v0 (* zeta omega0 x0)) 1) cos-val)
-                      (* omega1 x0 sin-val))))])
+                cos-val (Math/cos (* omega1 elapsed))
+                ;; Oscillation coefficients (used in position, velocity, AND rest check)
+                A (/ (+ v0 (* zeta omega0 x0)) omega1)
+                B x0
+                ;; Position
+                oscillation (- to (* envelope (+ (* A sin-val) (* B cos-val))))
+                ;; Velocity (derivative of position)
+                vel (- (* zeta omega0 envelope (+ (* A sin-val) (* B cos-val)))
+                       (* envelope (- (* (+ v0 (* zeta omega0 x0)) cos-val)
+                                      (* omega1 x0 sin-val))))
+                ;; Envelope-based rest: peak velocity bounded by omega1 * C * envelope
+                ;; where C = sqrt(A^2 + B^2) is the amplitude of the oscillatory part.
+                ;; Monotonically decreasing — once true, stays true.
+                at-rest? (<= (* omega1 (Math/sqrt (+ (* A A) (* B B))) envelope)
+                             velocity-threshold)]
+            [oscillation vel at-rest?])
 
           ;; Critically damped (zeta = 1): fastest approach without overshoot
+          ;; No oscillation, so instantaneous check is already monotonic.
           (= zeta 1.0)
-          (let [envelope (Math/exp (- (* omega0 elapsed)))]
-            [(- to (* envelope (+ x0 (* (+ v0 (* omega0 x0)) elapsed))))
-             (* envelope
-                (+ (* v0 (- (* elapsed omega0) 1))
-                   (* elapsed x0 omega0 omega0)))])
+          (let [envelope (Math/exp (- (* omega0 elapsed)))
+                oscillation (- to (* envelope (+ x0 (* (+ v0 (* omega0 x0)) elapsed))))
+                vel (* envelope
+                       (+ (* v0 (- (* elapsed omega0) 1))
+                          (* elapsed x0 omega0 omega0)))
+                at-rest? (and (<= (Math/abs vel) velocity-threshold)
+                              (<= (Math/abs (- to oscillation)) displacement-threshold))]
+            [oscillation vel at-rest?])
 
           ;; Overdamped (zeta > 1): slow exponential approach
+          ;; No oscillation, so instantaneous check is already monotonic.
           :else
           (let [omega2 (* omega0 (Math/sqrt (- (* zeta zeta) 1.0)))
                 envelope (Math/exp (- (* zeta omega0 elapsed)))
                 sinh-val (Math/sinh (* omega2 elapsed))
-                cosh-val (Math/cosh (* omega2 elapsed))]
-            [(- to
-                (* (/ envelope omega2)
-                   (+ (* (+ v0 (* zeta omega0 x0)) sinh-val)
-                      (* omega2 x0 cosh-val))))
-             (- (* (/ (* envelope zeta omega0) omega2)
-                   (+ (* (+ v0 (* zeta omega0 x0)) sinh-val)
-                      (* x0 omega2 cosh-val)))
-                (* (/ envelope omega2)
-                   (+ (* omega2 (+ v0 (* zeta omega0 x0)) cosh-val)
-                      (* omega2 omega2 x0 sinh-val))))]))
-
-        ;; Check if spring is at rest
-        actual-at-rest? (and (<= (Math/abs vel) velocity-threshold)
-                             (<= (Math/abs (- to oscillation)) displacement-threshold))]
+                cosh-val (Math/cosh (* omega2 elapsed))
+                oscillation (- to
+                               (* (/ envelope omega2)
+                                  (+ (* (+ v0 (* zeta omega0 x0)) sinh-val)
+                                     (* omega2 x0 cosh-val))))
+                vel (- (* (/ (* envelope zeta omega0) omega2)
+                          (+ (* (+ v0 (* zeta omega0 x0)) sinh-val)
+                             (* x0 omega2 cosh-val)))
+                       (* (/ envelope omega2)
+                          (+ (* omega2 (+ v0 (* zeta omega0 x0)) cosh-val)
+                             (* omega2 omega2 x0 sinh-val))))
+                at-rest? (and (<= (Math/abs vel) velocity-threshold)
+                              (<= (Math/abs (- to oscillation)) displacement-threshold))]
+            [oscillation vel at-rest?]))]
 
     [(if actual-at-rest? to oscillation)
      (if actual-at-rest? 0.0 vel)
