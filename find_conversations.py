@@ -274,20 +274,29 @@ def search_conversations(keyword, project_path=None):
 
 def export_conversation(session_id, output_path=None):
     """Export a specific conversation to markdown with TOC."""
-    # Find the conversation file
-    conv_file = None
+    # Find the conversation file (supports prefix matching)
+    matches = []
     for project_dir in PROJECTS_DIR.iterdir():
         if not project_dir.is_dir():
             continue
-        for jsonl_file in project_dir.glob(f"{session_id}.jsonl"):
-            conv_file = jsonl_file
-            break
-        if conv_file:
-            break
+        for jsonl_file in project_dir.glob("*.jsonl"):
+            if jsonl_file.stem.startswith('agent-'):
+                continue
+            if jsonl_file.stem == session_id or jsonl_file.stem.startswith(session_id):
+                matches.append(jsonl_file)
 
-    if not conv_file:
+    if not matches:
         print(f"Conversation {session_id} not found")
         return
+
+    if len(matches) > 1:
+        print(f"Ambiguous prefix '{session_id}', matches {len(matches)} conversations:")
+        for m in matches:
+            print(f"  {m.stem}")
+        print("\nUse a longer prefix to narrow it down.")
+        return
+
+    conv_file = matches[0]
 
     conv = parse_conversation(conv_file)
     if not conv:
