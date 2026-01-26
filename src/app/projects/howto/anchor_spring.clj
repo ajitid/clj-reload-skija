@@ -8,7 +8,9 @@
    - Gesture handling (drag recognizer)"
   (:require [app.state.system :as sys]
             [lib.flex.core :as flex]
-            [lib.graphics.shapes :as shapes])
+            [lib.graphics.shapes :as shapes]
+            [lib.anim.spring :as spring]
+            [lib.text.core :as text])
   (:import [io.github.humbleui.skija Canvas]))
 
 ;; ============================================================
@@ -42,6 +44,10 @@
 (defonce velocity-y (atom 0.0))
 (defonce position-history (atom []))
 
+;; Spring refs for debug display (stored on drag-end, queryable after registry removes them)
+(defonce spring-x-ref (atom nil))
+(defonce spring-y-ref (atom nil))
+
 ;; ============================================================
 ;; Gesture handlers
 ;; ============================================================
@@ -62,6 +68,9 @@
        (when-let [cancel! (requiring-resolve 'lib.anim.registry/cancel!)]
          (cancel! :anchor-spring-x)
          (cancel! :anchor-spring-y))
+       ;; Clear spring refs for debug display
+       (reset! spring-x-ref nil)
+       (reset! spring-y-ref nil)
        ;; Record offset so ball doesn't jump to cursor
        (reset! drag-offset-x (- @circle-x mx))
        (reset! drag-offset-y (- @circle-y my))
@@ -89,17 +98,18 @@
                ax @anchor-x
                ay @anchor-y
                vx @velocity-x
-               vy @velocity-y]
-           (animate! :anchor-spring-x
-                     (spring-fn {:from cx :to ax
-                                 :velocity vx
-                                 :stiffness 180 :damping 12})
-                     {:target circle-x})
-           (animate! :anchor-spring-y
-                     (spring-fn {:from cy :to ay
-                                 :velocity vy
-                                 :stiffness 180 :damping 12})
-                     {:target circle-y})))))})
+               vy @velocity-y
+               sx (spring-fn {:from cx :to ax
+                               :velocity vx
+                               :stiffness 180 :damping 12})
+               sy (spring-fn {:from cy :to ay
+                               :velocity vy
+                               :stiffness 180 :damping 12})]
+           ;; Store spring refs for debug display
+           (reset! spring-x-ref sx)
+           (reset! spring-y-ref sy)
+           (animate! :anchor-spring-x sx {:target circle-x})
+           (animate! :anchor-spring-y sy {:target circle-y})))))})
 
 (defn register-gestures! []
   (when-let [register! (requiring-resolve 'lib.gesture.api/register-target!)]
@@ -145,6 +155,39 @@
     (shapes/circle canvas cx cy circle-radius
                    {:color circle-color})))
 
+(defn draw-debug [^Canvas canvas width height]
+  (let [sx @spring-x-ref
+        sy @spring-y-ref
+        font-size 13
+        line-h 18
+        pad 12
+        base-y (- height pad)]
+    (if (or sx sy)
+      (let [state-x (when sx (spring/spring-now sx))
+            state-y (when sy (spring/spring-now sy))
+            ;; Format a line for one axis
+            fmt (fn [label state]
+                  (when state
+                    (format "%s: perceptual-rest=%-5s  actual-rest=%-5s  vel=%7.1f  dist=%6.1f  phase=%s"
+                            label
+                            (str (:at-rest? state))
+                            (str (:actual-at-rest? state))
+                            (double (:velocity state))
+                            (double (Math/abs (- (:value state) (if (= label "X") @anchor-x @anchor-y))))
+                            (name (:phase state)))))
+            line-y (fmt "Y" state-y)
+            line-x (fmt "X" state-x)]
+        (when line-y
+          (text/text canvas line-y pad base-y
+                     {:size font-size :color 0x99FFFFFF :features "tnum"}))
+        (when line-x
+          (text/text canvas line-x pad (- base-y line-h)
+                     {:size font-size :color 0x99FFFFFF :features "tnum"})))
+      ;; No springs active
+      (text/text canvas "No spring active (drag and release ball)"
+                 pad base-y
+                 {:size font-size :color 0x55FFFFFF}))))
+
 ;; ============================================================
 ;; Example Interface
 ;; ============================================================
@@ -184,7 +227,9 @@
   ;; Draw
   (draw-anchor canvas)
   (draw-connection-line canvas)
-  (draw-ball canvas))
+  (draw-ball canvas)
+  ;; Debug: show perceptual vs actual rest state
+  (draw-debug canvas width height))
 
 (defn cleanup []
   "Called when switching away from this example."
