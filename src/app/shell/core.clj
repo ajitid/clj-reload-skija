@@ -3,10 +3,11 @@
 
    The shell provides:
    - Example resolution (:playground/ball-spring -> ns symbol)
-   - Example switching with cleanup
+   - Example loading and init
    - Debug panel overlay
 
-   Examples provide init/tick/draw/cleanup callbacks."
+   Examples provide init/tick/draw/cleanup callbacks.
+   Each launch is a fresh process — no switching between examples."
   (:require [app.shell.state :as state]
             [app.shell.debug-panel :as debug-panel]
             [app.state.system :as sys])
@@ -45,20 +46,24 @@
 ;; Example lifecycle
 ;; ============================================================
 
-(defn switch-example!
-  "Switch to a new example. Calls cleanup on old, init on new."
+(defn read-example-config
+  "Read the window-config var from an example namespace.
+   Returns the config map or nil if the example doesn't define one."
   [example-key]
-  ;; Cleanup old example
-  (when-let [old-key @state/current-example]
-    (when-let [cleanup-fn (example-fn "cleanup")]
-      (cleanup-fn))
-    ;; Clear gesture targets
-    (when-let [clear! (requiring-resolve 'lib.gesture.api/clear-targets!)]
-      (clear!)))
-  ;; Load and init new example
+  (let [ns-sym (resolve-example-ns example-key)
+        config-sym (symbol (str ns-sym) "window-config")]
+    (when-let [config-var (resolve config-sym)]
+      @config-var)))
+
+(defn load-example!
+  "Load an example namespace and track it as the current example."
+  [example-key]
   (require-example! example-key)
-  (reset! state/current-example example-key)
-  ;; Call example init
+  (reset! state/current-example example-key))
+
+(defn init-example!
+  "Call the current example's init function."
+  []
   (when-let [init-fn (example-fn "init")]
     (init-fn)))
 
@@ -68,15 +73,12 @@
 
 (defn init
   "Shell init - called once at startup.
-   Delegates to active example's init."
+   Sets up time source. Does NOT call example init (caller does that)."
   []
   (println "Shell initialized")
   ;; Point all libs to use game-time
   (when-let [time-source (requiring-resolve 'lib.time/time-source)]
-    (reset! @time-source #(deref sys/game-time)))
-  ;; Initialize current example if set
-  (when-let [init-fn (example-fn "init")]
-    (init-fn)))
+    (reset! @time-source #(deref sys/game-time))))
 
 (defn tick
   "Shell tick - called every frame.

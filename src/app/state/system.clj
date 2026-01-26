@@ -15,6 +15,7 @@
 (defonce running? (atom false))
 (defonce reloading? (atom false))
 (defonce app-activated? (atom false))
+(defonce recording? (atom false))
 
 ;; ============================================================
 ;; Error handling
@@ -24,10 +25,25 @@
 (defonce last-runtime-error (atom nil))
 
 ;; ============================================================
-;; Window title
+;; Window configuration
 ;; ============================================================
 
-(defonce window-title (atom "Skija Demo"))
+(def default-window-config
+  "Default window properties. Examples can override any subset via
+   a `window-config` var in their namespace."
+  {:title          "Skija Demo"
+   :width          800
+   :height         600
+   :resizable?     true
+   :always-on-top? false
+   :bordered?      true
+   :fullscreen?    false
+   :opacity        1.0
+   :min-size       nil       ;; [w h] or nil
+   :max-size       nil       ;; [w h] or nil
+   :position       nil})     ;; [x y] or nil (centered)
+
+(defonce window-config (atom default-window-config))
 
 ;; ============================================================
 ;; Game time

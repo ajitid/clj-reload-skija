@@ -6,8 +6,11 @@
    - Shell wraps examples and provides debug overlay
    - Examples provide init/tick/draw/cleanup callbacks
 
-   The window infrastructure lives here while the shell manages
-   example lifecycle and debug panel."
+   Window configuration:
+   - Default config lives in app.state.system/default-window-config
+   - Examples override via (def window-config {:width 1100 ...})
+   - Runtime changes via (patch-window! {:opacity 0.5})
+   - Title is composed: base-title + \" - \" + example-name + \" [Recording]\""
   (:require [app.shell.state :as shell-state]
             [app.state.system :as sys]
             [clojure.string :as str]
@@ -22,7 +25,7 @@
             EventKey EventFrameSkija EventFingerDown EventFingerMove EventFingerUp]))
 
 ;; ============================================================
-;; Window state (local to this module)
+;; Window state (local to this module — tracks actual window)
 ;; ============================================================
 
 (defonce window-width (atom 800))
@@ -55,23 +58,99 @@
     (err/copy-to-clipboard! (err/format-error-for-clipboard err))))
 
 ;; ============================================================
+;; Title composition
+;; ============================================================
+
+(defn- compose-display-title
+  "Compose the displayed window title from config, example name, and recording state."
+  []
+  (let [base (:title @sys/window-config)
+        example-key @shell-state/current-example
+        example-name (when example-key (name example-key))]
+    (cond-> base
+      example-name (str " - " example-name)
+      @sys/recording? (str " [Recording]"))))
+
+(defn update-display-title!
+  "Recompute and set the window title from current state."
+  []
+  (when-let [win @sys/window]
+    (window/set-window-title! win (compose-display-title))))
+
+;; ============================================================
+;; Window configuration — runtime patching
+;; ============================================================
+
+(defn patch-window!
+  "Patch the window configuration at runtime.
+   Merges patch into current config and applies changes to the SDL window.
+
+   Call with any subset of config keys:
+     (patch-window! {:width 1100 :height 830})
+     (patch-window! {:title \"My App\"})
+     (patch-window! {:opacity 0.8 :always-on-top? true})"
+  [patch]
+  (when-let [win @sys/window]
+    (let [old @sys/window-config
+          new-config (swap! sys/window-config merge patch)]
+      ;; Size
+      (when (or (not= (:width old) (:width new-config))
+                (not= (:height old) (:height new-config)))
+        (window/set-size! win (:width new-config) (:height new-config))
+        (reset! window-width (:width new-config))
+        (reset! window-height (:height new-config)))
+      ;; Title
+      (when (not= (:title old) (:title new-config))
+        (update-display-title!))
+      ;; Position
+      (when (and (:position new-config)
+                 (not= (:position old) (:position new-config)))
+        (let [[x y] (:position new-config)]
+          (window/set-position! win x y)))
+      ;; Resizable
+      (when (not= (:resizable? old) (:resizable? new-config))
+        (window/set-resizable! win (:resizable? new-config)))
+      ;; Always on top
+      (when (not= (:always-on-top? old) (:always-on-top? new-config))
+        (window/set-always-on-top! win (:always-on-top? new-config)))
+      ;; Bordered
+      (when (not= (:bordered? old) (:bordered? new-config))
+        (window/set-bordered! win (:bordered? new-config)))
+      ;; Fullscreen
+      (when (not= (:fullscreen? old) (:fullscreen? new-config))
+        (window/set-fullscreen! win (:fullscreen? new-config)))
+      ;; Opacity
+      (when (not= (:opacity old) (:opacity new-config))
+        (window/set-opacity! win (:opacity new-config)))
+      ;; Min size
+      (when (not= (:min-size old) (:min-size new-config))
+        (if-let [[mw mh] (:min-size new-config)]
+          (window/set-minimum-size! win mw mh)
+          (window/set-minimum-size! win 0 0)))
+      ;; Max size
+      (when (not= (:max-size old) (:max-size new-config))
+        (if-let [[mw mh] (:max-size new-config)]
+          (window/set-maximum-size! win mw mh)
+          (window/set-maximum-size! win 0 0)))
+      new-config)))
+
+;; ============================================================
 ;; Game loop infrastructure
 ;; ============================================================
 
 (defn create-event-handler
   "Create an event handler for the window."
   [win]
-  (let [last-time (atom (System/nanoTime))
-        recording-active? (atom false)]
+  (let [last-time (atom (System/nanoTime))]
     (fn [event]
       (cond
         ;; Close event
         (instance? EventClose event)
         (do
-          (when @recording-active?
+          (when @sys/recording?
             (when-let [stop-recording! (requiring-resolve 'lib.window.capture/stop-recording!)]
               (stop-recording!))
-            (reset! recording-active? false))
+            (reset! sys/recording? false))
           (reset! sys/running? false)
           (window/close! win))
 
@@ -212,12 +291,12 @@
 
             ;; Ctrl+R toggles recording
             (when (and (= key 0x72) (pos? (bit-and modifiers 0x00C0)))
-              (if @recording-active?
+              (if @sys/recording?
                 (do
                   (when-let [stop-recording! (requiring-resolve 'lib.window.capture/stop-recording!)]
                     (stop-recording!))
-                  (reset! recording-active? false)
-                  (window/set-window-title! @sys/window @sys/window-title)
+                  (reset! sys/recording? false)
+                  (update-display-title!)
                   (println "[keybind] Recording stopped"))
                 (do
                   (when-let [start-recording! (requiring-resolve 'lib.window.capture/start-recording!)]
@@ -225,9 +304,8 @@
                           formatter (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd_HH-mm-ss")
                           filename (str "recording_" (.format timestamp formatter) ".mp4")]
                       (start-recording! filename {:fps 60})
-                      (reset! recording-active? true)
-                      (window/set-window-title! @sys/window
-                                               (str @sys/window-title " [Recording]"))
+                      (reset! sys/recording? true)
+                      (update-display-title!)
                       (println "[keybind] Recording started:" filename))))))
 
             ;; Ctrl+` toggles panel
@@ -236,33 +314,76 @@
 
         :else nil))))
 
+;; ============================================================
+;; Application startup
+;; ============================================================
+
 (defn- start-app-impl
-  "Internal: Start the application."
+  "Internal: Start the application.
+
+   Startup sequence:
+   1. Load example namespace
+   2. Read example's window-config, merge with defaults
+   3. Create window with merged config
+   4. Apply post-creation properties (bordered, fullscreen, etc.)
+   5. Initialize shell (time source)
+   6. Initialize example (calls init)
+   7. Start event loop"
   [example-key]
   (reset! sys/running? true)
-  (let [title (str "Skija Demo - " (name example-key))
-        win (window/create-window {:title title
-                                   :width 800
-                                   :height 600
-                                   :resizable? true
-                                   :high-dpi? true})]
-    (reset! sys/window win)
-    (reset! sys/app-activated? false)
-    (reset! sys/window-title title)
-    (reset! scale (window/get-scale win))
-    (let [[w h] (window/get-size win)]
-      (reset! window-width w)
-      (reset! window-height h))
-    ;; Switch to the example (loads ns, calls init)
-    (when-let [switch-fn (requiring-resolve 'app.shell.core/switch-example!)]
-      (switch-fn example-key))
-    ;; Initialize shell
-    (when-let [init-fn (requiring-resolve 'app.shell.core/init)]
-      (init-fn))
-    ;; Set up event loop
-    (window/set-event-handler! win (create-event-handler win))
-    (window/request-frame! win)
-    (window/run! win)))
+
+  ;; 1. Load example namespace
+  (when-let [load-fn (requiring-resolve 'app.shell.core/load-example!)]
+    (load-fn example-key))
+
+  ;; 2. Read example config, merge with defaults
+  (let [example-config (when-let [read-fn (requiring-resolve 'app.shell.core/read-example-config)]
+                         (read-fn example-key))
+        config (merge sys/default-window-config example-config)]
+    (reset! sys/window-config config)
+
+    ;; 3. Create window with merged config
+    (let [display-title (compose-display-title)
+          win-opts (cond-> {:title        display-title
+                            :width        (:width config)
+                            :height       (:height config)
+                            :resizable?   (:resizable? config)
+                            :high-dpi?    true
+                            :always-on-top? (:always-on-top? config)}
+                     (:position config) (assoc :x (first (:position config))
+                                               :y (second (:position config))))
+          win (window/create-window win-opts)]
+      (reset! sys/window win)
+      (reset! sys/app-activated? false)
+      (reset! scale (window/get-scale win))
+      (let [[w h] (window/get-size win)]
+        (reset! window-width w)
+        (reset! window-height h))
+
+      ;; 4. Apply post-creation properties
+      (when-not (:bordered? config)
+        (window/set-bordered! win false))
+      (when (:fullscreen? config)
+        (window/set-fullscreen! win true))
+      (when (not= 1.0 (:opacity config))
+        (window/set-opacity! win (:opacity config)))
+      (when-let [[mw mh] (:min-size config)]
+        (window/set-minimum-size! win mw mh))
+      (when-let [[mw mh] (:max-size config)]
+        (window/set-maximum-size! win mw mh))
+
+      ;; 5. Initialize shell (time source, etc.)
+      (when-let [init-fn (requiring-resolve 'app.shell.core/init)]
+        (init-fn))
+
+      ;; 6. Initialize example
+      (when-let [init-example-fn (requiring-resolve 'app.shell.core/init-example!)]
+        (init-example-fn))
+
+      ;; 7. Start event loop
+      (window/set-event-handler! win (create-event-handler win))
+      (window/request-frame! win)
+      (window/run! win))))
 
 (defn start-app
   "Start the application with the given example key."

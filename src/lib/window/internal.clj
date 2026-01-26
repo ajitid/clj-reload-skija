@@ -374,6 +374,55 @@
   []
   (SDLClipboard/SDL_HasClipboardText))
 
+;; ============================================================
+;; Window property setters
+;; ============================================================
+
+(defn set-window-size!
+  "Set the window size in logical pixels."
+  [window width height]
+  (SDLVideo/SDL_SetWindowSize window width height))
+
+(defn set-window-position!
+  "Set the window position in screen coordinates."
+  [window x y]
+  (SDLVideo/SDL_SetWindowPosition window x y))
+
+(defn set-window-resizable!
+  "Enable or disable window resizing."
+  [window resizable?]
+  (SDLVideo/SDL_SetWindowResizable window (boolean resizable?)))
+
+(defn set-window-bordered!
+  "Enable or disable window border/decorations."
+  [window bordered?]
+  (SDLVideo/SDL_SetWindowBordered window (boolean bordered?)))
+
+(defn set-window-always-on-top!
+  "Enable or disable always-on-top."
+  [window always-on-top?]
+  (SDLVideo/SDL_SetWindowAlwaysOnTop window (boolean always-on-top?)))
+
+(defn set-window-fullscreen!
+  "Enable or disable fullscreen mode."
+  [window fullscreen?]
+  (SDLVideo/SDL_SetWindowFullscreen window (boolean fullscreen?)))
+
+(defn set-window-minimum-size!
+  "Set the minimum window size. Pass 0,0 to remove constraint."
+  [window width height]
+  (SDLVideo/SDL_SetWindowMinimumSize window width height))
+
+(defn set-window-maximum-size!
+  "Set the maximum window size. Pass 0,0 to remove constraint."
+  [window width height]
+  (SDLVideo/SDL_SetWindowMaximumSize window width height))
+
+(defn set-window-opacity!
+  "Set window opacity (0.0 = transparent, 1.0 = opaque)."
+  [window opacity]
+  (SDLVideo/SDL_SetWindowOpacity window (float opacity)))
+
 (defn cleanup!
   "Clean up SDL resources.
    On macOS, we must pump events after destroying the window to let Cocoa

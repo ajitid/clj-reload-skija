@@ -180,6 +180,61 @@
         (layer/cleanup!)
         (sdl/cleanup! (:gl-context window) handle)))))
 
+;; ============================================================
+;; Window property setters
+;; ============================================================
+
+(defn set-size!
+  "Set the window size in logical pixels."
+  [^Window window width height]
+  (sdl/set-window-size! (:handle window) width height)
+  (reset! (:width window) width)
+  (reset! (:height window) height))
+
+(defn set-position!
+  "Set the window position in screen coordinates."
+  [^Window window x y]
+  (sdl/set-window-position! (:handle window) x y))
+
+(defn set-resizable!
+  "Enable or disable window resizing."
+  [^Window window resizable?]
+  (sdl/set-window-resizable! (:handle window) resizable?))
+
+(defn set-bordered!
+  "Enable or disable window border/decorations."
+  [^Window window bordered?]
+  (sdl/set-window-bordered! (:handle window) bordered?))
+
+(defn set-always-on-top!
+  "Enable or disable always-on-top."
+  [^Window window always-on-top?]
+  (sdl/set-window-always-on-top! (:handle window) always-on-top?))
+
+(defn set-fullscreen!
+  "Enable or disable fullscreen mode."
+  [^Window window fullscreen?]
+  (sdl/set-window-fullscreen! (:handle window) fullscreen?))
+
+(defn set-minimum-size!
+  "Set the minimum window size. Pass 0,0 to remove constraint."
+  [^Window window width height]
+  (sdl/set-window-minimum-size! (:handle window) width height))
+
+(defn set-maximum-size!
+  "Set the maximum window size. Pass 0,0 to remove constraint."
+  [^Window window width height]
+  (sdl/set-window-maximum-size! (:handle window) width height))
+
+(defn set-opacity!
+  "Set window opacity (0.0 = transparent, 1.0 = opaque)."
+  [^Window window opacity]
+  (sdl/set-window-opacity! (:handle window) opacity))
+
+;; ============================================================
+;; Window property getters
+;; ============================================================
+
 (defn get-scale
   "Get the current display scale factor."
   [^Window window]

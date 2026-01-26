@@ -131,12 +131,9 @@
   (let [offset-x (/ (- width image-w) 2.0)
         offset-y (/ (- height image-h) 2.0)]
 
-    ;; Background
-    (shapes/rectangle canvas 0 0 width height {:color 0xFF111122})
-
     ;; Title
-    (text/text canvas "Pipette - Color Sampling" (/ width 2) 30
-               {:size 20 :color 0xFFFFFFFF :align :center})
+    (text/text canvas "Pipette - Color Sampling" (/ width 2) 40
+               {:size 28 :weight :medium :align :center :color 0xFFFFFFFF})
 
     ;; Draw gradient image
     (when-let [img @gradient-image]
