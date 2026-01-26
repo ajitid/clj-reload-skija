@@ -56,6 +56,11 @@
          :thread   nil       ; Worker Thread
          :running? false}))  ; Worker thread active?
 
+;; Encoder warm-up state (persists across hot-reloads)
+;; VideoToolbox has a cold-start delay on first use per process lifetime.
+;; Pre-warming avoids frame drops at recording start.
+(defonce encoder-warmed-up? (atom false))
+
 ;; ============================================================
 ;; Core Integration (zero-overhead when inactive)
 ;; ============================================================
@@ -274,10 +279,63 @@
     [["-c:v" "libx264" "-preset" "fast"] nil]))
 
 ;; ============================================================
+;; Encoder Warm-up
+;; ============================================================
+
+(defn- warm-up-encoder!
+  "Pre-warm the hardware video encoder by running a tiny encode.
+   VideoToolbox (macOS) and other hardware encoders have a cold-start
+   delay on first use — Apple's VTCompressionSessionPrepareToEncodeFrames
+   exists because hardware resource allocation is expensive.
+   If we don't warm up, the first recording attempt stalls FFmpeg's stdin
+   pipe, fills the frame queue, and drops every frame (frozen video).
+   Only runs once per process lifetime."
+  []
+  (when-not @encoder-warmed-up?
+    (try
+      (let [encoder (get-hw-encoder)
+            w 64 h 64
+            frame-size (* w h 4)
+            dummy-frame (byte-array frame-size)
+            null-output (if (str/includes? (System/getProperty "os.name") "Win")
+                          "NUL"
+                          "/dev/null")
+            [encoder-args _] (get-encoder-args encoder)
+            cmd (vec (concat
+                       ["ffmpeg" "-y"
+                        "-f" "rawvideo" "-pix_fmt" "rgba"
+                        "-s" (str w "x" h)
+                        "-r" "30"
+                        "-i" "-"]
+                       encoder-args
+                       ["-pix_fmt" "yuv420p"
+                        "-frames:v" "3"
+                        null-output]))
+            pb (ProcessBuilder. ^java.util.List cmd)
+            _ (.redirectErrorStream pb true)
+            process (.start pb)
+            stdin (.getOutputStream process)]
+        (println "[capture] Warming up encoder:" encoder)
+        ;; Send 3 tiny dummy frames to force hardware encoder initialization
+        (dotimes [_ 3]
+          (.write stdin dummy-frame))
+        (.close stdin)
+        ;; Wait for warm-up to complete (max 10 seconds)
+        (.waitFor ^Process process 10 java.util.concurrent.TimeUnit/SECONDS)
+        (when (.isAlive ^Process process)
+          (.destroyForcibly ^Process process))
+        (reset! encoder-warmed-up? true)
+        (println "[capture] Encoder warm-up complete"))
+      (catch Exception e
+        (println "[capture] Encoder warm-up failed (non-fatal):" (.getMessage e))
+        ;; Mark as warmed up anyway to avoid retrying on every recording
+        (reset! encoder-warmed-up? true)))))
+
+;; ============================================================
 ;; Worker Thread for Async FFmpeg Writes
 ;; ============================================================
 
-(def ^:private queue-capacity 30)  ; ~240MB at 1080p RGBA, 500ms buffer at 60fps
+(def ^:private queue-capacity 6)  ; ~48MB at 1080p RGBA, 100ms buffer at 60fps
 
 (defn- write-frame-data!
   "Write frame data to FFmpeg stdin. Called from worker thread."
@@ -587,6 +645,8 @@
       :else
       (do
         (check-ffmpeg!)
+        ;; Pre-warm hardware encoder to avoid cold-start frame drops
+        (warm-up-encoder!)
         ;; Just set state - FFmpeg will be spawned on first frame in process-frame!
         (swap! capture-state assoc
                :mode :video
