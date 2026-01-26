@@ -49,7 +49,6 @@
 (def ^:private pad-x               5)
 (def ^:private pad-y               3)
 (def ^:private cursor-blink-ms     500)
-(def ^:private double-click-ms     500)
 
 ;; ============================================================
 ;; State (persists across hot-reloads)
@@ -72,9 +71,7 @@
 ;; Mouse drag state for text selection
 (defonce dragging? (atom false))
 
-;; Multi-click detection
-(defonce last-click-time (atom 0))       ;; System/currentTimeMillis of last mouse-down
-(defonce last-click-field (atom nil))     ;; field-id of last mouse-down
+;; Multi-click state (click count provided by SDL3 natively)
 (defonce click-count (atom 0))           ;; 1=single, 2=double, 3=triple
 
 ;; Word-drag anchor: [word-start word-end] set during double-click
@@ -290,8 +287,9 @@
   "Handle a primary mouse button press on a text field.
    Focuses the field (if needed) and positions cursor at the clicked character.
    Supports double-click (select word) and triple-click (select all).
+   clicks is the native SDL3 click count (1=single, 2=double, 3+=triple).
    Begins drag-to-select by anchoring selection-start."
-  [field-id x _y]
+  [field-id x _y clicks]
   (when-let [va (get @field-registry field-id)]
     (let [text-val (str (deref-value va))
           len (count text-val)
@@ -299,18 +297,8 @@
           text-start-x (+ bx pad-x)
           char-pos (x-to-char-pos text-val x text-start-x)
           already-focused? (= field-id (focused-field-id))
-          ;; Multi-click detection
-          now (System/currentTimeMillis)
-          prev-time @last-click-time
-          prev-field @last-click-field
-          same-target? (and (= field-id prev-field) already-focused?)
-          within-time? (< (- now prev-time) double-click-ms)
-          new-count (if (and same-target? within-time?)
-                      (min 3 (inc @click-count))
-                      1)]
-      (reset! last-click-time now)
-      (reset! last-click-field field-id)
-      (reset! click-count new-count)
+          cc (min 3 (int (or clicks 1)))]
+      (reset! click-count cc)
       ;; Ensure focused
       (when-not already-focused?
         (reset! focus-state {:field-id field-id
@@ -321,7 +309,7 @@
           (when-let [start! (requiring-resolve 'lib.window.internal/start-text-input!)]
             (start! handle))))
       ;; Branch on click count
-      (case (int new-count)
+      (case cc
         ;; Single click: position cursor
         1 (do
             (swap! focus-state assoc

@@ -224,7 +224,7 @@
                 (if hit-field
                   ;; Clicked on a text field — position cursor, start drag-select
                   (when-let [md! (requiring-resolve 'app.ui.text-field/handle-mouse-down!)]
-                    (md! hit-field (:x event) (:y event)))
+                    (md! hit-field (:x event) (:y event) (:clicks event)))
                   ;; Clicked outside text fields — unfocus and continue with gestures
                   (let [_ (when-let [unfocus! (requiring-resolve 'app.ui.text-field/unfocus!)]
                             (unfocus!))

@@ -12,7 +12,7 @@
 (defrecord EventExposed [])
 
 ;; Mouse events - coordinates in logical pixels (already scaled)
-(defrecord EventMouseButton [button x y pressed?])
+(defrecord EventMouseButton [button x y pressed? clicks])
 (defrecord EventMouseMove [x y])
 (defrecord EventMouseWheel [x y dx dy modifiers])
 

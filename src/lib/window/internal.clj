@@ -206,7 +206,8 @@
       (button-keyword (.button mb))
       (.x mb)
       (.y mb)
-      pressed?)))
+      pressed?
+      (.clicks mb))))
 
 (defn- convert-mouse-motion-event
   "Convert SDL mouse motion event to EventMouseMove."
