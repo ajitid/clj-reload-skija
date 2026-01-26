@@ -115,7 +115,10 @@
         (.build))))
 
 (defn wave
-  "Create a sinusoidal wave path.
+  "Create a sinusoidal wave path using cubic Bezier curves.
+
+   Uses 4 Bezier segments per cycle via Hermite interpolation at
+   quarter-wave points. Smooth C1 tangents, fewer path verbs than lineTo.
 
    Args:
      x, y      - start coordinates
@@ -126,14 +129,28 @@
    Returns: Path object"
   [x y width amplitude frequency]
   (let [pb (PathBuilder.)
-        segments 100
-        step (/ width segments)]
+        ;; 4 quarter-wave segments per cycle
+        n-quarters (max 1 (long (Math/round (* 4.0 (double frequency)))))
+        qw (/ (double width) n-quarters)
+        ;; Hermite tangent scale: amp * 2π*freq / n-quarters
+        ts (/ (* (double amplitude) 2.0 Math/PI (double frequency)) n-quarters)]
     (.moveTo pb (float x) (float y))
-    (doseq [i (range 1 (inc segments))]
-      (let [px (+ x (* i step))
-            angle (* 2 Math/PI frequency (/ i segments))
-            py (+ y (* amplitude (Math/sin angle)))]
-        (.lineTo pb (float px) (float py))))
+    (dotimes [i n-quarters]
+      (let [a0 (* 2.0 Math/PI (double frequency) (/ (double i) n-quarters))
+            a1 (* 2.0 Math/PI (double frequency) (/ (double (inc i)) n-quarters))
+            x0 (+ (double x) (* (double i) qw))
+            x1 (+ (double x) (* (double (inc i)) qw))
+            y0 (+ (double y) (* (double amplitude) (Math/sin a0)))
+            y1 (+ (double y) (* (double amplitude) (Math/sin a1)))
+            ty0 (* ts (Math/cos a0))
+            ty1 (* ts (Math/cos a1))]
+        (.cubicTo pb
+                  (float (+ x0 (/ qw 3.0)))
+                  (float (+ y0 (/ ty0 3.0)))
+                  (float (- x1 (/ qw 3.0)))
+                  (float (- y1 (/ ty1 3.0)))
+                  (float x1)
+                  (float y1))))
     (.build pb)))
 
 (defn from-svg
@@ -181,6 +198,13 @@
           (float start-angle) (float sweep-angle) (boolean force-move?))
   pb)
 
+(defn tangent-arc-to
+  "Draw an arc tangent to two lines: (current→p1) and (p1→p2).
+   Rounds the corner at p1 with the given radius."
+  [^PathBuilder pb x1 y1 x2 y2 radius]
+  (.tangentArcTo pb (float x1) (float y1) (float x2) (float y2) (float radius))
+  pb)
+
 (defn close
   "Close the current contour."
   [^PathBuilder pb]
@@ -216,6 +240,21 @@
    Useful for rings, donuts, and toggle selections."
   [^Path p1 ^Path p2]
   (Path/makeCombining p1 p2 PathOp/XOR))
+
+;; ============================================================
+;; Path Interpolation
+;; ============================================================
+
+(defn interpolatable?
+  "Check if two paths can be interpolated (same verb/point structure)."
+  [^Path p1 ^Path p2]
+  (.isInterpolatable p1 p2))
+
+(defn interpolate
+  "Interpolate between two compatible paths.
+   Weight 0.0 = p1, 1.0 = p2. Paths must be interpolatable."
+  [^Path p1 ^Path p2 weight]
+  (.makeInterpolate p1 p2 (float weight)))
 
 ;; ============================================================
 ;; Queries

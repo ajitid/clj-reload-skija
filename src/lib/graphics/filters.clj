@@ -3,7 +3,7 @@
 
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern)."
   (:import [io.github.humbleui.skija ImageFilter MaskFilter ColorFilter ColorMatrix Shader
-            FilterTileMode FilterBlurMode PathEffect]))
+            FilterTileMode FilterBlurMode PathEffect PathEffect1DStyle Path]))
 
 ;; ============================================================
 ;; Image Filters (blur, shadows, etc.)
@@ -190,6 +190,38 @@
    (discrete-path-effect seg-length deviation 0))
   ([seg-length deviation seed]
    (PathEffect/makeDiscrete (float seg-length) (float deviation) (int seed))))
+
+(defn stamp-path-effect
+  "Stamp a shape repeatedly along a stroked path.
+
+   Args:
+     marker  - Path shape to stamp (centered at origin)
+     spacing - distance between stamps (pixels)
+     opts    - optional map:
+               :offset - phase offset for animation (default 0)
+               :fit    - how marker follows path (default :turn)
+                         :move   - translate only
+                         :turn   - translate + rotate to follow direction
+                         :follow - bend marker to match path curvature"
+  ([^Path marker spacing]
+   (stamp-path-effect marker spacing {}))
+  ([^Path marker spacing {:keys [offset fit] :or {offset 0 fit :turn}}]
+   (let [style (case fit
+                 :move PathEffect1DStyle/TRANSLATE
+                 :turn PathEffect1DStyle/ROTATE
+                 :follow PathEffect1DStyle/MORPH
+                 PathEffect1DStyle/ROTATE)]
+     (PathEffect/makePath1D marker (float spacing) (float offset) style))))
+
+(defn sum-path-effects
+  "Combine two path effects (both visible simultaneously)."
+  [^PathEffect effect1 ^PathEffect effect2]
+  (.makeSum effect1 effect2))
+
+(defn compose-path-effects
+  "Compose two path effects (apply outer after inner)."
+  [^PathEffect outer ^PathEffect inner]
+  (.makeCompose outer inner))
 
 ;; ============================================================
 ;; Mask Filters (Advanced)
