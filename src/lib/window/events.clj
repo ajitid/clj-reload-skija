@@ -19,6 +19,9 @@
 ;; Keyboard events
 (defrecord EventKey [key pressed? modifiers])
 
+;; Text input events (from SDL_EVENT_TEXT_INPUT)
+(defrecord EventTextInput [text])
+
 ;; Touch/finger events - coordinates in logical pixels
 (defrecord EventFingerDown [id x y pressure])
 (defrecord EventFingerMove [id x y pressure])

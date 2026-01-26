@@ -22,7 +22,7 @@
             [lib.window.macos :as macos])
   (:import [io.github.humbleui.skija Canvas]
            [lib.window.events EventClose EventResize EventMouseButton EventMouseMove EventMouseWheel
-            EventKey EventFrameSkija EventFingerDown EventFingerMove EventFingerUp]))
+            EventKey EventTextInput EventFrameSkija EventFingerDown EventFingerMove EventFingerUp]))
 
 ;; ============================================================
 ;; Window state (local to this module — tracks actual window)
@@ -218,7 +218,9 @@
             (copy-current-error-to-clipboard!))
           (when (= (:button event) :primary)
             (if (:pressed? event)
-              (let [scrollbar-handler (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-down)
+              (let [_ (when-let [unfocus! (requiring-resolve 'app.ui.text-field/unfocus!)]
+                        (unfocus!))
+                    scrollbar-handler (requiring-resolve 'lib.gesture.api/handle-scrollbar-mouse-down)
                     tree-atom (requiring-resolve 'app.projects.playground.ball-spring/current-tree)
                     scrollbar-hit? (when (and scrollbar-handler tree-atom)
                                      (scrollbar-handler event {:tree @@tree-atom}))]
@@ -271,46 +273,56 @@
           (handle-fn event {:scale @scale
                             :window-width @window-width}))
 
+        ;; Text input event (from SDL_EVENT_TEXT_INPUT)
+        (instance? EventTextInput event)
+        (when-let [handle-fn (requiring-resolve 'app.ui.text-field/handle-text-input!)]
+          (handle-fn (:text event)))
+
         ;; Keyboard event
         (instance? EventKey event)
-        (let [{:keys [key pressed? modifiers]} event]
-          (when pressed?
-            ;; Ctrl+E copies error
-            (when (and (= key 0x65) (pos? (bit-and modifiers 0x00C0))
-                       (or @sys/last-reload-error @sys/last-runtime-error))
-              (copy-current-error-to-clipboard!))
+        (let [{:keys [key pressed? modifiers]} event
+              text-field-focused? (when-let [f (requiring-resolve 'app.ui.text-field/any-focused?)] (f))
+              consumed? (when (and text-field-focused? pressed?)
+                          (when-let [handle-fn (requiring-resolve 'app.ui.text-field/handle-key-event!)]
+                            (handle-fn event)))]
+          (when-not consumed?
+            (when pressed?
+              ;; Ctrl+E copies error
+              (when (and (= key 0x65) (pos? (bit-and modifiers 0x00C0))
+                         (or @sys/last-reload-error @sys/last-runtime-error))
+                (copy-current-error-to-clipboard!))
 
-            ;; Ctrl+S captures screenshot
-            (when (and (= key 0x73) (pos? (bit-and modifiers 0x00C0)))
-              (when-let [screenshot! (requiring-resolve 'lib.window.capture/screenshot!)]
-                (let [timestamp (java.time.LocalDateTime/now)
-                      formatter (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd_HH-mm-ss-SSS")
-                      filename (str "screenshot_" (.format timestamp formatter) ".png")]
-                  (screenshot! filename :png)
-                  (println "[keybind] Screenshot captured:" filename))))
+              ;; Ctrl+S captures screenshot
+              (when (and (= key 0x73) (pos? (bit-and modifiers 0x00C0)))
+                (when-let [screenshot! (requiring-resolve 'lib.window.capture/screenshot!)]
+                  (let [timestamp (java.time.LocalDateTime/now)
+                        formatter (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd_HH-mm-ss-SSS")
+                        filename (str "screenshot_" (.format timestamp formatter) ".png")]
+                    (screenshot! filename :png)
+                    (println "[keybind] Screenshot captured:" filename))))
 
-            ;; Ctrl+R toggles recording
-            (when (and (= key 0x72) (pos? (bit-and modifiers 0x00C0)))
-              (if @sys/recording?
-                (do
-                  (when-let [stop-recording! (requiring-resolve 'lib.window.capture/stop-recording!)]
-                    (stop-recording!))
-                  (reset! sys/recording? false)
-                  (update-display-title!)
-                  (println "[keybind] Recording stopped"))
-                (do
-                  (when-let [start-recording! (requiring-resolve 'lib.window.capture/start-recording!)]
-                    (let [timestamp (java.time.LocalDateTime/now)
-                          formatter (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd_HH-mm-ss")
-                          filename (str "recording_" (.format timestamp formatter) ".mp4")]
-                      (start-recording! filename {:fps 60})
-                      (reset! sys/recording? true)
-                      (update-display-title!)
-                      (println "[keybind] Recording started:" filename))))))
+              ;; Ctrl+R toggles recording
+              (when (and (= key 0x72) (pos? (bit-and modifiers 0x00C0)))
+                (if @sys/recording?
+                  (do
+                    (when-let [stop-recording! (requiring-resolve 'lib.window.capture/stop-recording!)]
+                      (stop-recording!))
+                    (reset! sys/recording? false)
+                    (update-display-title!)
+                    (println "[keybind] Recording stopped"))
+                  (do
+                    (when-let [start-recording! (requiring-resolve 'lib.window.capture/start-recording!)]
+                      (let [timestamp (java.time.LocalDateTime/now)
+                            formatter (java.time.format.DateTimeFormatter/ofPattern "yyyy-MM-dd_HH-mm-ss")
+                            filename (str "recording_" (.format timestamp formatter) ".mp4")]
+                        (start-recording! filename {:fps 60})
+                        (reset! sys/recording? true)
+                        (update-display-title!)
+                        (println "[keybind] Recording started:" filename))))))
 
-            ;; Ctrl+` toggles panel
-            (when (and (= key 0x60) (pos? (bit-and modifiers 0x00C0)))
-              (shell-state/panel-visible? (not @shell-state/panel-visible?)))))
+              ;; Ctrl+` toggles panel
+              (when (and (= key 0x60) (pos? (bit-and modifiers 0x00C0)))
+                (shell-state/panel-visible? (not @shell-state/panel-visible?))))))
 
         :else nil))))
 

@@ -4,8 +4,10 @@
    Shows how to:
    - Load a variable font (Inter Variable)
    - Query variation axes (min/max weight)
-   - Animate weight continuously using sine wave"
+   - Animate weight continuously using sine wave
+   - Edit display text via control panel"
   (:require [app.state.system :as sys]
+            [lib.flex.core :as flex]
             [lib.text.core :as text])
   (:import [io.github.humbleui.skija Canvas]))
 
@@ -22,6 +24,9 @@
 ;; ============================================================
 
 (defonce typeface-info (atom nil))
+
+;; Editable display text (persists across hot-reloads)
+(flex/defsource display-text "Typography")
 
 ;; ============================================================
 ;; Font Setup
@@ -75,7 +80,7 @@
   (let [weight (calculate-weight time)
         y-center (/ height 2)]
     ;; Main animated text
-    (text/text canvas "Typography"
+    (text/text canvas @display-text
                (/ width 2) y-center
                {:size font-size
                 :family font-family
@@ -121,12 +126,56 @@
                     :color 0xFF666666})))))
 
 ;; ============================================================
+;; Control Panel Registration
+;; ============================================================
+
+(defn- register-controls! []
+  (when-let [register! (requiring-resolve 'app.shell.control-panel/register-controls!)]
+    (register! :howto/variable-font
+               [{:id :text
+                 :label "Text"
+                 :controls [{:type :text-field
+                             :id :display-text
+                             :label "Display Text"
+                             :value-atom display-text
+                             :height 44}]}])))
+
+(defn- register-gestures! []
+  (when-let [register! (requiring-resolve 'lib.gesture.api/register-target!)]
+    (when-let [get-bounds (requiring-resolve 'app.shell.control-panel/get-control-bounds)]
+      (when-let [panel-visible (requiring-resolve 'app.shell.state/panel-visible?)]
+        (when-let [focus! (requiring-resolve 'app.ui.text-field/focus!)]
+          ;; Text field tap -> focus
+          (register!
+           {:id :variable-font-text-field
+            :layer :overlay
+            :z-index 20
+            :bounds-fn (fn [_ctx]
+                         (when @panel-visible
+                           (get-bounds :text :display-text)))
+            :gesture-recognizers [:tap]
+            :handlers {:on-tap (fn [_] (focus! [:text :display-text]))}}))))
+    ;; Group header tap -> toggle collapse
+    (when-let [toggle-group! (requiring-resolve 'app.shell.state/toggle-group-collapse!)]
+      (when-let [get-header (requiring-resolve 'app.shell.control-panel/get-group-header-bounds)]
+        (when-let [panel-visible (requiring-resolve 'app.shell.state/panel-visible?)]
+          (register!
+           {:id :variable-font-group-header-text
+            :layer :overlay
+            :z-index 20
+            :bounds-fn (fn [_ctx] (when @panel-visible (get-header :text)))
+            :gesture-recognizers [:tap]
+            :handlers {:on-tap (fn [_] (toggle-group! :text))}}))))))
+
+;; ============================================================
 ;; Example Interface
 ;; ============================================================
 
 (defn init []
   "Called once when example starts."
   (load-font-info!)
+  (register-controls!)
+  (register-gestures!)
   (let [{:keys [weight-axis]} @typeface-info]
     (println "Variable Font loaded:" font-family)
     (println "Weight axis:" weight-axis)))
@@ -145,4 +194,11 @@
 
 (defn cleanup []
   "Called when switching away from this example."
+  (when-let [unregister! (requiring-resolve 'app.shell.control-panel/unregister-controls!)]
+    (unregister! :howto/variable-font))
+  (when-let [unregister-target! (requiring-resolve 'lib.gesture.api/unregister-target!)]
+    (unregister-target! :variable-font-text-field)
+    (unregister-target! :variable-font-group-header-text))
+  (when-let [unfocus! (requiring-resolve 'app.ui.text-field/unfocus!)]
+    (unfocus!))
   (println "Variable Font cleanup"))

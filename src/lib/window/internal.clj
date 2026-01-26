@@ -4,7 +4,7 @@
   (:require [lib.window.events :as e])
   (:import [org.lwjgl.sdl SDLInit SDLVideo SDLMouse SDLEvents SDLError SDLClipboard SDLKeyboard SDL_Event SDL_Rect
             SDL_MouseButtonEvent SDL_MouseMotionEvent SDL_MouseWheelEvent SDL_WindowEvent
-            SDL_KeyboardEvent SDL_TouchFingerEvent SDL_EventFilterI]
+            SDL_KeyboardEvent SDL_TouchFingerEvent SDL_TextInputEvent SDL_EventFilterI]
            [org.lwjgl.opengl GL]
            [org.lwjgl.system MemoryStack]))
 
@@ -29,6 +29,7 @@
 (def ^:private EVENT_FINGER_DOWN       SDLEvents/SDL_EVENT_FINGER_DOWN)
 (def ^:private EVENT_FINGER_MOTION     SDLEvents/SDL_EVENT_FINGER_MOTION)
 (def ^:private EVENT_FINGER_UP         SDLEvents/SDL_EVENT_FINGER_UP)
+(def ^:private EVENT_TEXT_INPUT        SDLEvents/SDL_EVENT_TEXT_INPUT)
 
 ;; Mouse button mapping (SDL uses 1=left, 2=middle, 3=right)
 (def ^:private BUTTON_LEFT   1)
@@ -243,6 +244,12 @@
         mod (.mod kb)]
     (e/->EventKey key pressed? mod)))
 
+(defn- convert-text-input-event
+  "Convert SDL text input event to EventTextInput."
+  [^SDL_Event event]
+  (let [ti (SDL_TextInputEvent/create (.address (.text event)))]
+    (e/->EventTextInput (.textString ti))))
+
 (defn- convert-resize-event
   "Convert SDL resize event to EventResize."
   [^SDL_Event event window]
@@ -290,6 +297,9 @@
 
           (= event-type EVENT_KEY_UP)
           (conj! events (convert-key-event event false))
+
+          (= event-type EVENT_TEXT_INPUT)
+          (conj! events (convert-text-input-event event))
 
           (= event-type EVENT_FINGER_DOWN)
           (conj! events (convert-finger-event event event-type window-width window-height))
@@ -351,6 +361,21 @@
   [watcher]
   (when watcher
     (SDLEvents/SDL_RemoveEventWatch watcher 0)))
+
+;; ============================================================
+;; Text Input
+;; ============================================================
+
+(defn start-text-input!
+  "Start text input for the given window.
+   SDL3 only generates SDL_EVENT_TEXT_INPUT events when text input is active."
+  [window]
+  (SDLKeyboard/SDL_StartTextInput window))
+
+(defn stop-text-input!
+  "Stop text input for the given window."
+  [window]
+  (SDLKeyboard/SDL_StopTextInput window))
 
 ;; ============================================================
 ;; Clipboard

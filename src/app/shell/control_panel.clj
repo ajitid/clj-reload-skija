@@ -178,6 +178,28 @@
                       :max (:max control 100)}))
       height)
 
+    :text-field
+    (let [text-field-draw (requiring-resolve 'app.ui.text-field/draw)
+          register-field (requiring-resolve 'app.ui.text-field/register-field!)
+          value-atom (:value-atom control)
+          text-value (when value-atom
+                       (try
+                         (deref (deref value-atom))
+                         (catch Exception _
+                           (deref value-atom))))
+          height (:height control)
+          label-height 20
+          box-height 24
+          bounds [cx (+ cy label-height) cw box-height]
+          field-id [(:group-id control) (:id control)]]
+      ;; Register field for focus/editing
+      (when register-field (register-field field-id value-atom))
+      ;; Cache bounds for gesture
+      (swap! layout-cache assoc-in [(:group-id control) :controls (:id control)] bounds)
+      (when text-field-draw
+        (text-field-draw canvas (:label control) (str text-value) field-id bounds {}))
+      height)
+
     ;; Unknown control type
     0))
 
