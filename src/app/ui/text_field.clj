@@ -264,24 +264,11 @@
 
 (defn- x-to-char-pos
   "Convert a pixel x coordinate to a character index within text.
-   Linear scan measuring prefix widths, picks nearest boundary."
+   Uses Skia's native TextLine hit testing (snaps to nearest glyph boundary)."
   [text click-x text-start-x]
-  (let [text-str (str text)
-        len (count text-str)
+  (let [line (measure/text-line text {:size font-size})
         rel-x (- click-x text-start-x)]
-    (if (<= rel-x 0)
-      0
-      (loop [i 0
-             prev-w 0.0]
-        (if (> i len)
-          len
-          (let [w (measure/text-width (subs text-str 0 i) {:size font-size})]
-            (if (< rel-x w)
-              ;; Between prev boundary and this one — pick closest
-              (if (< (- rel-x prev-w) (- w rel-x))
-                (dec i)
-                i)
-              (recur (inc i) w))))))))
+    (measure/offset-at-coord line rel-x)))
 
 (defn handle-mouse-down!
   "Handle a primary mouse button press on a text field.
@@ -581,10 +568,10 @@
         (when-let [[sel-start sel-end] (selection-range)]
           (let [clamped-start (min sel-start (count text-str))
                 clamped-end (min sel-end (count text-str))
-                before-sel (subs text-str 0 clamped-start)
-                sel-text (subs text-str clamped-start clamped-end)
-                sel-x-start (+ text-x (measure/text-width before-sel {:size font-size}))
-                sel-width (measure/text-width sel-text {:size font-size})]
+                line (measure/text-line text-str {:size font-size})
+                sel-x-start (+ text-x (measure/coord-at-offset line clamped-start))
+                sel-x-end (+ text-x (measure/coord-at-offset line clamped-end))
+                sel-width (- sel-x-end sel-x-start)]
             (when (pos? sel-width)
               (with-open [sel-paint (doto (Paint.)
                                      (.setColor (unchecked-int selection-color)))]
@@ -600,9 +587,8 @@
       ;; Draw cursor when focused
       (when focused?
         (let [cursor-pos (get @focus-state :cursor-pos 0)
-              before-cursor (subs text-str 0 (min cursor-pos (count text-str)))
-              cursor-x-offset (measure/text-width before-cursor {:size font-size})
-              cursor-x (+ text-x cursor-x-offset)
+              line (measure/text-line text-str {:size font-size})
+              cursor-x (+ text-x (measure/coord-at-offset line (min cursor-pos (count text-str))))
               ;; Blink logic:
               ;; 1. Selection active -> always visible
               ;; 2. Recently active (within one blink period) -> solid

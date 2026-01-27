@@ -3,7 +3,7 @@
 
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern)."
   (:require [lib.text.core :as core])
-  (:import [io.github.humbleui.skija Font FontMetrics]
+  (:import [io.github.humbleui.skija Font FontMetrics TextLine]
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
@@ -109,3 +109,56 @@
   ([] (line-height {}))
   ([opts]
    (:height (font-metrics opts))))
+
+;; ============================================================
+;; TextLine (single-line hit testing)
+;; ============================================================
+
+(defn text-line
+  "Create a TextLine for single-line measurement and hit testing.
+
+   Args:
+     text - string
+     opts - font options (see core/text)
+
+   Returns: TextLine instance
+
+   Examples:
+     (text-line \"Hello\")
+     (text-line \"Hello\" {:size 24})"
+  ([text] (text-line text {}))
+  ([text opts]
+   (let [font (core/make-font opts)]
+     (TextLine/make (str text) font))))
+
+(defn offset-at-coord
+  "Get character offset at pixel x coordinate in a TextLine.
+   Uses Skia's native glyph boundary snapping — picks the nearest
+   character boundary (same logic as cursor placement on click).
+
+   Args:
+     line - TextLine instance
+     x    - x coordinate in pixels (relative to text origin)
+
+   Returns: character offset (int)
+
+   Examples:
+     (let [line (text-line \"Hello\" {:size 24})]
+       (offset-at-coord line 50.0))"
+  [^TextLine line x]
+  (.getOffsetAtCoord line (float x)))
+
+(defn coord-at-offset
+  "Get pixel x coordinate for a character offset in a TextLine.
+
+   Args:
+     line   - TextLine instance
+     offset - character offset (0-based)
+
+   Returns: x coordinate in pixels (float)
+
+   Examples:
+     (let [line (text-line \"Hello\" {:size 24})]
+       (coord-at-offset line 3))"
+  [^TextLine line offset]
+  (.getCoordAtOffset line (int offset)))

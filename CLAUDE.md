@@ -27,40 +27,32 @@ clj -M:connect
 (reload)                         ;; Hot-reload changed namespaces (from connected REPL)
 ```
 
-## Syntax Validation Tools
+## Syntax Validation Tool
 
 **IMPORTANT:** Always validate Clojure files after editing to catch parenthesis imbalances and syntax errors immediately.
 
-### Quick Check (Parenthesis Balance)
+### Unified Checker (cross-platform, runs with Babashka)
 ```bash
-./scripts/check-parens.sh src/app/shell/control_panel.clj
+bb scripts/check.clj src/app/shell/control_panel.clj
+bb scripts/check.clj file1.clj file2.clj   # multiple files
 ```
-- Fast parenthesis counting (opens vs closes)
-- Shows exact imbalance count
-- Runs full syntax validation if balanced
 
-### Full Validation (Clojure Reader)
-```bash
-bb scripts/validate-syntax.clj src/app/shell/control_panel.clj
-```
-- Uses Babashka's Clojure reader to parse file
-- Catches structural errors beyond simple paren counting
-- Shows exact error location and message
+Checks parenthesis balance, syntax, and common lint issues in sequence. Stops at the first failure. Error messages explain what's wrong and how to fix it. Run with no args for details.
 
 ### Workflow for Editing Clojure Files
 ```bash
-# 1. Check file before editing
-./scripts/check-parens.sh src/app/projects/playground/ball_spring.clj
+# 1. Check file before editing (establish baseline)
+bb scripts/check.clj src/app/projects/playground/ball_spring.clj
 
 # 2. Make your edits with Edit/Write tools
 
 # 3. IMMEDIATELY validate after editing
-./scripts/check-parens.sh src/app/projects/playground/ball_spring.clj
+bb scripts/check.clj src/app/projects/playground/ball_spring.clj
 
 # 4. If validation fails, fix before proceeding
 ```
 
-**Why this matters:** Parenthesis imbalances in Clojure files cause cryptic runtime errors. These tools catch issues at edit-time, not runtime.
+**Why this matters:** Parenthesis imbalances in Clojure files cause cryptic runtime errors. Semantic issues like `defonce` with docstrings compile but fail at runtime with confusing arity errors. Definition-order mistakes (calling a `defn` before it's defined) cause "Unable to resolve symbol" at compile time. The checker catches all three classes of issues at edit-time.
 
 ## Architecture
 
