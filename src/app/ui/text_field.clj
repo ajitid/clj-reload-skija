@@ -519,6 +519,7 @@
     (let [text-x (+ bx pad-x)
           text-y (+ by (/ bh 2) 4)
           text-str (str text-value)
+          line (measure/text-line text-str {:size font-size})
           clip-rect (Rect/makeXYWH (float (+ bx 1)) (float (+ by 1))
                                    (float (- bw 2)) (float (- bh 2)))]
       (.save canvas)
@@ -528,7 +529,6 @@
         (when-let [[sel-start sel-end] (selection-range)]
           (let [clamped-start (min sel-start (count text-str))
                 clamped-end (min sel-end (count text-str))
-                line (measure/text-line text-str {:size font-size})
                 sel-x-start (+ text-x (measure/coord-at-offset line clamped-start))
                 sel-x-end (+ text-x (measure/coord-at-offset line clamped-end))
                 sel-width (- sel-x-end sel-x-start)]
@@ -541,13 +541,11 @@
                                           (float sel-width)
                                           (float (- bh (* 2 pad-y))))
                            sel-paint))))))
-      ;; Draw text
-      (text/text canvas text-value text-x text-y
-                 {:size font-size :color text-color})
+      ;; Draw text using the shared TextLine for consistent glyph positions
+      (text/draw-line canvas line text-x text-y {:color text-color})
       ;; Draw cursor when focused
       (when focused?
         (let [cursor-pos (get @focus-state :cursor-pos 0)
-              line (measure/text-line text-str {:size font-size})
               cursor-x (+ text-x (measure/coord-at-offset line (min cursor-pos (count text-str))))
               ;; Blink logic:
               ;; 1. Selection active -> always visible

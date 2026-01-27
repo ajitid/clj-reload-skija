@@ -307,3 +307,24 @@
        ;; Without features, use Font.measureTextWidth for alignment
        (let [final-x (align-x font text-str x align)]
          (draw-text-simple canvas text-str font final-x y paint-opts))))))
+
+(defn draw-line
+  "Draw a pre-built TextLine at the given position.
+
+   Use when you need the same TextLine for both measurement and rendering
+   (e.g., text fields where cursor positioning must match rendered glyphs).
+
+   Args:
+     canvas - drawing canvas
+     line   - TextLine instance (from measure/text-line)
+     x, y   - position (y is baseline)
+     opts   - paint options: :color, :shadow, :blur, :gradient, :alphaf, etc.
+
+   Examples:
+     (let [line (measure/text-line \"Hello\" {:size 24})]
+       (draw-line canvas line 10 20 {:color 0xFF4A90D9}))"
+  [^Canvas canvas ^TextLine line x y opts]
+  (if-let [paint (:paint opts)]
+    (.drawTextLine canvas line (float x) (float y) paint)
+    (gfx/with-paint [paint opts]
+      (.drawTextLine canvas line (float x) (float y) paint))))
