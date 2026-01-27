@@ -16,11 +16,13 @@ Options:
 import json
 import sys
 import os
+import re
 import subprocess
 import platform
 from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
+from urllib.parse import urlparse
 
 CLAUDE_DIR = Path.home() / ".claude"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
@@ -43,9 +45,108 @@ def is_meaningful(text):
         return False
     return True
 
+def shorten_path(file_path):
+    """Shorten a file path for display."""
+    if not file_path:
+        return ''
+    home = str(Path.home())
+    if file_path.startswith(home):
+        return '~' + file_path[len(home):]
+    return file_path
+
+def generate_tool_annotation(tool_use):
+    """Generate a one-line annotation string for a tool_use block."""
+    name = tool_use.get('name', '')
+    inp = tool_use.get('input', {})
+
+    if name == 'Read':
+        return f"Read: {shorten_path(inp.get('file_path', ''))}"
+    elif name == 'Write':
+        return f"Wrote: {shorten_path(inp.get('file_path', ''))}"
+    elif name == 'Edit':
+        return f"Edited: {shorten_path(inp.get('file_path', ''))}"
+    elif name == 'WebSearch':
+        return f"Searched web: \"{inp.get('query', '')}\""
+    elif name == 'WebFetch':
+        url = inp.get('url', '')
+        parsed = urlparse(url)
+        short_url = parsed.netloc + parsed.path
+        return f"Fetched: {short_url}"
+    elif name == 'Task':
+        return f"Launched agent: {inp.get('description', '')}"
+    elif name == 'Bash':
+        desc = inp.get('description', '')
+        cmd = inp.get('command', '')
+        label = desc if desc else (cmd[:60] + ('...' if len(cmd) > 60 else ''))
+        return f"Ran: `{label}`"
+    elif name == 'Glob':
+        return f"Found files: {inp.get('pattern', '')}"
+    elif name == 'Grep':
+        return f"Searched code: \"{inp.get('pattern', '')}\""
+    elif name == 'EnterPlanMode':
+        return "Entered plan mode"
+    elif name == 'ExitPlanMode':
+        return "Exited plan mode"
+    elif name == 'AskUserQuestion':
+        return None  # Handled separately as Q&A block
+    else:
+        return f"Used tool: {name}"
+
+def parse_ask_answer(content):
+    """Parse the answer text from an AskUserQuestion tool_result."""
+    if isinstance(content, list):
+        texts = [p.get('text', '') for p in content
+                 if isinstance(p, dict) and p.get('type') == 'text']
+        content = '\n'.join(texts)
+
+    if not isinstance(content, str):
+        return None
+
+    if 'User has answered your questions:' in content:
+        pairs = re.findall(r'"([^"]*)"="([^"]*)"', content)
+        if pairs:
+            return '; '.join(a.strip() for _, a in pairs)
+
+    if "doesn't want to proceed" in content or 'user wants to clarify' in content.lower():
+        # User rejected or wants to clarify — extract their message if present
+        if 'the user said:' in content.lower():
+            idx = content.lower().find('the user said:')
+            after = content[idx + len('the user said:'):].strip()
+            # Trim system boilerplate
+            for marker in ['\n    Questions asked:', '\n\n    This means']:
+                end_idx = after.find(marker)
+                if end_idx > 0:
+                    after = after[:end_idx].strip()
+            # Filter out system-generated non-answers
+            if after and 'user wants to clarify these questions' not in after.lower():
+                return after
+        return "[User requested clarification]"
+
+    return None
+
+def format_question_answer(qa):
+    """Render a Q&A block as markdown."""
+    lines = []
+    for q in qa['questions']:
+        lines.append(f"> **Question:** {q.get('question', '')}")
+        for opt in q.get('options', []):
+            label = opt.get('label', '')
+            desc = opt.get('description', '')
+            lines.append(f"> - **{label}** — {desc}")
+    lines.append(">")
+    if qa.get('answer'):
+        lines.append(f"> **Answer:** {qa['answer']}")
+    else:
+        lines.append("> **Answer:** [No answer recorded]")
+    return '\n'.join(lines)
+
 def parse_conversation(jsonl_path):
-    """Parse a conversation file and extract metadata."""
-    messages = []
+    """Parse a conversation file and extract enriched metadata.
+
+    Returns messages with tool annotations, Q&A blocks, and write contents
+    for richer export output.
+    """
+    raw_records = []
     first_user_msg = None
     last_timestamp = None
     project_path = None
@@ -68,42 +169,187 @@ def parse_conversation(jsonl_path):
                     if 'message' not in record or record.get('isMeta'):
                         continue
 
-                    msg = record['message']
-                    role = msg.get('role')
-                    content = msg.get('content')
-
-                    if not content:
-                        continue
-
-                    # Handle different content formats
-                    if isinstance(content, str):
-                        text = content
-                    elif isinstance(content, list):
-                        text_parts = []
-                        for part in content:
-                            if isinstance(part, dict) and part.get('type') == 'text':
-                                text_parts.append(part.get('text', ''))
-                        text = '\n\n'.join(text_parts)
-                    else:
-                        continue
-
-                    if not is_meaningful(text):
-                        continue
-
-                    messages.append({
-                        'role': role,
-                        'text': text,
-                        'timestamp': record.get('timestamp')
-                    })
-
-                    # Capture first user message as title
-                    if role == 'user' and not first_user_msg:
-                        first_user_msg = text.split('\n')[0][:100]
+                    raw_records.append(record)
 
                 except json.JSONDecodeError:
                     continue
-    except Exception as e:
+    except Exception:
         return None
+
+    if not raw_records:
+        return None
+
+    # Phase 1: Collect AskUserQuestion data and answers
+    ask_questions = {}  # tool_use_id -> tool_use input
+    ask_answers = {}    # tool_use_id -> parsed answer string
+
+    for record in raw_records:
+        msg = record['message']
+        content = msg.get('content', [])
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if (part.get('type') == 'tool_use'
+                    and part.get('name') == 'AskUserQuestion'):
+                ask_questions[part['id']] = part.get('input', {})
+            elif (part.get('type') == 'tool_result'
+                    and part.get('tool_use_id') in ask_questions):
+                answer = parse_ask_answer(part.get('content', ''))
+                ask_answers[part['tool_use_id']] = answer
+
+    # Phase 2: Group records into turns
+    # Assistant records with the same requestId form one turn.
+    # User records are individual turns.
+    turns = []
+    current_req_id = None
+    current_assistant_records = []
+
+    def flush_assistant():
+        nonlocal current_req_id, current_assistant_records
+        if current_assistant_records:
+            turns.append(('assistant', current_assistant_records))
+        current_req_id = None
+        current_assistant_records = []
+
+    for record in raw_records:
+        msg = record['message']
+        role = msg.get('role')
+        content = msg.get('content')
+        if not content:
+            continue
+
+        req_id = record.get('requestId', '')
+
+        if role == 'assistant':
+            if req_id and req_id == current_req_id:
+                current_assistant_records.append(record)
+            else:
+                flush_assistant()
+                current_req_id = req_id
+                current_assistant_records = [record]
+        elif role == 'user':
+            flush_assistant()
+            turns.append(('user', [record]))
+
+    flush_assistant()
+
+    # Phase 3: Build enriched messages
+    messages = []
+
+    # Track which tool_use_ids are AskUserQuestion answers so we can
+    # skip user messages that are purely tool_results for those
+    ask_tool_result_ids = set(ask_questions.keys())
+
+    for role, records in turns:
+        if role == 'assistant':
+            text_parts = []
+            tool_annotations = []
+            question_answers = []
+            write_contents = []
+            timestamp = records[0].get('timestamp')
+
+            for rec in records:
+                msg = rec['message']
+                content = msg.get('content', [])
+                if isinstance(content, str):
+                    text_parts.append(content)
+                    continue
+                if not isinstance(content, list):
+                    continue
+                for part in content:
+                    if not isinstance(part, dict):
+                        continue
+                    if part.get('type') == 'text':
+                        text_parts.append(part.get('text', ''))
+                    elif part.get('type') == 'tool_use':
+                        name = part.get('name', '')
+                        # Generate annotation
+                        ann = generate_tool_annotation(part)
+                        if ann:
+                            tool_annotations.append(ann)
+                        # Collect AskUserQuestion Q&A
+                        if name == 'AskUserQuestion':
+                            tool_id = part.get('id', '')
+                            q_input = part.get('input', {})
+                            question_answers.append({
+                                'questions': q_input.get('questions', []),
+                                'answer': ask_answers.get(tool_id)
+                            })
+                        # Collect Write file content
+                        if name == 'Write':
+                            inp = part.get('input', {})
+                            file_content = inp.get('content', '')
+                            file_path = inp.get('file_path', '')
+                            line_count = (file_content.count('\n') + 1
+                                          if file_content else 0)
+                            if file_content and line_count <= 200:
+                                write_contents.append({
+                                    'file_path': file_path,
+                                    'content': file_content,
+                                    'line_count': line_count
+                                })
+                    # Skip thinking blocks silently
+
+            text = '\n\n'.join(t for t in text_parts if t.strip())
+
+            # Include message if it has text, annotations, or Q&A
+            if (is_meaningful(text) or tool_annotations
+                    or question_answers):
+                messages.append({
+                    'role': 'assistant',
+                    'text': text,
+                    'timestamp': timestamp,
+                    'tool_annotations': tool_annotations,
+                    'question_answers': question_answers,
+                    'write_contents': write_contents,
+                })
+
+        else:  # user
+            record = records[0]
+            msg = record['message']
+            content = msg.get('content')
+            timestamp = record.get('timestamp')
+
+            # Check if this user message is purely a tool_result for
+            # AskUserQuestion (no meaningful user text). If so, skip it
+            # since the Q&A is rendered with the assistant message.
+            if isinstance(content, list):
+                text_parts = []
+                is_only_ask_results = True
+                for part in content:
+                    if isinstance(part, dict):
+                        if part.get('type') == 'text':
+                            text_parts.append(part.get('text', ''))
+                        elif part.get('type') == 'tool_result':
+                            if part.get('tool_use_id') not in ask_tool_result_ids:
+                                is_only_ask_results = False
+                        else:
+                            is_only_ask_results = False
+                    else:
+                        is_only_ask_results = False
+                text = '\n\n'.join(text_parts)
+                # If only AskUserQuestion results and no meaningful text,
+                # skip this message
+                if is_only_ask_results and not is_meaningful(text):
+                    continue
+            elif isinstance(content, str):
+                text = content
+            else:
+                continue
+
+            if not is_meaningful(text):
+                continue
+
+            messages.append({
+                'role': 'user',
+                'text': text,
+                'timestamp': timestamp,
+            })
+
+            if not first_user_msg:
+                first_user_msg = text.split('\n')[0][:100]
 
     if not messages:
         return None
@@ -340,9 +586,44 @@ def export_conversation(session_id, output_path=None):
                 user_count += 1
                 f.write(f"## <a id=\"user-{user_count}\"></a>User #{user_count}\n\n")
                 f.write(f"{msg['text']}\n\n")
+
             elif msg['role'] == 'assistant':
-                f.write(f"**Assistant:**\n\n")
-                f.write(f"{msg['text']}\n\n")
+                # Write text content (may be empty for tool-only turns)
+                if msg['text'].strip():
+                    f.write(f"**Assistant:**\n\n")
+                    f.write(f"{msg['text']}\n\n")
+
+                # Render Q&A blocks (AskUserQuestion + user answer)
+                for qa in msg.get('question_answers', []):
+                    f.write(format_question_answer(qa))
+                    f.write("\n\n")
+
+                # Render tool annotations as italic blockquote lines
+                annotations = msg.get('tool_annotations', [])
+                write_map = {}
+                for wc in msg.get('write_contents', []):
+                    write_map[shorten_path(wc['file_path'])] = wc
+
+                if annotations:
+                    for ann in annotations:
+                        f.write(f"> _{ann}_\n")
+
+                        # If this is a Write annotation, add collapsible
+                        # file content block
+                        if ann.startswith("Wrote: "):
+                            wrote_path = ann[len("Wrote: "):]
+                            wc = write_map.get(wrote_path)
+                            if wc:
+                                # Detect language from file extension
+                                ext = Path(wc['file_path']).suffix.lstrip('.')
+                                lang = ext if ext else ''
+                                f.write(f"> <details><summary>File content ({wc['line_count']} lines)</summary>\n>\n")
+                                f.write(f"> ```{lang}\n")
+                                for file_line in wc['content'].splitlines():
+                                    f.write(f"> {file_line}\n")
+                                f.write(f"> ```\n> </details>\n")
+                    f.write("\n")
+
             f.write("---\n\n")
 
     print(f"Exported to: {output_path}")
