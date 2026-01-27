@@ -5,6 +5,7 @@
    Supports focus management, text insertion, deletion, cursor movement,
    clipboard copy/cut/paste, and select-all."
   (:require [app.state.system :as sys]
+            [lib.text.break :as brk]
             [lib.text.core :as text]
             [lib.text.measure :as measure])
   (:import [io.github.humbleui.skija Canvas Paint]
@@ -141,47 +142,6 @@
           true)))))
 
 ;; ============================================================
-;; Word boundary detection
-;; ============================================================
-
-(defn- word-boundary-left
-  "Find the start of the word to the left of pos.
-   Skips non-word chars (whitespace/punctuation), then skips word chars."
-  [^String text pos]
-  (if (<= pos 0)
-    0
-    (let [;; Step 1: skip non-word chars going left
-          p (loop [p (dec pos)]
-              (if (or (< p 0) (Character/isLetterOrDigit (.charAt text p)))
-                p
-                (recur (dec p))))
-          ;; Step 2: skip word chars going left to find start
-          p (loop [p p]
-              (if (or (< p 0) (not (Character/isLetterOrDigit (.charAt text p))))
-                (inc p)
-                (recur (dec p))))]
-      (max 0 p))))
-
-(defn- word-boundary-right
-  "Find position after end of the word to the right of pos.
-   Skips non-word chars (whitespace/punctuation), then skips word chars."
-  [^String text pos]
-  (let [len (count text)]
-    (if (>= pos len)
-      len
-      (let [;; Step 1: skip non-word chars going right
-            p (loop [p pos]
-                (if (or (>= p len) (Character/isLetterOrDigit (.charAt text p)))
-                  p
-                  (recur (inc p))))
-            ;; Step 2: skip word chars going right to find end
-            p (loop [p p]
-                (if (or (>= p len) (not (Character/isLetterOrDigit (.charAt text p))))
-                  p
-                  (recur (inc p))))]
-        (min len p)))))
-
-;; ============================================================
 ;; Cursor movement helper
 ;; ============================================================
 
@@ -305,8 +265,8 @@
             (reset! drag-word-anchor nil)
             (reset-blink!))
         ;; Double click: select word under cursor
-        2 (let [word-start (word-boundary-left text-val char-pos)
-                word-end (word-boundary-right text-val char-pos)]
+        2 (let [word-start (brk/word-start text-val char-pos)
+                word-end (brk/word-end text-val char-pos)]
             (swap! focus-state assoc
                    :cursor-pos word-end
                    :selection-start word-start)
@@ -340,8 +300,8 @@
             ;; Double-click drag: extend by word boundaries
             (= cc 2)
             (when-let [[anchor-start anchor-end] @drag-word-anchor]
-              (let [cur-word-start (word-boundary-left text-val char-pos)
-                    cur-word-end (word-boundary-right text-val char-pos)]
+              (let [cur-word-start (brk/word-start text-val char-pos)
+                    cur-word-end (brk/word-end text-val char-pos)]
                 (if (>= char-pos anchor-end)
                   (swap! focus-state assoc
                          :selection-start anchor-start
@@ -486,7 +446,7 @@
                 ;; Cmd+Left (macOS) -> line start
                 gui?     (move-to! 0 shift?)
                 ;; Alt+Left (macOS) / Ctrl+Left (Win) -> word left
-                word-mod? (move-to! (word-boundary-left current pos) shift?)
+                word-mod? (move-to! (brk/word-start current pos) shift?)
                 ;; Shift+Left -> extend selection by char
                 shift?   (move-to! (max 0 (dec pos)) true)
                 ;; Plain Left with selection -> collapse to left edge
@@ -502,7 +462,7 @@
                 ;; Cmd+Right (macOS) -> line end
                 gui?     (move-to! len shift?)
                 ;; Alt+Right (macOS) / Ctrl+Right (Win) -> word right
-                word-mod? (move-to! (word-boundary-right current pos) shift?)
+                word-mod? (move-to! (brk/word-end current pos) shift?)
                 ;; Shift+Right -> extend selection by char
                 shift?   (move-to! (min len (inc pos)) true)
                 ;; Plain Right with selection -> collapse to right edge
