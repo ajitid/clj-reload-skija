@@ -86,7 +86,7 @@
   [opts]
   (let [{:keys [size weight slant family color background-color
                 underline strikethrough letter-spacing word-spacing
-                line-height baseline-shift]} opts
+                line-height baseline-mode]} opts
         style (TextStyle.)]
     ;; Font properties
     (when size (.setFontSize style (float size)))
@@ -134,7 +134,11 @@
     (when letter-spacing (.setLetterSpacing style (float letter-spacing)))
     (when word-spacing (.setWordSpacing style (float word-spacing)))
     (when line-height (.setHeight style (float line-height)))
-    (when baseline-shift (.setBaselineShift style (float baseline-shift)))
+    (when baseline-mode
+      (.setBaselineMode style (case baseline-mode
+                                :alphabetic BaselineMode/ALPHABETIC
+                                :ideographic BaselineMode/IDEOGRAPHIC
+                                BaselineMode/ALPHABETIC)))
 
     style))
 
