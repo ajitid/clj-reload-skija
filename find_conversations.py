@@ -140,13 +140,57 @@ def format_question_answer(qa):
         lines.append("> **Answer:** [No answer recorded]")
     return '\n'.join(lines)
 
+def find_winning_path(all_records):
+    """Find the main conversation branch by walking back from the latest terminal.
+
+    When users retry/rewrite messages, the conversation forms a tree with multiple
+    branches. This finds the "winning" branch by:
+    1. Finding all terminal nodes (messages with no children)
+    2. Picking the one with the latest timestamp
+    3. Walking backwards via parentUuid to the root
+
+    Returns a set of UUIDs on the winning path, or None if tree detection fails.
+    """
+    # Build uuid -> record map
+    by_uuid = {r['uuid']: r for r in all_records if r.get('uuid')}
+
+    if not by_uuid:
+        return None
+
+    # Find all parent uuids (nodes that have children)
+    parent_uuids = {r['parentUuid'] for r in all_records if r.get('parentUuid')}
+
+    # Find terminal nodes (have uuid but aren't anyone's parent)
+    terminals = [r for r in all_records
+                 if r.get('uuid') and r['uuid'] not in parent_uuids]
+
+    if not terminals:
+        return None
+
+    # Sort by timestamp and pick the latest
+    terminals.sort(key=lambda r: r.get('timestamp', ''))
+    latest_terminal = terminals[-1]
+
+    # Walk backwards from terminal to root
+    winning_uuids = set()
+    current = latest_terminal.get('uuid')
+    while current:
+        winning_uuids.add(current)
+        rec = by_uuid.get(current)
+        if not rec:
+            break
+        current = rec.get('parentUuid')
+
+    return winning_uuids
+
+
 def parse_conversation(jsonl_path):
     """Parse a conversation file and extract enriched metadata.
 
     Returns messages with tool annotations, Q&A blocks, and write contents
     for richer export output.
     """
-    raw_records = []
+    all_records = []
     first_user_msg = None
     last_timestamp = None
     project_path = None
@@ -166,15 +210,29 @@ def parse_conversation(jsonl_path):
                     if 'timestamp' in record:
                         last_timestamp = record['timestamp']
 
-                    if 'message' not in record or record.get('isMeta'):
-                        continue
-
-                    raw_records.append(record)
+                    all_records.append(record)
 
                 except json.JSONDecodeError:
                     continue
     except Exception:
         return None
+
+    if not all_records:
+        return None
+
+    # Find the winning branch (handles retried/rewritten messages)
+    winning_uuids = find_winning_path(all_records)
+
+    # Filter to message records on the winning path
+    raw_records = []
+    for record in all_records:
+        if 'message' not in record or record.get('isMeta'):
+            continue
+        # If we have a winning path, only include records on it
+        if winning_uuids and record.get('uuid'):
+            if record['uuid'] not in winning_uuids:
+                continue
+        raw_records.append(record)
 
     if not raw_records:
         return None
