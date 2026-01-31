@@ -12,7 +12,7 @@
 
    ;; Clip OUTSIDE region (cutout/spotlight)
    (clip/with-clip-out [canvas [50 50 100 100]]
-     (shapes/rect canvas 0 0 w h {:color 0x80000000}))
+     (shapes/rect canvas 0 0 w h {:color [0 0 0 0.5]}))
 
    ;; Rounded rectangle
    (clip/with-clip [canvas [10 10 100 100 5]]
@@ -103,7 +103,7 @@
 
    Example:
      (with-clip [canvas [10 10 100 100]]
-       (shapes/circle canvas 50 50 40 {:color 0xFF0000FF}))"
+       (shapes/circle canvas 50 50 40 {:color [0 0 1 1]}))"
   [[canvas shape] & body]
   `(let [c# ~canvas]
      (.save c#)
@@ -125,7 +125,7 @@
    Example:
      ;; Spotlight - darken everything except focus area
      (with-clip-out [canvas [50 50 100 100]]
-       (shapes/rect canvas 0 0 w h {:color 0x80000000}))"
+       (shapes/rect canvas 0 0 w h {:color [0 0 0 0.5]}))"
   [[canvas shape] & body]
   `(let [c# ~canvas]
      (.save c#)

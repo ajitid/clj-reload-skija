@@ -222,7 +222,7 @@
       (set-image-filter paint ((resolve 'lib.graphics.filters/blur) sigma mode)))
 
     :shadow
-    (let [{:keys [dx dy blur color] :or {dx 0 dy 0 blur 0 color 0x80000000}} effect-value]
+    (let [{:keys [dx dy blur color] :or {dx 0 dy 0 blur 0 color [0 0 0 0.5]}} effect-value]
       (require 'lib.graphics.filters)
       (set-image-filter paint ((resolve 'lib.graphics.filters/drop-shadow) dx dy blur color)))
 
@@ -430,7 +430,7 @@
   "Create a Paint with options, execute body, then close Paint.
 
    Example:
-     (with-paint [p {:color 0xFF4A90D9 :mode :fill}]
+     (with-paint [p {:color [0.29 0.56 0.85 1.0] :mode :fill}]
        (.drawCircle canvas x y r p))"
   [[binding opts] & body]
   `(with-open [~binding (make-paint ~opts)]

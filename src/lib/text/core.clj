@@ -281,11 +281,12 @@
      :features   - OpenType features string, e.g. \"tnum\" for tabular numbers
 
    Paint Options (same as shapes):
-     :color, :shadow, :blur, :gradient, :alphaf, etc.
+     :color - [r g b a] floats (0.0-1.0)
+     :shadow, :blur, :gradient, :alphaf, etc.
 
    Examples:
      (text canvas \"Hello\" 10 20)
-     (text canvas \"Hello\" 10 20 {:color 0xFF4A90D9})
+     (text canvas \"Hello\" 10 20 {:color [0.29 0.56 0.85 1.0]})
      (text canvas \"Bold\" 10 50 {:size 24 :weight :bold})
      (text canvas \"Centered\" 200 80 {:align :center})
      (text canvas \"Variable\" 10 110 {:size 48 :variations {:wght 600}})
@@ -322,7 +323,7 @@
 
    Examples:
      (let [line (measure/text-line \"Hello\" {:size 24})]
-       (draw-line canvas line 10 20 {:color 0xFF4A90D9}))"
+       (draw-line canvas line 10 20 {:color [0.29 0.56 0.85 1.0]}))"
   [^Canvas canvas ^TextLine line x y opts]
   (if-let [paint (:paint opts)]
     (.drawTextLine canvas line (float x) (float y) paint)

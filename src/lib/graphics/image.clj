@@ -5,6 +5,8 @@
    Follows Love2D conventions: load images, define quads (sprite regions),
    and draw with position/rotation/scale/origin.
 
+   All color options accept [r g b a] float vectors (0.0-1.0).
+
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern).
 
    ## Usage
@@ -32,6 +34,7 @@
    (image/draw-image canvas sheet 0 0 {:alpha 0.5 :scale [2 1]})
    ```"
   (:require [lib.graphics.state :as gfx]
+            [lib.color.core :as color]
             [clojure.java.io :as io])
   (:import [io.github.humbleui.skija Canvas Image Data SamplingMode Paint Matrix33
             BlendMode FilterTileMode]
@@ -441,9 +444,9 @@
             x  (float dest-x)
             y  (float dest-y)
 
-            ;; Parse transform options
-            {:keys [rotation scale origin flip-x flip-y alpha color]
-             :or {rotation 0.0 scale 1.0 origin [0 0] alpha 1.0 color 0xFFFFFFFF}} (or opts {})
+            ;; Parse transform options - color is [r g b a] floats
+            {:keys [rotation scale origin flip-x flip-y alpha tint]
+             :or {rotation 0.0 scale 1.0 origin [0 0] alpha 1.0 tint [1 1 1 1]}} (or opts {})
             [ox oy] origin
             [sx sy] (if (vector? scale) scale [scale scale])
             sx (float (if flip-x (- sx) sx))
@@ -457,13 +460,12 @@
             ;; Combined alpha
             final-alpha (float (* shared-alpha alpha))
 
-            ;; Build ARGB color with alpha
-            ;; Note: color can be 0xFFFFFFFF which exceeds Integer.MAX_VALUE, use unchecked-int
-            color-int (unchecked-int color)
-            a (int (* 255.0 final-alpha))
-            r (bit-and (bit-shift-right color-int 16) 0xFF)
-            g (bit-and (bit-shift-right color-int 8) 0xFF)
-            b (bit-and color-int 0xFF)
+            ;; Build ARGB color with alpha from [r g b a] floats
+            [tr tg tb ta] tint
+            a (int (* 255.0 final-alpha (or ta 1.0)))
+            r (int (* 255.0 tr))
+            g (int (* 255.0 tg))
+            b (int (* 255.0 tb))
             argb (unchecked-int (bit-or (bit-shift-left a 24)
                                          (bit-shift-left r 16)
                                          (bit-shift-left g 8)
@@ -530,7 +532,7 @@
                 :flip-x false     ; flip horizontally
                 :flip-y false     ; flip vertically
                 :alpha 1.0        ; per-sprite opacity
-                :color 0xFFFFFFFF ; tint ARGB}
+                :tint [1 1 1 1]}  ; tint [r g b a]
      opts    - optional shared options:
                :alpha 1.0         ; shared opacity multiplier
                :filter :linear    ; :linear or :nearest
@@ -625,9 +627,9 @@
             w  (float (:w quad))
             h  (float (:h quad))
 
-            ;; Parse transform options
-            {:keys [rotation scale origin flip-x flip-y alpha color]
-             :or {rotation 0.0 scale 1.0 origin [0 0] alpha 1.0 color 0xFFFFFFFF}} (or opts {})
+            ;; Parse transform options - tint is [r g b a] floats
+            {:keys [rotation scale origin flip-x flip-y alpha tint]
+             :or {rotation 0.0 scale 1.0 origin [0 0] alpha 1.0 tint [1 1 1 1]}} (or opts {})
             [ox oy] origin
             [sx sy] (if (vector? scale) scale [scale scale])
             sx (float (if flip-x (- sx) sx))
@@ -641,13 +643,12 @@
             ;; Combined alpha
             final-alpha (float (* shared-alpha alpha))
 
-            ;; Build ARGB color with alpha
-            ;; Note: color can be 0xFFFFFFFF which exceeds Integer.MAX_VALUE, use unchecked-int
-            color-int (unchecked-int color)
-            a (int (* 255.0 final-alpha))
-            r (bit-and (bit-shift-right color-int 16) 0xFF)
-            g (bit-and (bit-shift-right color-int 8) 0xFF)
-            b (bit-and color-int 0xFF)
+            ;; Build ARGB color with alpha from [r g b a] floats
+            [tr tg tb ta] tint
+            a (int (* 255.0 final-alpha (or ta 1.0)))
+            r (int (* 255.0 tr))
+            g (int (* 255.0 tg))
+            b (int (* 255.0 tb))
             argb (unchecked-int (bit-or (bit-shift-left a 24)
                                          (bit-shift-left r 16)
                                          (bit-shift-left g 8)

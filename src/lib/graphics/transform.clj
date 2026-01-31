@@ -10,17 +10,17 @@
    (xf/with-transform [canvas]
      (.translate canvas 100 100)
      (.rotate canvas 45)
-     (shapes/circle canvas 0 0 50 {:color 0xFFFF0000}))
+     (shapes/circle canvas 0 0 50 {:color [1 0 0 1]}))
 
    ;; Declarative transforms
    (xf/with-transform [canvas {:translate [100 100]
                                 :rotate 45
                                 :scale [2 1]}]
-     (shapes/circle canvas 0 0 50 {:color 0xFFFF0000}))
+     (shapes/circle canvas 0 0 50 {:color [1 0 0 1]}))
 
    ;; Pre-built matrix
    (xf/with-transform [canvas (xf/rotate-matrix 45)]
-     (shapes/circle canvas 0 0 50 {:color 0xFFFF0000}))
+     (shapes/circle canvas 0 0 50 {:color [1 0 0 1]}))
 
    ;; Perspective
    (xf/with-transform [canvas (xf/perspective-matrix 0.001 0)]

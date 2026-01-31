@@ -22,7 +22,7 @@
 
    Examples:
      (circle canvas 100 100 25)
-     (circle canvas 100 100 25 {:color 0xFF4A90D9})
+     (circle canvas 100 100 25 {:color [0.29 0.56 0.85 1.0]})
      (circle canvas 100 100 25 {:mode :stroke :stroke-width 2})
      (circle canvas 100 100 25 {:blur 5.0 :shadow {:dx 2 :dy 2 :blur 3}})"
   ([^Canvas canvas x y radius]
@@ -50,9 +50,9 @@
 
    Examples:
      (rectangle canvas 10 10 100 50)
-     (rectangle canvas 10 10 100 50 {:color 0xFF4A90D9 :mode :stroke})
+     (rectangle canvas 10 10 100 50 {:color [0.29 0.56 0.85 1.0] :mode :stroke})
      (rectangle canvas 10 10 100 50 {:gradient {:type :linear :x0 0 :y0 0 :x1 100 :y1 0
-                                                :colors [0xFFFF0000 0xFF0000FF]}})"
+                                                :colors [[1 0 0 1] [0 0 1 1]]}})"
   ([^Canvas canvas x y w h]
    (rectangle canvas x y w h {}))
   ([^Canvas canvas x y w h opts]
@@ -77,7 +77,7 @@
 
    Examples:
      (rounded-rect canvas 10 10 100 50 5)
-     (rounded-rect canvas 10 10 100 50 [5 3] {:color 0xFF4A90D9})
+     (rounded-rect canvas 10 10 100 50 [5 3] {:color [0.29 0.56 0.85 1.0]})
      (rounded-rect canvas 10 10 100 50 10 {:blur 3.0 :shadow {:dx 2 :dy 2 :blur 5}})"
   ([^Canvas canvas x y w h radius]
    (rounded-rect canvas x y w h radius {}))
@@ -105,7 +105,7 @@
 
    Examples:
      (line canvas 0 0 100 100)
-     (line canvas 0 0 100 100 {:color 0xFF4A90D9 :stroke-width 2})
+     (line canvas 0 0 100 100 {:color [0.29 0.56 0.85 1.0] :stroke-width 2})
      (line canvas 0 0 100 100 {:dash [10 5] :stroke-cap :round})"
   ([^Canvas canvas x1 y1 x2 y2]
    (line canvas x1 y1 x2 y2 {}))
@@ -130,7 +130,7 @@
 
    Examples:
      (path canvas my-path)
-     (path canvas my-path {:color 0xFF4A90D9})
+     (path canvas my-path {:color [0.29 0.56 0.85 1.0]})
      (path canvas my-path {:mode :stroke :stroke-width 2})
      (path canvas star-path {:gradient {:type :linear ...}})"
   ([^Canvas canvas ^Path p]

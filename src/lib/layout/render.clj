@@ -1,8 +1,11 @@
 (ns lib.layout.render
-  "Rendering utilities for layout trees with Skija."
+  "Rendering utilities for layout trees with Skija.
+
+   All color options accept [r g b a] float vectors (0.0-1.0)."
   (:require [lib.layout.core :as layout]
-            [lib.layout.scroll :as scroll])
-  (:import [io.github.humbleui.skija Canvas Paint PaintMode]
+            [lib.layout.scroll :as scroll]
+            [lib.color.core :as color])
+  (:import [io.github.humbleui.skija Canvas Paint PaintMode Color4f]
            [io.github.humbleui.types Rect RRect]))
 
 ;; ============================================================
@@ -36,8 +39,8 @@
 
           ;; Use constants from scroll.clj (single source of truth)
           scrollbar-radius 3
-          track-color 0x20FFFFFF
-          thumb-color 0x60FFFFFF]
+          track-color [1 1 1 0.125]
+          thumb-color [1 1 1 0.375]]
 
       ;; Vertical scrollbar (when content taller than viewport)
       (when (and (pos? (:h viewport)) (> (:h content) (:h viewport)))
@@ -51,21 +54,23 @@
               thumb-y (* scroll-progress (- track-height thumb-height))
 
               track-x (- (+ x w) scroll/scrollbar-width scroll/scrollbar-margin)
-              track-y (+ y scroll/scrollbar-margin)]
+              track-y (+ y scroll/scrollbar-margin)
+              [tr tg tb ta] track-color]
 
           ;; Draw track
           (with-open [track-paint (doto (Paint.)
-                                    (.setColor (unchecked-int track-color)))]
+                                    (.setColor4f (Color4f. (float tr) (float tg) (float tb) (float ta))))]
             (.drawRRect canvas
                         (RRect/makeXYWH track-x track-y scroll/scrollbar-width track-height scrollbar-radius)
                         track-paint))
 
           ;; Draw thumb
-          (with-open [thumb-paint (doto (Paint.)
-                                    (.setColor (unchecked-int thumb-color)))]
-            (.drawRRect canvas
-                        (RRect/makeXYWH track-x (+ track-y thumb-y) scroll/scrollbar-width thumb-height scrollbar-radius)
-                        thumb-paint))))
+          (let [[r g b a] thumb-color]
+            (with-open [thumb-paint (doto (Paint.)
+                                      (.setColor4f (Color4f. (float r) (float g) (float b) (float a))))]
+              (.drawRRect canvas
+                          (RRect/makeXYWH track-x (+ track-y thumb-y) scroll/scrollbar-width thumb-height scrollbar-radius)
+                          thumb-paint)))))
 
       ;; Horizontal scrollbar (when content wider than viewport)
       (when (and (pos? (:w viewport)) (> (:w content) (:w viewport)))
@@ -79,21 +84,23 @@
               thumb-x (* scroll-progress (- track-width thumb-width))
 
               track-x (+ x scroll/scrollbar-margin)
-              track-y (- (+ y h) scroll/scrollbar-width scroll/scrollbar-margin)]
+              track-y (- (+ y h) scroll/scrollbar-width scroll/scrollbar-margin)
+              [tr tg tb ta] track-color]
 
           ;; Draw track
           (with-open [track-paint (doto (Paint.)
-                                    (.setColor (unchecked-int track-color)))]
+                                    (.setColor4f (Color4f. (float tr) (float tg) (float tb) (float ta))))]
             (.drawRRect canvas
                         (RRect/makeXYWH track-x track-y track-width scroll/scrollbar-width scrollbar-radius)
                         track-paint))
 
           ;; Draw thumb
-          (with-open [thumb-paint (doto (Paint.)
-                                    (.setColor (unchecked-int thumb-color)))]
-            (.drawRRect canvas
-                        (RRect/makeXYWH (+ track-x thumb-x) track-y thumb-width scroll/scrollbar-width scrollbar-radius)
-                        thumb-paint)))))))
+          (let [[r g b a] thumb-color]
+            (with-open [thumb-paint (doto (Paint.)
+                                      (.setColor4f (Color4f. (float r) (float g) (float b) (float a))))]
+              (.drawRRect canvas
+                          (RRect/makeXYWH (+ track-x thumb-x) track-y thumb-width scroll/scrollbar-width scrollbar-radius)
+                          thumb-paint))))))))
 
 ;; ============================================================
 ;; Layout Tree Walking
@@ -184,23 +191,25 @@
    Useful for visualizing the layout structure.
 
    Options:
-     :stroke-color - color for outlines (default 0x80FF0000)
+     :stroke-color - color for outlines as [r g b a] (default [1 0 0 0.5])
      :stroke-width - line width (default 1)
-     :fill-color   - fill color (default nil, no fill)
+     :fill-color   - fill color as [r g b a] (default nil, no fill)
      :show-labels  - show size labels (default false)"
   ([canvas tree] (draw-debug-bounds canvas tree {}))
   ([^Canvas canvas tree opts]
    (let [{:keys [stroke-color stroke-width fill-color]
-          :or {stroke-color 0x80FF0000
+          :or {stroke-color [1 0 0 0.5]
                stroke-width 1}} opts
+         [sr sg sb sa] stroke-color
          stroke-paint (doto (Paint.)
-                        (.setColor (unchecked-int stroke-color))
+                        (.setColor4f (Color4f. (float sr) (float sg) (float sb) (float sa)))
                         (.setMode PaintMode/STROKE)
                         (.setStrokeWidth stroke-width))
          fill-paint (when fill-color
-                      (doto (Paint.)
-                        (.setColor (unchecked-int fill-color))
-                        (.setMode PaintMode/FILL)))]
+                      (let [[fr fg fb fa] fill-color]
+                        (doto (Paint.)
+                          (.setColor4f (Color4f. (float fr) (float fg) (float fb) (float fa)))
+                          (.setMode PaintMode/FILL))))]
      (walk-layout tree
        (fn [_node {:keys [x y w h]}]
          (let [rect (Rect/makeXYWH x y w h)]
@@ -220,9 +229,9 @@
      (def render-ui
        (make-renderer
          (fn [canvas node {:keys [x y w h]}]
-           (when-let [color (:fill node)]
+           (when-let [[r g b a] (:fill node)]
              (.drawRect canvas (Rect/makeXYWH x y w h)
-               (doto (Paint.) (.setColor color)))))))"
+               (doto (Paint.) (.setColor4f (Color4f. r g b a))))))))"
   [draw-node]
   (fn render
     ([canvas tree]
@@ -247,9 +256,9 @@
    Example:
      (render-tree canvas my-tree {:x 0 :y 0 :w 800 :h 600}
        (fn [canvas node {:keys [x y w h]}]
-         (when-let [bg (:background node)]
+         (when-let [[r g b a] (:background node)]
            (.drawRect canvas (Rect/makeXYWH x y w h)
-             (doto (Paint.) (.setColor bg))))))"
+             (doto (Paint.) (.setColor4f (Color4f. r g b a)))))))"
   [canvas tree parent-bounds draw-node]
   (let [laid-out (if (:bounds tree)
                    tree

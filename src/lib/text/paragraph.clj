@@ -2,8 +2,9 @@
   "Multi-line text with word wrap and rich styling.
 
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern)."
-  (:require [lib.text.core :as core])
-  (:import [io.github.humbleui.skija Canvas Paint FontMgr FontStyle FontSlant FontFeature]
+  (:require [lib.text.core :as core]
+            [lib.color.core :as color])
+  (:import [io.github.humbleui.skija Canvas Paint FontMgr FontStyle FontSlant FontFeature Color4f]
            [io.github.humbleui.skija.paragraph
             Paragraph ParagraphBuilder ParagraphStyle TextStyle
             FontCollection Alignment Direction DecorationStyle
@@ -83,6 +84,11 @@
     :alphabetic BaselineMode/ALPHABETIC
     :ideographic BaselineMode/IDEOGRAPHIC
     BaselineMode/ALPHABETIC))
+
+(defn- color->int
+  "Convert [r g b a] float color to 32-bit ARGB int for Skija APIs."
+  [[r g b a]]
+  (color/color4f->hex [r g b (or a 1.0)]))
 
 (defn- build-font-features
   "Build FontFeature array from flexible input.
@@ -186,39 +192,43 @@
                 FontSlant/UPRIGHT)]
         (.setFontStyle style (FontStyle. w 5 s))))
 
-    ;; Colors
-    (when color (.setColor style (unchecked-int color)))
+    ;; Colors - [r g b a] floats (0.0-1.0)
+    (when color (.setColor style (color->int color)))
     (when background-color
-      (.setBackground style (doto (Paint.) (.setColor (unchecked-int background-color)))))
+      (let [[r g b a] background-color]
+        (.setBackground style (doto (Paint.)
+                                (.setColor4f (Color4f. (float r) (float g) (float b) (float (or a 1.0))))))))
 
-    ;; Decorations
+    ;; Decorations - [r g b a] floats for :color
     (when underline
       (if (map? underline)
         (let [{line-style :style ucolor :color thickness-multiplier :thickness-multiplier} underline
-              ^DecorationLineStyle dls (resolve-decoration-style line-style)]
+              ^DecorationLineStyle dls (resolve-decoration-style line-style)
+              color-int (if ucolor (color->int ucolor) (color->int [0 0 0 1]))]
           (.setDecorationStyle style (DecorationStyle.
                                        true false false false
-                                       (unchecked-int (or ucolor 0xFF000000))
+                                       color-int
                                        dls
                                        (float (or thickness-multiplier 1.0)))))
         (.setDecorationStyle style (DecorationStyle.
                                      true false false false
-                                     (unchecked-int 0xFF000000)
+                                     (color->int [0 0 0 1])
                                      DecorationLineStyle/SOLID
                                      (float 1.0)))))
 
     (when strikethrough
       (if (map? strikethrough)
         (let [{line-style :style scolor :color thickness-multiplier :thickness-multiplier} strikethrough
-              ^DecorationLineStyle dls (resolve-decoration-style line-style)]
+              ^DecorationLineStyle dls (resolve-decoration-style line-style)
+              color-int (if scolor (color->int scolor) (color->int [0 0 0 1]))]
           (.setDecorationStyle style (DecorationStyle.
                                        false false true false
-                                       (unchecked-int (or scolor 0xFF000000))
+                                       color-int
                                        dls
                                        (float (or thickness-multiplier 1.0)))))
         (.setDecorationStyle style (DecorationStyle.
                                      false false true false
-                                     (unchecked-int 0xFF000000)
+                                     (color->int [0 0 0 1])
                                      DecorationLineStyle/SOLID
                                      (float 1.0)))))
 
@@ -279,10 +289,10 @@
                  or space-separated \"cv06 cv07\"
 
    Style Options:
-     :color            - text color (32-bit ARGB)
-     :background-color - text background color
-     :underline        - true or {:style :wavy :color 0xFF...}
-     :strikethrough    - true or {:style :solid :color 0xFF...}
+     :color            - text color as [r g b a] floats (0.0-1.0)
+     :background-color - text background color as [r g b a] floats
+     :underline        - true or {:style :wavy :color [r g b a]}
+     :strikethrough    - true or {:style :solid :color [r g b a]}
      :letter-spacing   - additional spacing between characters
      :word-spacing     - additional spacing between words
      :line-height      - line height multiplier
@@ -326,7 +336,7 @@
    Examples:
      (rich-text {:width 300}
        [{:text \"Hello \" :size 24}
-        {:text \"World\" :size 24 :weight :bold :color 0xFF0000FF}])
+        {:text \"World\" :size 24 :weight :bold :color [0 0 1 1]}])
 
      ;; With inline placeholder (e.g. for icon):
      (rich-text {:width 300}
@@ -594,11 +604,12 @@
      para  - Paragraph object
      from  - start character index
      to    - end character index
-     color - new color (32-bit ARGB int)
+     color - [r g b a] floats (0.0-1.0)
 
    Returns: para (for chaining)"
-  [^Paragraph para from to color]
-  (let [paint (doto (Paint.) (.setColor (unchecked-int color)))]
+  [^Paragraph para from to [r g b a]]
+  (let [paint (doto (Paint.)
+                (.setColor4f (Color4f. (float r) (float g) (float b) (float (or a 1.0)))))]
     (.updateForegroundPaint para (int from) (int to) paint))
   para)
 
@@ -609,10 +620,11 @@
      para  - Paragraph object
      from  - start character index
      to    - end character index
-     color - new color (32-bit ARGB int)
+     color - [r g b a] floats (0.0-1.0)
 
    Returns: para (for chaining)"
-  [^Paragraph para from to color]
-  (let [paint (doto (Paint.) (.setColor (unchecked-int color)))]
+  [^Paragraph para from to [r g b a]]
+  (let [paint (doto (Paint.)
+                (.setColor4f (Color4f. (float r) (float g) (float b) (float (or a 1.0)))))]
     (.updateBackgroundPaint para (int from) (int to) paint))
   para)

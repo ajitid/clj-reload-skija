@@ -48,10 +48,10 @@
 
    Examples:
      (with-layer [canvas {:alpha 128}]
-       (shapes/circle canvas 100 100 50 {:color 0xFFFF0000}))
+       (shapes/circle canvas 100 100 50 {:color [1 0 0 1]}))
 
      (with-layer [canvas {:backdrop (filters/blur 10)}]
-       (shapes/rounded-rect canvas 10 10 200 100 10 {:color 0x80FFFFFF}))"
+       (shapes/rounded-rect canvas 10 10 200 100 10 {:color [1 1 1 0.5]}))"
   [[canvas opts] & body]
   `(let [c# ~canvas
          opts# ~opts
@@ -78,7 +78,7 @@
 
        ;; Basic layer
        :else
-       (.saveLayer c# rect# ^Paint nil))
+       (.saveLayer c# rect# nil))
      (try
        ~@body
        (finally

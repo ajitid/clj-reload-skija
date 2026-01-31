@@ -3,8 +3,9 @@
 
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern)."
   (:require [lib.error.core :as err]
+            [lib.color.core :as color]
             [clojure.string :as str])
-  (:import [io.github.humbleui.skija Canvas Paint Font FontMgr FontStyle]))
+  (:import [io.github.humbleui.skija Canvas Paint Font FontMgr FontStyle Color4f]))
 
 ;; ============================================================
 ;; Error Overlay Rendering
@@ -13,19 +14,20 @@
 (defn draw-error
   "Draw error message and stack trace on canvas with red background."
   [^Canvas canvas ^Exception e]
-  (let [bg-color    0xFFCC4444
-        text-color  0xFFFFFFFF
+  (let [bg-color    [0.8 0.27 0.27 1.0]  ; #CC4444
+        text-color  color/white
         font-size   14
         padding     20
         line-height 18
         {:keys [type message location original-message]} (err/get-error-info e)]
     ;; Red background
-    (.clear canvas (unchecked-int bg-color))
+    (.clear canvas (color/color4f->hex bg-color))
     ;; Draw error text
-    (with-open [typeface (.matchFamilyStyle (FontMgr/getDefault) nil FontStyle/NORMAL)
-                font (Font. typeface (float font-size))
-                paint (doto (Paint.)
-                        (.setColor (unchecked-int text-color)))]
+    (let [[r g b a] text-color]
+      (with-open [typeface (.matchFamilyStyle (FontMgr/getDefault) nil FontStyle/NORMAL)
+                  font (Font. typeface (float font-size))
+                  paint (doto (Paint.)
+                          (.setColor4f (Color4f. (float r) (float g) (float b) (float a))))]
       ;; Header
       (.drawString canvas "ERROR (Ctrl+E or middle-click to copy)" (float padding) (float (+ padding line-height)) font paint)
       ;; Location (file:line:column) if available (for compile errors)
@@ -54,4 +56,4 @@
                          (err/truncate-with-ellipsis line 100)
                          (float padding)
                          (float (+ padding (* (+ stack-y-offset idx) line-height)))
-                         font paint)))))))
+                         font paint))))))))

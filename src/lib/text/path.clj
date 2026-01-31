@@ -98,7 +98,7 @@
      (require '[lib.graphics.path :as path])
 
      (text-on-path canvas \"Hello!\" (path/circle 200 200 80) {:size 24})
-     (text-on-path canvas \"Wave\" (path/wave 50 200 400 50 2) {:size 18 :color 0xFF0000FF})
+     (text-on-path canvas \"Wave\" (path/wave 50 200 400 50 2) {:size 18 :color [0 0 1 1]})
      (text-on-path canvas \"Arc\" (path/arc 200 200 100 -90 180) {:size 20})"
   ([canvas text path]
    (text-on-path canvas text path {}))

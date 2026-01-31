@@ -28,14 +28,14 @@
      (points canvas (float-array [100 100 200 200]) 5)
 
      ;; Maps (idiomatic)
-     (points canvas [{:x 100 :y 100} {:x 200 :y 200}] 5 {:color 0xFF4A90D9})
+     (points canvas [{:x 100 :y 100} {:x 200 :y 200}] 5 {:color [0.29 0.56 0.85 1.0]})
 
      ;; Vectors (simple)
      (points canvas [[100 100] [200 200]] 5)
 
      ;; With effects
      (points canvas points-data 3 {:gradient {:type :radial :cx 100 :cy 100 :radius 50
-                                               :colors [0xFFFF0000 0xFF0000FF]}})"
+                                               :colors [[1 0 0 1] [0 0 1 1]]}})"
   ([^Canvas canvas points radius]
    (points canvas points radius {}))
   ([^Canvas canvas points radius opts]
@@ -86,11 +86,11 @@
                                   100 100 200 50]))
 
      ;; With styling
-     (lines canvas line-data {:color 0xFF4A90D9 :stroke-width 2 :stroke-cap :round})
+     (lines canvas line-data {:color [0.29 0.56 0.85 1.0] :stroke-width 2 :stroke-cap :round})
 
      ;; With effects
      (lines canvas line-data {:gradient {:type :linear :x0 0 :y0 0 :x1 100 :y1 0
-                                         :colors [0xFFFF0000 0xFF0000FF]}})"
+                                         :colors [[1 0 0 1] [0 0 1 1]]}})"
   ([^Canvas canvas lines]
    (lines canvas lines {}))
   ([^Canvas canvas ^floats lines opts]
