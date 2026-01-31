@@ -8,9 +8,10 @@
    - Button widget for controls"
   (:require [app.ui.button :as button]
             [lib.flex.core :as flex]
+            [lib.graphics.image :as image]
             [lib.graphics.shapes :as shapes]
             [lib.text.core :as text])
-  (:import [io.github.humbleui.skija Canvas Image ImageInfo Bitmap Paint]
+  (:import [io.github.humbleui.skija Canvas ImageInfo Bitmap]
            [io.github.humbleui.types Rect]
            [java.net URI]
            [java.net.http HttpClient HttpClient$Redirect HttpRequest
@@ -58,6 +59,14 @@
         b (bit-and color 0xFF)]
     (format "#%02X%02X%02X" r g b)))
 
+(defn color-int->color4f
+  "Convert packed ARGB int to [r g b a] floats."
+  [color]
+  [(/ (bit-and (bit-shift-right color 16) 0xFF) 255.0)
+   (/ (bit-and (bit-shift-right color 8) 0xFF) 255.0)
+   (/ (bit-and color 0xFF) 255.0)
+   (/ (bit-and (bit-shift-right color 24) 0xFF) 255.0)])
+
 ;; ============================================================
 ;; Image download
 ;; ============================================================
@@ -75,7 +84,7 @@
         response (.send client request (HttpResponse$BodyHandlers/ofByteArray))]
     (.body response)))
 
-(defn- rebuild-bitmap! [^Image img]
+(defn- rebuild-bitmap! [img]
   ;; Close old bitmap
   (when-let [old @photo-bitmap]
     (.close old))
@@ -92,7 +101,7 @@
     (future
       (try
         (let [bytes (fetch-image-bytes photo-url)
-              img (Image/makeFromEncoded bytes)]
+              img (image/from-bytes bytes)]
           ;; Close old image
           (when-let [old @photo-image]
             (.close old))
@@ -211,15 +220,16 @@
             py (- height 80)]
         (doseq [i (range n)]
           (let [{:keys [color]} (nth points i)
+                color4f (color-int->color4f color)
                 px (+ start-x (* i (+ palette-size palette-gap)))]
             ;; Swatch square
-            (shapes/rectangle canvas px py palette-size palette-size {:color color})
+            (shapes/rectangle canvas px py palette-size palette-size {:color color4f})
             (shapes/rectangle canvas px py palette-size palette-size
-                              {:color 0xFFFFFFFF :mode :stroke :stroke-width 1.5})
+                              {:color [1 1 1 1] :mode :stroke :stroke-width 1.5})
             ;; Hex label
             (text/text canvas (color->hex color)
                        (+ px (/ palette-size 2)) (+ py palette-size 16)
-                       {:size 10 :color 0xAAFFFFFF :align :center})))))))
+                       {:size 10 :color [0.667 1 1 1] :align :center})))))))
 
 (defn draw [^Canvas canvas width height]
   (window-width width)
@@ -227,53 +237,54 @@
 
   ;; Title
   (text/text canvas "Pipette Photo" (/ width 2) 40
-             {:size 28 :weight :medium :align :center :color 0xFFFFFFFF})
+             {:size 28 :weight :medium :align :center :color [1 1 1 1]})
 
   ;; Buttons
   (let [[bx by bw bh] (new-photo-btn-bounds nil)]
     (button/draw canvas "New Photo" [bx by bw bh]
-                 {:color 0xFF4A90D9 :pressed-color 0xFF3A7AB9}))
+                 {:color [0.29 0.56 0.85 1.0] :pressed-color [0.227 0.478 0.725 1.0]}))
   (let [[bx by bw bh] (clear-btn-bounds nil)]
     (button/draw canvas "Clear" [bx by bw bh]
-                 {:color 0xFF666666 :pressed-color 0xFF888888}))
+                 {:color [0.4 0.4 0.4 1.0] :pressed-color [0.533 0.533 0.533 1.0]}))
 
   ;; Photo or loading state
   (if @loading?
     (text/text canvas "Loading photo..." (/ width 2) (/ height 2)
-               {:size 18 :color 0x88FFFFFF :align :center})
+               {:size 18 :color [0.533 1 1 1] :align :center})
     (if-let [img @photo-image]
       (when-let [[ox oy iw ih] (image-offset width height)]
         ;; Draw image
-        (.drawImage canvas img (float ox) (float oy))
+        (image/draw-image canvas img ox oy)
 
         ;; Draw border
         (shapes/rectangle canvas ox oy iw ih
-                          {:color 0x44FFFFFF :mode :stroke :stroke-width 1})
+                          {:color [0.267 1 1 1] :mode :stroke :stroke-width 1})
 
         ;; Draw sample circles on image
         (doseq [{:keys [x y color]} @sampled-points]
           (let [sx (+ ox x)
-                sy (+ oy y)]
+                sy (+ oy y)
+                color4f (color-int->color4f color)]
             ;; White outline
             (shapes/circle canvas sx sy (+ sample-radius outline-width)
-                           {:color 0xFFFFFFFF})
+                           {:color [1 1 1 1]})
             ;; Filled with sampled color
             (shapes/circle canvas sx sy sample-radius
-                           {:color color})
+                           {:color color4f})
             ;; Hex label
             (text/text canvas (color->hex color)
                        sx (+ sy sample-radius 18)
-                       {:size 11 :color 0xFFFFFFFF :align :center})))
+                       {:size 11 :color [1 1 1 1] :align :center})))
 
         ;; Hint text
         (when (empty? @sampled-points)
           (text/text canvas "Click on the image to pick colors"
                      (+ ox (/ iw 2)) (+ oy ih 20)
-                     {:size 14 :color 0x66FFFFFF :align :center})))
+                     {:size 14 :color [0.4 1 1 1] :align :center})))
 
       ;; No image yet
       (text/text canvas "Press 'New Photo' to download" (/ width 2) (/ height 2)
-                 {:size 16 :color 0x66FFFFFF :align :center})))
+                 {:size 16 :color [0.4 1 1 1] :align :center})))
 
   ;; Palette strip at bottom
   (draw-palette canvas width height))

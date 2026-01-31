@@ -21,7 +21,7 @@
    NOT MEANT TO BE EXECUTED - just documentation/reference."
   (:require [lib.graphics.state :as gfx]
             [lib.graphics.shapes :as shapes]
-            [lib.graphics.atlas :as atlas]
+            [lib.graphics.image :as image]
             [lib.text.core :as text]
             [lib.text.measure :as text-measure]
             [lib.graphics.batch :as batch]
@@ -35,25 +35,25 @@
 
 (comment
   ;; Simple filled circle
-  (shapes/circle canvas 100 100 50 {:color 0xFF4A90D9})
+  (shapes/circle canvas 100 100 50 {:color [0.29 0.56 0.85 1.0]})
 
   ;; Stroked circle with custom width
   (shapes/circle canvas 100 100 50
                 {:mode :stroke
                  :stroke-width 3
-                 :color 0xFFFF0000})
+                 :color [1.0 0.0 0.0 1.0]})
 
   ;; Rectangle
-  (shapes/rectangle canvas 10 10 100 50 {:color 0xFF00FF00})
+  (shapes/rectangle canvas 10 10 100 50 {:color [0.0 1.0 0.0 1.0]})
 
   ;; Rounded rectangle
-  (shapes/rounded-rect canvas 10 10 100 50 10 {:color 0xFFFFFF00})
+  (shapes/rounded-rect canvas 10 10 100 50 10 {:color [1.0 1.0 0.0 1.0]})
 
   ;; Line with rounded caps
   (shapes/line canvas 0 0 100 100
               {:stroke-width 5
                :stroke-cap :round
-               :color 0xFF000000}))
+               :color [0.0 0.0 0.0 1.0]}))
 
 ;; ============================================================
 ;; Text Rendering
@@ -66,7 +66,7 @@
   ;; Colored text with custom size
   (text/text canvas "Hello" 10 50
                 {:size 24
-                 :color 0xFFFF0000})
+                 :color [1.0 0.0 0.0 1.0]})
 
   ;; Measure text width
   (text-measure/text-width "Hello" {:size 24}))
@@ -78,12 +78,12 @@
 (comment
   ;; Draw many points efficiently
   (batch/points canvas [{:x 100 :y 100} {:x 200 :y 200}] 5
-               {:color 0xFF4A90D9})
+               {:color [0.29 0.56 0.85 1.0]})
 
   ;; Draw line segments
   (batch/lines canvas (float-array [0 0 100 100
                                     100 100 200 50])
-              {:stroke-width 2 :color 0xFFFF0000}))
+              {:stroke-width 2 :color [1.0 0.0 0.0 1.0]}))
 
 ;; ============================================================
 ;; Advanced Paint Effects (Idiomatic Clojure/Love2D Style)
@@ -92,17 +92,17 @@
 (comment
   ;; Blur effect
   (shapes/circle canvas 100 100 50
-                {:color 0xFF4A90D9
+                {:color [0.29 0.56 0.85 1.0]
                  :blur 5.0})
 
   ;; Drop shadow (simple map)
   (shapes/circle canvas 100 100 50
-                {:color 0xFF4A90D9
+                {:color [0.29 0.56 0.85 1.0]
                  :shadow {:dx 3 :dy 3 :blur 5}})
 
   ;; Outer glow
   (shapes/circle canvas 100 100 50
-                {:color 0xFF4A90D9
+                {:color [0.29 0.56 0.85 1.0]
                  :glow {:size 10 :mode :outer}})
 
   ;; Dashed line (simple vector)
@@ -113,13 +113,12 @@
 
   ;; Multiply blend mode
   (shapes/circle canvas 100 100 50
-                {:color 0xFF4A90D9
+                {:color [0.29 0.56 0.85 1.0]
                  :blend-mode :multiply})
 
   ;; Semi-transparent with alpha
   (shapes/circle canvas 100 100 50
-                {:color 0xFF4A90D9
-                 :alphaf 0.5}))
+                {:color [0.29 0.56 0.85 0.5]}))
 
 ;; ============================================================
 ;; Color Filters (Idiomatic - Just Use Keywords/Numbers)
@@ -128,22 +127,22 @@
 (comment
   ;; Grayscale
   (shapes/circle canvas 100 100 50
-                {:color 0xFF4A90D9
+                {:color [0.29 0.56 0.85 1.0]
                  :grayscale true})
 
   ;; Sepia tone
   (shapes/circle canvas 100 100 50
-                {:color 0xFF4A90D9
+                {:color [0.29 0.56 0.85 1.0]
                  :sepia true})
 
   ;; Brightness adjustment
   (shapes/circle canvas 100 100 50
-                {:color 0xFF4A90D9
+                {:color [0.29 0.56 0.85 1.0]
                  :brightness 0.3})
 
   ;; Contrast adjustment
   (shapes/circle canvas 100 100 50
-                {:color 0xFF4A90D9
+                {:color [0.29 0.56 0.85 1.0]
                  :contrast 1.5}))
 
 ;; ============================================================
@@ -156,30 +155,30 @@
                 {:gradient {:type :linear
                             :x0 50 :y0 50
                             :x1 150 :y1 150
-                            :colors [0xFFFF0000 0xFF0000FF]}})
+                            :colors [[1 0 0 1] [0 0 1 1]]}})
 
   ;; Radial gradient with custom stops
   (shapes/circle canvas 100 100 50
                 {:gradient {:type :radial
                             :cx 100 :cy 100
                             :radius 50
-                            :colors [0xFFFFFFFF 0xFF4A90D9 0xFF000000]
+                            :colors [[1 1 1 1] [0.29 0.56 0.85 1] [0 0 0 1]]
                             :stops [0.0 0.5 1.0]}})
 
   ;; Sweep gradient (color wheel)
   (shapes/circle canvas 100 100 50
                 {:gradient {:type :sweep
                             :cx 100 :cy 100
-                            :colors [0xFFFF0000 0xFFFFFF00 0xFF00FF00
-                                     0xFF00FFFF 0xFF0000FF 0xFFFF00FF
-                                     0xFFFF0000]}})
+                            :colors [[1 0 0 1] [1 1 0 1] [0 1 0 1]
+                                     [0 1 1 1] [0 0 1 1] [1 0 1 1]
+                                     [1 0 0 1]]}})
 
   ;; Repeating gradient
   (shapes/rectangle canvas 0 0 200 200
                    {:gradient {:type :linear
                                :x0 0 :y0 0
                                :x1 20 :y1 0
-                               :colors [0xFF000000 0xFFFFFFFF]
+                               :colors [[0 0 0 1] [1 1 1 1]]
                                :tile-mode :repeat}}))
 
 ;; ============================================================
@@ -190,12 +189,12 @@
   ;; Glowing text with drop shadow - just use :shadow!
   (text/text canvas "GLOW" 50 100
                 {:size 48
-                 :color 0xFF00FFFF
-                 :shadow {:dx 0 :dy 0 :blur 10 :color 0xFF00FFFF}})
+                 :color [0 1 1 1]
+                 :shadow {:dx 0 :dy 0 :blur 10 :color [0 1 1 1]}})
 
   ;; Neon effect - just use :glow!
   (shapes/circle canvas 100 100 50
-                {:color 0xFF00FFFF
+                {:color [0 1 1 1]
                  :glow {:size 15 :mode :outer}
                  :blend-mode :screen})
 
@@ -207,11 +206,11 @@
                     :gradient {:type :linear
                                :x0 0 :y0 0
                                :x1 200 :y1 200
-                               :colors [0xFFFF0000 0xFF00FF00 0xFF0000FF]}})
+                               :colors [[1 0 0 1] [0 1 0 1] [0 0 1 1]]}})
 
   ;; Glass morphism - just use :blur number!
   (shapes/rounded-rect canvas 50 50 200 100 20
-                      {:color 0x40FFFFFF
+                      {:color [1 1 1 0.25]
                        :blend-mode :screen
                        :blur 10.0})
 
@@ -220,8 +219,8 @@
                 {:gradient {:type :radial
                             :cx 100 :cy 100
                             :radius 50
-                            :colors [0xFFFF00FF 0xFF00FFFF]}
-                 :shadow {:dx 5 :dy 5 :blur 10 :color 0x80000000}
+                            :colors [[1 0 1 1] [0 1 1 1]]}
+                 :shadow {:dx 5 :dy 5 :blur 10 :color [0 0 0 0.5]}
                  :blend-mode :screen}))
 
 ;; ============================================================
@@ -297,76 +296,73 @@
 ;; drawImageRect under the hood. The API follows Love2D conventions.
 
 (comment
-  (require '[lib.graphics.atlas :as atlas])
+  (require '[lib.graphics.image :as image])
 
   ;; Load a sprite sheet
-  (def sheet (atlas/load-image "assets/sprites.png"))
+  (def sheet (image/from-file "assets/sprites.png"))
+
+  ;; Load from bytes (e.g., downloaded content)
+  (def img (image/from-bytes byte-array))
 
   ;; Define quads (sprite regions within the sheet)
-  (def player-idle (atlas/quad 0 0 32 32))
-  (def player-walk (atlas/quad 32 0 32 32))
-  (def player-jump (atlas/quad 64 0 32 32))
+  (def player-idle (image/quad 0 0 32 32))
+  (def player-walk (image/quad 32 0 32 32))
+  (def player-jump (image/quad 64 0 32 32))
 
   ;; Create a grid of quads from a regular sprite sheet
   ;; (4 columns, 2 rows of 32x32 sprites)
-  (def all-sprites (atlas/quad-grid 32 32 4 2))
+  (def all-sprites (image/quad-grid 32 32 4 2))
 
   ;; Simple sprite drawing
-  (atlas/draw canvas sheet player-idle 100 100)
+  (image/draw canvas sheet player-idle 100 100)
 
   ;; Draw with rotation (radians), centered on sprite
-  (atlas/draw canvas sheet player-idle 100 100
+  (image/draw canvas sheet player-idle 100 100
               {:rotation (/ Math/PI 4)
                :origin [16 16]})
 
   ;; Draw with scale (uniform or [sx sy])
-  (atlas/draw canvas sheet player-idle 100 100
+  (image/draw canvas sheet player-idle 100 100
               {:scale 2.0})
-  (atlas/draw canvas sheet player-idle 100 100
+  (image/draw canvas sheet player-idle 100 100
               {:scale [2.0 1.5]})
 
   ;; Draw flipped (useful for character facing direction)
-  (atlas/draw canvas sheet player-walk 100 100
+  (image/draw canvas sheet player-walk 100 100
               {:flip-x true
                :origin [16 16]})
 
   ;; Semi-transparent sprite
-  (atlas/draw canvas sheet player-idle 100 100
+  (image/draw canvas sheet player-idle 100 100
               {:alpha 0.5})
 
   ;; Combined transforms
-  (atlas/draw canvas sheet player-jump 100 100
+  (image/draw canvas sheet player-jump 100 100
               {:rotation 0.3
                :scale 1.5
                :origin [16 16]
                :alpha 0.8})
 
   ;; Draw entire image (no quad)
-  (atlas/draw-image canvas logo 10 10)
-  (atlas/draw-image canvas logo 10 10 {:scale 0.5})
+  (image/draw-image canvas logo 10 10)
+  (image/draw-image canvas logo 10 10 {:scale 0.5})
 
   ;; Animation helper - get current frame based on time
-  (def walk-cycle (atlas/quad-grid 32 32 8))  ; 8-frame animation
-  (let [frame (atlas/animation-frame walk-cycle @game-time 12)] ; 12 FPS
-    (atlas/draw canvas sheet frame player-x player-y))
+  (def walk-cycle (image/quad-grid 32 32 8))  ; 8-frame animation
+  (let [frame (image/animation-frame walk-cycle @game-time 12)] ; 12 FPS
+    (image/draw canvas sheet frame player-x player-y))
 
   ;; Batch drawing - draw many sprites efficiently
-  (atlas/draw-batch canvas sheet
+  (image/draw-batch canvas sheet
                     [[player-idle 100 100]
                      [player-walk 200 100 {:flip-x true}]
                      [player-jump 300 100 {:rotation 0.5}]])
 
   ;; RSXform helpers (for advanced/future use)
   ;; RSXform encodes rotation+scale as a 2x3 matrix
-  (def xform (atlas/rsxform-from-radians
+  (def xform (image/rsxform-from-radians
                1.0      ; scale
                0.5      ; rotation in radians
                100 100  ; position
                16 16))  ; anchor point
-
-  ;; Batch with RSXform transforms
-  (atlas/draw-batch-rsxform canvas sheet
-                            [sprite-quad sprite-quad sprite-quad]
-                            [(atlas/rsxform-from-radians 1.0 0.0 100 100 16 16)
-                             (atlas/rsxform-from-radians 1.5 0.5 200 100 16 16)
-                             (atlas/rsxform-from-radians 2.0 1.0 300 100 16 16)]))
+  )

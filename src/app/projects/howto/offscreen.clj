@@ -8,9 +8,10 @@
    - Button widget with tap gesture"
   (:require [app.ui.button :as button]
             [lib.flex.core :as flex]
+            [lib.graphics.image :as image]
             [lib.graphics.shapes :as shapes]
             [lib.text.core :as text])
-  (:import [io.github.humbleui.skija Canvas Surface ImageInfo Paint]
+  (:import [io.github.humbleui.skija Canvas Surface ImageInfo]
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
@@ -18,13 +19,13 @@
 ;; ============================================================
 
 (def panel-width 200)
-(def panel-bg-color 0xFF333333)
+(def panel-bg-color [0.2 0.2 0.2 1.0])
 (def ball-radius 30)
-(def ball-color 0xFF4A90D9)
+(def ball-color [0.29 0.56 0.85 1.0])
 (def button-w 150)
 (def button-h 40)
 (def button-margin 25)
-(def overlay-alpha 128)
+(def overlay-alpha 0.5)
 
 ;; ============================================================
 ;; State (persists across hot-reloads)
@@ -46,11 +47,11 @@
   (let [cx (/ area-w 2.0)
         cy (double @ball-y)]
     ;; Background
-    (shapes/rectangle canvas 0 0 area-w area-h {:color 0xFF1A1A2E})
+    (shapes/rectangle canvas 0 0 area-w area-h {:color [0.102 0.102 0.18 1.0]})
     ;; Ball
     (shapes/circle canvas cx cy ball-radius {:color ball-color})
     ;; Label
-    (text/text canvas "Live" 12 24 {:size 14 :color 0x88FFFFFF})))
+    (text/text canvas "Live" 12 24 {:size 14 :color [0.533 1 1 1]})))
 
 ;; ============================================================
 ;; Off-screen capture
@@ -143,11 +144,10 @@
 
       ;; 2. Draw captured overlay if present
       (when-let [img @captured-image]
-        (with-open [p (doto (Paint.) (.setAlpha overlay-alpha))]
-          (.drawImage canvas img 0 0 p))
+        (image/draw-image canvas img 0 0 {:alpha overlay-alpha})
         ;; Label for overlay
         (text/text canvas "Captured (overlay)" 12 (- height 12)
-                   {:size 14 :color 0xAAFFFFFF}))
+                   {:size 14 :color [0.667 1 1 1]}))
       (.restoreToCount canvas save-count))
 
     ;; 3. Draw control panel
@@ -157,14 +157,14 @@
 
       ;; Title
       (text/text canvas "Controls" (+ area-w (/ panel-width 2)) 40
-                 {:size 18 :color 0xFFFFFFFF :align :center})
+                 {:size 18 :color [1 1 1 1] :align :center})
 
       ;; Capture button
       (let [bx (+ area-w button-margin)
             by (- (/ height 2) (/ button-h 2))]
         (button/draw canvas "Capture" [bx by button-w button-h]
-                     {:color 0xFF4A90D9
-                      :pressed-color 0xFF3A7AB9
+                     {:color [0.29 0.56 0.85 1.0]
+                      :pressed-color [0.227 0.478 0.725 1.0]
                       :pressed? @button-pressed?}))
 
       ;; Status text
@@ -172,7 +172,7 @@
                  (if @captured-image "Overlay active" "No capture yet")
                  (+ area-w (/ panel-width 2))
                  (+ (/ height 2) 50)
-                 {:size 13 :color 0x88FFFFFF :align :center}))))
+                 {:size 13 :color [0.533 1 1 1] :align :center}))))
 
 (defn cleanup []
   (println "Offscreen demo cleanup")

@@ -2,7 +2,7 @@
   "Love2D-style audio API for Clojure.
 
    Provides simple, game-friendly audio playback:
-   - (new-source \"sound.wav\") -> Source
+   - (from-file \"sound.wav\") -> Source
    - (play! source), (stop! source), (pause! source), (resume! source)
    - (set-volume! source 0.5), (set-looping! source true)
    - (playing? source), (duration source)
@@ -40,7 +40,7 @@
 ;; Loading
 ;; ============================================================
 
-(defn new-source
+(defn from-file
   "Load audio source from file (WAV/OGG/MP3).
 
    Options:
@@ -49,7 +49,7 @@
    Returns a Source handle. Resources are automatically released when
    the Source is garbage collected (like Love2D)."
   ([path]
-   (new-source path {}))
+   (from-file path {}))
   ([path opts]
    (let [id (swap! state/source-counter inc)
          clip (audio/create-clip path)
@@ -70,6 +70,11 @@
                       (catch Exception _)))
                   (swap! state/sources dissoc id)))
      source)))
+
+;; Legacy alias for backwards compatibility
+(def new-source
+  "DEPRECATED: Use from-file instead."
+  from-file)
 
 ;; ============================================================
 ;; Playback control

@@ -35,10 +35,10 @@
 ;; Drawing
 ;; ============================================================
 
-(def text-color 0xFFCCCCCC)  ;; Light gray for dark background
-(def playing-color 0xFF4CAF50)
-(def paused-color 0xFFFF9800)
-(def stopped-color 0xFF666666)
+(def text-color [0.8 0.8 0.8 1.0])
+(def playing-color [0.298 0.686 0.314 1.0])
+(def paused-color [1.0 0.596 0.0 1.0])
+(def stopped-color [0.4 0.4 0.4 1.0])
 
 (defn format-time [seconds]
   (when seconds
@@ -69,7 +69,7 @@
     (text/text canvas "Audio Demo" (- cx 80) 60 {:size 32 :color text-color})
     ;; Status indicator
     (shapes/circle canvas cx (- cy 60) 30 {:color status-color})
-    (text/text canvas status-text (- cx 45) (- cy 50) {:size 20 :color 0xFFFFFFFF})
+    (text/text canvas status-text (- cx 45) (- cy 50) {:size 20 :color [1 1 1 1]})
     ;; Time
     (text/text canvas time-text (- cx 50) (+ cy 20) {:size 24 :color text-color})
     ;; Progress bar
@@ -80,15 +80,15 @@
           progress (if (and current-pos total-dur (pos? total-dur))
                      (/ current-pos total-dur)
                      0)]
-      (shapes/rect canvas bar-x bar-y bar-w bar-h {:color 0xFF444444 :radius 4})
+      (shapes/rect canvas bar-x bar-y bar-w bar-h {:color [0.267 0.267 0.267 1.0] :radius 4})
       (shapes/rect canvas bar-x bar-y (* bar-w progress) bar-h {:color status-color :radius 4}))
     ;; Volume and loop status
     (text/text canvas vol-text (- cx 50) (+ cy 100) {:size 18 :color text-color})
     (text/text canvas loop-text (- cx 30) (+ cy 130) {:size 18 :color text-color})
     ;; Controls help
     (let [help-y (+ cy 180)]
-      (text/text canvas "SPACE: Play/Pause   S: Stop   L: Loop" (- cx 160) help-y {:size 14 :color 0xFF888888})
-      (text/text canvas "UP/DOWN: Volume   LEFT/RIGHT: Seek" (- cx 145) (+ help-y 20) {:size 14 :color 0xFF888888}))))
+      (text/text canvas "SPACE: Play/Pause   S: Stop   L: Loop" (- cx 160) help-y {:size 14 :color [0.533 0.533 0.533 1.0]})
+      (text/text canvas "UP/DOWN: Volume   LEFT/RIGHT: Seek" (- cx 145) (+ help-y 20) {:size 14 :color [0.533 0.533 0.533 1.0]}))))
 
 ;; ============================================================
 ;; Example Interface
@@ -99,7 +99,7 @@
   (println "Audio Demo loaded!")
   (println "Loading audio file:" audio-file)
   (try
-    (reset! music (audio/new-source audio-file))
+    (reset! music (audio/from-file audio-file))
     (println "Audio loaded successfully. Duration:" (format-time (audio/duration @music)))
     (catch Exception e
       (println "Failed to load audio:" (.getMessage e)))))

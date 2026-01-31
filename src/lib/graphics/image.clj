@@ -1,4 +1,4 @@
-(ns lib.graphics.atlas
+(ns lib.graphics.image
   "Sprite atlas and image drawing - Love2D-style API.
 
    Provides efficient sprite sheet handling with quad-based drawing.
@@ -11,22 +11,25 @@
 
    ```clojure
    ;; Load a sprite sheet
-   (def sheet (atlas/load-image \"assets/sprites.png\"))
+   (def sheet (image/from-file \"assets/sprites.png\"))
+
+   ;; Load from bytes (e.g., downloaded content)
+   (def img (image/from-bytes byte-array))
 
    ;; Define quads (sprite regions within the sheet)
-   (def player-idle (atlas/quad 0 0 32 32))
-   (def player-walk (atlas/quad 32 0 32 32))
+   (def player-idle (image/quad 0 0 32 32))
+   (def player-walk (image/quad 32 0 32 32))
 
    ;; Draw sprites
-   (atlas/draw canvas sheet player-idle 100 100)
-   (atlas/draw canvas sheet player-idle 100 100
+   (image/draw canvas sheet player-idle 100 100)
+   (image/draw canvas sheet player-idle 100 100
      {:rotation (/ Math/PI 4)
       :scale 2.0
       :origin [16 16]})
 
    ;; Draw entire image (no quad)
-   (atlas/draw-image canvas sheet 0 0)
-   (atlas/draw-image canvas sheet 0 0 {:alpha 0.5 :scale [2 1]})
+   (image/draw-image canvas sheet 0 0)
+   (image/draw-image canvas sheet 0 0 {:alpha 0.5 :scale [2 1]})
    ```"
   (:require [lib.graphics.state :as gfx]
             [clojure.java.io :as io])
@@ -176,7 +179,7 @@
 ;; Image Loading
 ;; ============================================================
 
-(defn load-image
+(defn from-file
   "Load an image from a file path or resource.
 
    Supports PNG, JPEG, WebP, and other formats supported by Skia.
@@ -192,8 +195,8 @@
      Exception if file not found or invalid image format
 
    Example:
-     (def sprites (load-image \"assets/sprites.png\"))
-     (def logo (load-image \"resources/logo.png\"))"
+     (def sprites (from-file \"assets/sprites.png\"))
+     (def logo (from-file \"resources/logo.png\"))"
   [path]
   (let [file (io/file path)
         bytes (if (.exists file)
@@ -209,6 +212,28 @@
                       (.toByteArray baos)))
                   (throw (ex-info (str "Image not found: " path) {:path path}))))]
     (Image/makeDeferredFromEncodedBytes bytes)))
+
+(defn from-bytes
+  "Load an image from a byte array.
+
+   Supports PNG, JPEG, WebP, and other formats supported by Skia.
+   Useful for loading images downloaded at runtime or from other sources.
+
+   Args:
+     data - byte array containing encoded image data
+
+   Returns:
+     Skija Image object
+
+   Example:
+     (def img (from-bytes (download-image-bytes url)))"
+  [^bytes data]
+  (Image/makeDeferredFromEncodedBytes data))
+
+;; Legacy alias for backwards compatibility
+(def load-image
+  "DEPRECATED: Use from-file instead."
+  from-file)
 
 (defn image-size
   "Get the dimensions of an image.

@@ -317,7 +317,7 @@
   "Create a Paint with options map.
 
    Basic Options:
-     :color         - 32-bit ARGB color (default 0xFFFFFFFF)
+     :color         - [r g b a] floats 0.0-1.0 (default [1.0 1.0 1.0 1.0])
      :mode          - :fill or :stroke (default :fill)
      :antialias     - boolean (default true)
      :dither        - boolean (default false)
@@ -332,7 +332,7 @@
 
    High-Level Effects (idiomatic):
      :blur          - number or [sigma mode], e.g. 5.0 or [5.0 :clamp]
-     :shadow        - {:dx :dy :blur :color}, e.g. {:dx 2 :dy 2 :blur 3 :color 0x80000000}
+     :shadow        - {:dx :dy :blur :color}, e.g. {:dx 2 :dy 2 :blur 3 :color [0 0 0 0.5]}
      :glow          - {:size :mode}, e.g. {:size 10 :mode :outer}
      :grayscale     - true/false
      :sepia         - true/false
@@ -352,24 +352,24 @@
      :blender       - Blender instance
 
    Examples:
-     ;; Simple filled circle
-     (make-paint {:color 0xFF4A90D9})
+     ;; Simple filled circle with float colors
+     (make-paint {:color [0.29 0.56 0.85 1.0]})
 
      ;; Stroked with rounded corners
      (make-paint {:mode :stroke :stroke-width 2 :stroke-join :round})
 
      ;; With blur effect
-     (make-paint {:color 0xFF4A90D9 :blur 5.0})
+     (make-paint {:color [0.29 0.56 0.85 1.0] :blur 5.0})
 
      ;; With drop shadow
-     (make-paint {:color 0xFF4A90D9 :shadow {:dx 2 :dy 2 :blur 3}})
+     (make-paint {:color [0.29 0.56 0.85 1.0] :shadow {:dx 2 :dy 2 :blur 3}})
 
      ;; Dashed line
      (make-paint {:mode :stroke :dash [10 5]})
 
      ;; Gradient fill
      (make-paint {:gradient {:type :linear :x0 0 :y0 0 :x1 100 :y1 0
-                             :colors [0xFFFF0000 0xFF0000FF]}})
+                             :colors [[1 0 0 1] [0 0 1 1]]}})
 
      ;; Custom SkSL shader
      (make-paint {:sksl \"half4 main(float2 c) { return half4(c.x/800, c.y/600, 0.5, 1); }\"})
@@ -385,7 +385,7 @@
                       :antialias :dither :alpha :alphaf :blend-mode}
          {:keys [color mode stroke-width stroke-cap stroke-join stroke-miter
                  antialias dither alpha alphaf blend-mode]
-          :or {color 0xFFFFFFFF
+          :or {color [1.0 1.0 1.0 1.0]
                mode :fill
                stroke-width 1.0
                stroke-cap :butt
@@ -394,8 +394,10 @@
                antialias true
                dither false}} opts]
 
-     ;; Basic properties
-     (set-color paint color)
+     ;; Set color from [r g b a] floats
+     (let [[r g b a] color]
+       (.setColor4f paint (Color4f. (float r) (float g) (float b) (float (or a 1.0)))))
+
      (set-mode paint mode)
      (set-antialias paint antialias)
      (set-dither paint dither)
