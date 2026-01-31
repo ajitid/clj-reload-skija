@@ -2,18 +2,41 @@
   "Java Sound API interop layer.
    Provides low-level Clip operations for audio playback.
    Supports WAV (built-in), OGG (vorbisspi), and MP3 (mp3spi) via SPIs."
-  (:import [javax.sound.sampled AudioSystem AudioInputStream Clip
+  (:import [javax.sound.sampled AudioSystem AudioInputStream AudioFormat
+            AudioFormat$Encoding Clip
             FloatControl FloatControl$Type LineEvent LineEvent$Type]
            [java.io File]))
 
+(defn- convert-to-pcm
+  "Convert compressed audio stream (MP3/OGG) to PCM for Clip playback.
+   Returns the original stream if already PCM."
+  ^AudioInputStream [^AudioInputStream stream]
+  (let [source-format (.getFormat stream)
+        encoding (.getEncoding source-format)]
+    (if (or (= encoding AudioFormat$Encoding/PCM_SIGNED)
+            (= encoding AudioFormat$Encoding/PCM_UNSIGNED))
+      ;; Already PCM, return as-is
+      stream
+      ;; Compressed format - convert to PCM
+      (let [target-format (AudioFormat.
+                           AudioFormat$Encoding/PCM_SIGNED
+                           (.getSampleRate source-format)
+                           16  ; 16-bit samples
+                           (.getChannels source-format)
+                           (* 2 (.getChannels source-format))  ; frame size = 2 bytes * channels
+                           (.getSampleRate source-format)
+                           false)]  ; little-endian
+        (AudioSystem/getAudioInputStream target-format stream)))))
+
 (defn load-audio-stream
-  "Load audio file, returns AudioInputStream.
+  "Load audio file, returns AudioInputStream in PCM format.
    Supports WAV/OGG/MP3 via SPIs on the classpath."
   ^AudioInputStream [^String path]
   (let [file (File. path)]
     (when-not (.exists file)
       (throw (ex-info "Audio file not found" {:path path})))
-    (AudioSystem/getAudioInputStream file)))
+    (-> (AudioSystem/getAudioInputStream file)
+        convert-to-pcm)))
 
 (defn create-clip
   "Create a Clip from an audio file path.

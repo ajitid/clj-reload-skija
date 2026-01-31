@@ -15,6 +15,7 @@
    - LEFT/RIGHT: Seek backward/forward"
   (:require [lib.audio.core :as audio]
             [lib.graphics.shapes :as shapes]
+            [lib.graphics.path :as path]
             [lib.text.core :as text])
   (:import [io.github.humbleui.skija Canvas]))
 
@@ -46,6 +47,34 @@
           secs (int (mod seconds 60))]
       (format "%d:%02d" mins secs))))
 
+(defn- draw-play-icon
+  "Draw a play triangle icon centered at (cx, cy) with given size."
+  [^Canvas canvas cx cy size color]
+  (let [half (/ size 2)
+        ;; Play triangle pointing right
+        play-path (path/polygon [[(- cx half) (- cy half)]
+                                 [(+ cx half) cy]
+                                 [(- cx half) (+ cy half)]])]
+    (shapes/path canvas play-path {:color color})))
+
+(defn- draw-pause-icon
+  "Draw pause bars icon centered at (cx, cy) with given size."
+  [^Canvas canvas cx cy size color]
+  (let [bar-w (/ size 4)
+        bar-h size
+        gap (/ size 5)
+        left-x (- cx gap (/ bar-w 2))
+        right-x (+ cx gap (- (/ bar-w 2)))
+        top-y (- cy (/ bar-h 2))]
+    (shapes/rounded-rect canvas left-x top-y bar-w bar-h 2 {:color color})
+    (shapes/rounded-rect canvas right-x top-y bar-w bar-h 2 {:color color})))
+
+(defn- draw-stop-icon
+  "Draw a stop square icon centered at (cx, cy) with given size."
+  [^Canvas canvas cx cy size color]
+  (let [half (/ size 2)]
+    (shapes/rounded-rect canvas (- cx half) (- cy half) size size 3 {:color color})))
+
 (defn draw-status [^Canvas canvas w h]
   (let [music-source @music
         is-playing (and music-source (audio/playing? music-source))
@@ -64,31 +93,37 @@
         vol-text (str "Volume: " (int (* @volume 100)) "%")
         loop-text (str "Loop: " (if (and music-source (audio/looping? music-source)) "ON" "OFF"))
         cx (/ w 2)
-        cy (/ h 2)]
+        cy (/ h 2)
+        icon-size 40
+        icon-y (- cy 90)]
     ;; Title
-    (text/text canvas "Audio Demo" (- cx 80) 60 {:size 32 :color text-color})
-    ;; Status indicator
-    (shapes/circle canvas cx (- cy 60) 30 {:color status-color})
-    (text/text canvas status-text (- cx 45) (- cy 50) {:size 20 :color [1 1 1 1]})
+    (text/text canvas "Audio Demo" cx 60 {:size 32 :color text-color :align :center})
+    ;; Play/Pause/Stop icon
+    (cond
+      is-playing (draw-play-icon canvas cx icon-y icon-size status-color)
+      is-paused (draw-pause-icon canvas cx icon-y icon-size status-color)
+      :else (draw-stop-icon canvas cx icon-y icon-size status-color))
+    ;; Status text below icon
+    (text/text canvas status-text cx (- cy 35) {:size 20 :color status-color :align :center})
     ;; Time
-    (text/text canvas time-text (- cx 50) (+ cy 20) {:size 24 :color text-color})
+    (text/text canvas time-text cx (+ cy 20) {:size 24 :color text-color :align :center})
     ;; Progress bar
     (let [bar-w 300
           bar-h 8
           bar-x (- cx (/ bar-w 2))
           bar-y (+ cy 50)
           progress (if (and current-pos total-dur (pos? total-dur))
-                     (/ current-pos total-dur)
+                     (min 1.0 (/ current-pos total-dur))
                      0)]
       (shapes/rounded-rect canvas bar-x bar-y bar-w bar-h 4 {:color [0.267 0.267 0.267 1.0]})
       (shapes/rounded-rect canvas bar-x bar-y (* bar-w progress) bar-h 4 {:color status-color}))
     ;; Volume and loop status
-    (text/text canvas vol-text (- cx 50) (+ cy 100) {:size 18 :color text-color})
-    (text/text canvas loop-text (- cx 30) (+ cy 130) {:size 18 :color text-color})
+    (text/text canvas vol-text cx (+ cy 100) {:size 18 :color text-color :align :center})
+    (text/text canvas loop-text cx (+ cy 130) {:size 18 :color text-color :align :center})
     ;; Controls help
     (let [help-y (+ cy 180)]
-      (text/text canvas "SPACE: Play/Pause   S: Stop   L: Loop" (- cx 160) help-y {:size 14 :color [0.533 0.533 0.533 1.0]})
-      (text/text canvas "UP/DOWN: Volume   LEFT/RIGHT: Seek" (- cx 145) (+ help-y 20) {:size 14 :color [0.533 0.533 0.533 1.0]}))))
+      (text/text canvas "SPACE: Play/Pause   S: Stop   L: Loop" cx help-y {:size 14 :color [0.533 0.533 0.533 1.0] :align :center})
+      (text/text canvas "UP/DOWN: Volume   LEFT/RIGHT: Seek" cx (+ help-y 20) {:size 14 :color [0.533 0.533 0.533 1.0] :align :center}))))
 
 ;; ============================================================
 ;; Example Interface
