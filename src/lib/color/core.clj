@@ -1,4 +1,4 @@
-(ns lib.graphics.color
+(ns lib.color.core
   "Color utilities returning [r g b a] float arrays (0.0-1.0).
 
    All color functions return a 4-element vector [r g b a] with floats
