@@ -23,18 +23,18 @@
 
 (def zones
   "Each zone: [keyword label color]"
-  [[:default     "Default"      0xFF4A90D9]
-   [:pointer     "Pointer"      0xFFFF69B4]
-   [:text        "Text"         0xFF50C878]
-   [:crosshair   "Crosshair"    0xFFFF8C00]
-   [:move        "Move"         0xFF9B59B6]
-   [:wait        "Wait"         0xFFE74C3C]
-   [:progress    "Progress"     0xFF1ABC9C]
-   [:not-allowed "Not Allowed"  0xFF95A5A6]
-   [:ew-resize   "↔ EW Resize"  0xFFF39C12]
-   [:ns-resize   "↕ NS Resize"  0xFF2ECC71]
-   [:nwse-resize "╲ NWSE"       0xFFE67E22]
-   [:nesw-resize "╱ NESW"       0xFF3498DB]])
+  [[:default     "Default"      [0.29 0.56 0.85 1.0]]
+   [:pointer     "Pointer"      [1.0 0.41 0.71 1.0]]
+   [:text        "Text"         [0.31 0.78 0.47 1.0]]
+   [:crosshair   "Crosshair"    [1.0 0.55 0.0 1.0]]
+   [:move        "Move"         [0.61 0.35 0.71 1.0]]
+   [:wait        "Wait"         [0.91 0.3 0.24 1.0]]
+   [:progress    "Progress"     [0.1 0.74 0.61 1.0]]
+   [:not-allowed "Not Allowed"  [0.58 0.65 0.65 1.0]]
+   [:ew-resize   "↔ EW Resize"  [0.95 0.61 0.07 1.0]]
+   [:ns-resize   "↕ NS Resize"  [0.18 0.8 0.44 1.0]]
+   [:nwse-resize "╲ NWSE"       [0.9 0.49 0.13 1.0]]
+   [:nesw-resize "╱ NESW"       [0.2 0.6 0.86 1.0]]])
 
 ;; ============================================================
 ;; State
@@ -85,23 +85,23 @@
 ;; ============================================================
 
 (defn- draw-zones [^Canvas canvas origin-x origin-y]
-  (doseq [[i [cursor-kw label color]] (map-indexed vector zones)]
+  (doseq [[i [cursor-kw label [r g b a]]] (map-indexed vector zones)]
     (let [[x y w h] (zone-rect i origin-x origin-y)
           hovered? (= cursor-kw @hovered-zone)
           fill-color (if hovered?
-                       color
-                       (bit-and color (unchecked-int 0x99FFFFFF)))]
+                       [r g b a]
+                       [r g b 0.6])]
       ;; Background
       (shapes/rounded-rect canvas x y w h corner-r {:color fill-color})
       ;; Border when hovered
       (when hovered?
         (shapes/rounded-rect canvas x y w h corner-r
-                             {:color 0xFFFFFFFF :mode :stroke :stroke-width 2.0}))
+                             {:color [1.0 1.0 1.0 1.0] :mode :stroke :stroke-width 2.0}))
       ;; Label
       (text/text canvas label
                  (+ x (/ w 2)) (+ y (/ h 2) 5)
                  {:size 15 :weight :medium :align :center
-                  :color (if hovered? 0xFFFFFFFF 0xDDFFFFFF)}))))
+                  :color (if hovered? [1.0 1.0 1.0 1.0] [1.0 1.0 1.0 0.87])}))))
 
 ;; ============================================================
 ;; Example Interface
@@ -122,12 +122,12 @@
 
     ;; Title
     (text/text canvas "Cursor Demo" (/ width 2) (- origin-y 40)
-               {:size 28 :weight :medium :align :center :color 0xFFFFFFFF})
+               {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
 
     ;; Subtitle
     (text/text canvas "Hover over a zone to change the mouse cursor"
                (/ width 2) (- origin-y 12)
-               {:size 14 :align :center :color 0xAAFFFFFF})
+               {:size 14 :align :center :color [1.0 1.0 1.0 0.67]})
 
     ;; Poll mouse and update cursor
     (update-cursor! origin-x origin-y)

@@ -13,22 +13,22 @@
 ;; Configuration
 ;; ============================================================
 
-(def ^:private base-color 0xFF555555)
+(def ^:private base-color [0.33 0.33 0.33 1.0])
 (def ^:private base-width 1.5)
 (def ^:private effect-width 3.0)
-(def ^:private label-color 0xFFCCCCCC)
+(def ^:private label-color [0.8 0.8 0.8 1.0])
 
 (def ^:private rows
   [{:label "Stamp :move (translate only)"
-    :color 0xFF4A90D9}
+    :color [0.29 0.56 0.85 1.0]}
    {:label "Stamp :turn (rotate to follow)"
-    :color 0xFF2ECC71}
+    :color [0.18 0.8 0.44 1.0]}
    {:label "Stamp :follow (bend to curvature)"
-    :color 0xFFE67E22}
+    :color [0.9 0.49 0.13 1.0]}
    {:label "Composed: dash + corner"
-    :color 0xFF9B59B6}
+    :color [0.61 0.35 0.71 1.0]}
    {:label "Sum: dash + discrete"
-    :color 0xFFE74C3C}])
+    :color [0.91 0.3 0.24 1.0]}])
 
 ;; ============================================================
 ;; Marker shapes (built once, reused)
@@ -146,10 +146,10 @@
   ;; Title
   (text/text canvas "Path Effects"
              (/ width 2.0) 40
-             {:size 28 :weight :medium :align :center :color 0xFFFFFFFF})
+             {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
   (text/text canvas "stamp, compose, and sum effects on a shared S-curve"
              (/ width 2.0) 68
-             {:size 14 :align :center :color 0xFF888888})
+             {:size 14 :align :center :color [0.53 0.53 0.53 1.0]})
   ;; Five stacked rows
   (let [top-y 90
         row-h (/ (- height top-y 20) (count rows))
@@ -160,7 +160,7 @@
         ;; Separator line
         (when (pos? i)
           (shapes/line canvas pad ry (- width pad) ry
-                       {:color 0xFF333333 :stroke-width 1}))
+                       {:color [0.2 0.2 0.2 1.0] :stroke-width 1}))
         (draw-row canvas i row pad ry row-w row-h)))))
 
 (defn cleanup []

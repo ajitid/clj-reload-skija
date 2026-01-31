@@ -22,9 +22,9 @@
   "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.")
 
 (def section-gap 30)
-(def box-color 0x33FFFFFF)
-(def label-color 0xFF888888)
-(def text-color 0xFFFFFFFF)
+(def box-color [1.0 1.0 1.0 0.2])
+(def label-color [0.53 0.53 0.53 1.0])
+(def text-color [1.0 1.0 1.0 1.0])
 
 ;; ============================================================
 ;; Drawing: Word Wrap Section
@@ -32,7 +32,7 @@
 
 (defn draw-wrap-section [^Canvas canvas x y]
   (text/text canvas "Word Wrap" x y
-             {:size 20 :weight :medium :color 0xFFFFFFFF})
+             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
   (let [widths [200 300 400]
         y-start (+ y 30)]
     (loop [widths-left widths
@@ -57,7 +57,7 @@
 
 (defn draw-alignment-section [^Canvas canvas x y]
   (text/text canvas "Alignment" x y
-             {:size 20 :weight :medium :color 0xFFFFFFFF})
+             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
   (let [aligns [:left :center :right :justify]
         w 180
         y-start (+ y 30)]
@@ -83,7 +83,7 @@
 
 (defn draw-truncation-section [^Canvas canvas x y]
   (text/text canvas "Truncation" x y
-             {:size 20 :weight :medium :color 0xFFFFFFFF})
+             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
   (let [w 350
         y-start (+ y 30)
         configs [{:label "No truncation" :opts {:width w :size 14 :color text-color}}
@@ -114,7 +114,7 @@
 
 (defn draw-rtl-section [^Canvas canvas x y]
   (text/text canvas "RTL Text" x y
-             {:size 20 :weight :medium :color 0xFFFFFFFF})
+             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
   (let [w 350
         arabic-text "مرحبا بالعالم. هذا نص تجريبي للعرض من اليمين إلى اليسار."
         y-start (+ y 30)
@@ -154,7 +154,7 @@
     ;; Title
     (text/text canvas "Paragraph Basics"
                (/ width 2) 35
-               {:size 28 :weight :medium :align :center :color 0xFFFFFFFF})
+               {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
     ;; Sections
     (draw-wrap-section canvas x 70)
     (draw-alignment-section canvas x 220)

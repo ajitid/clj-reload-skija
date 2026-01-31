@@ -12,28 +12,28 @@
 ;; Configuration
 ;; ============================================================
 
-(def ^:private label-color 0xFFCCCCCC)
-(def ^:private sub-label-color 0xFF888888)
-(def ^:private cell-bg 0xFF1A1A2E)
+(def ^:private label-color [0.8 0.8 0.8 1.0])
+(def ^:private sub-label-color [0.53 0.53 0.53 1.0])
+(def ^:private cell-bg [0.1 0.1 0.18 1.0])
 (def ^:private corner-radius 12)
 
 (def ^:private cells
   [{:label "Hatch (0°)"
     :sub   "(hatch-shader 2 10)"
-    :color 0xFF4A90D9}
+    :color [0.29 0.56 0.85 1.0]}
    {:label "Hatch (45°)"
     :sub   "(hatch-shader 2 10 {:angle π/4})"
-    :color 0xFF2ECC71}
+    :color [0.18 0.80 0.44 1.0]}
    {:label "Grid"
     :sub   "(grid-shader 1 20 20)"
-    :color 0xFF9B59B6}
+    :color [0.61 0.35 0.71 1.0]}
    {:label "Dot Pattern"
     :sub   "(dot-pattern-shader 3 15 15)"
-    :color 0xFFE67E22}])
+    :color [0.90 0.49 0.13 1.0]}])
 
 (def ^:private crosshatch-label "Cross-hatch (composed)")
 (def ^:private crosshatch-sub "(cross-hatch-shader 1.5 12)")
-(def ^:private crosshatch-color 0xFFE74C3C)
+(def ^:private crosshatch-color [0.91 0.30 0.24 1.0])
 
 ;; ============================================================
 ;; Shader factories
@@ -99,10 +99,10 @@
   ;; Title
   (text/text canvas "2D Pattern Shaders (GPU)"
              (/ width 2.0) 40
-             {:size 28 :weight :medium :align :center :color 0xFFFFFFFF})
+             {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
   (text/text canvas "GPU-accelerated repeating patterns using SkSL"
              (/ width 2.0) 68
-             {:size 14 :align :center :color 0xFF888888})
+             {:size 14 :align :center :color [0.53 0.53 0.53 1.0]})
 
   ;; Layout: 2 columns x 2 rows + 1 full-width row
   (let [pad 16

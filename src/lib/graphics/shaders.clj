@@ -435,15 +435,11 @@
 ;; 2D Pattern Shaders (GPU-accelerated)
 ;; ============================================================
 
-(defn- argb->premul-float4
-  "Convert 0xAARRGGBB color integer to premultiplied [r g b a] for SkSL uniforms."
-  [color]
-  (let [c (unchecked-int color)
-        a (/ (double (bit-and (unsigned-bit-shift-right c 24) 0xFF)) 255.0)
-        r (* (/ (double (bit-and (unsigned-bit-shift-right c 16) 0xFF)) 255.0) a)
-        g (* (/ (double (bit-and (unsigned-bit-shift-right c 8) 0xFF)) 255.0) a)
-        b (* (/ (double (bit-and c 0xFF)) 255.0) a)]
-    [r g b a]))
+(defn- color->premul-float4
+  "Convert [r g b a] float array (0.0-1.0) to premultiplied [r g b a] for SkSL uniforms."
+  [[r g b a]]
+  (let [a (double (or a 1.0))]
+    [(* (double r) a) (* (double g) a) (* (double b) a) a]))
 
 ;; Pre-compiled effects (SkSL compiled once at load time)
 
@@ -526,21 +522,21 @@
      spacing    - distance between line centers in pixels
      opts       - optional map:
                   :angle  - line rotation in radians (default 0, horizontal)
-                  :color  - 0xAARRGGBB integer (default 0xFFFFFFFF)
+                  :color  - [r g b a] float array (default [1.0 1.0 1.0 1.0])
 
    Examples:
      (hatch-shader 2 10)                            ;; horizontal white lines
      (hatch-shader 2 10 {:angle (/ Math/PI 4)})     ;; 45° diagonal
-     (hatch-shader 3 15 {:color 0xFF4A90D9})"
+     (hatch-shader 3 15 {:color [0.29 0.56 0.85 1.0]})"
   ([line-width spacing]
    (hatch-shader line-width spacing nil))
   ([line-width spacing opts]
-   (let [{:keys [angle color] :or {angle 0.0 color 0xFFFFFFFF}} opts]
+   (let [{:keys [angle color] :or {angle 0.0 color [1.0 1.0 1.0 1.0]}} opts]
      (make-shader hatch-effect
        {:uLineWidth (double line-width)
         :uSpacing   (double spacing)
         :uAngle     (double angle)
-        :uColor     (argb->premul-float4 color)}))))
+        :uColor     (color->premul-float4 color)}))))
 
 (defn grid-shader
   "Create a grid pattern shader.
@@ -550,20 +546,20 @@
      spacing-x  - horizontal cell spacing in pixels
      spacing-y  - vertical cell spacing in pixels
      opts       - optional map:
-                  :color - 0xAARRGGBB integer (default 0xFFFFFFFF)
+                  :color - [r g b a] float array (default [1.0 1.0 1.0 1.0])
 
    Examples:
      (grid-shader 1 20 20)                        ;; white square grid
-     (grid-shader 2 30 15 {:color 0xFF9B59B6})"
+     (grid-shader 2 30 15 {:color [0.61 0.35 0.71 1.0]})"
   ([line-width spacing-x spacing-y]
    (grid-shader line-width spacing-x spacing-y nil))
   ([line-width spacing-x spacing-y opts]
-   (let [{:keys [color] :or {color 0xFFFFFFFF}} opts]
+   (let [{:keys [color] :or {color [1.0 1.0 1.0 1.0]}} opts]
      (make-shader grid-effect
        {:uLineWidth (double line-width)
         :uSpacingX  (double spacing-x)
         :uSpacingY  (double spacing-y)
-        :uColor     (argb->premul-float4 color)}))))
+        :uColor     (color->premul-float4 color)}))))
 
 (defn dot-pattern-shader
   "Create a repeating dot pattern shader.
@@ -573,20 +569,20 @@
      spacing-x  - horizontal spacing between dot centers in pixels
      spacing-y  - vertical spacing between dot centers in pixels
      opts       - optional map:
-                  :color - 0xAARRGGBB integer (default 0xFFFFFFFF)
+                  :color - [r g b a] float array (default [1.0 1.0 1.0 1.0])
 
    Examples:
      (dot-pattern-shader 3 15 15)                        ;; white dots
-     (dot-pattern-shader 5 20 20 {:color 0xFFE67E22})"
+     (dot-pattern-shader 5 20 20 {:color [0.90 0.49 0.13 1.0]})"
   ([dot-radius spacing-x spacing-y]
    (dot-pattern-shader dot-radius spacing-x spacing-y nil))
   ([dot-radius spacing-x spacing-y opts]
-   (let [{:keys [color] :or {color 0xFFFFFFFF}} opts]
+   (let [{:keys [color] :or {color [1.0 1.0 1.0 1.0]}} opts]
      (make-shader dot-effect
        {:uRadius   (double dot-radius)
         :uSpacingX (double spacing-x)
         :uSpacingY (double spacing-y)
-        :uColor    (argb->premul-float4 color)}))))
+        :uColor    (color->premul-float4 color)}))))
 
 (defn cross-hatch-shader
   "Create a cross-hatching shader (two overlaid line sets).
@@ -597,20 +593,20 @@
      opts       - optional map:
                   :angle1 - first line set angle in radians (default π/4)
                   :angle2 - second line set angle in radians (default -π/4)
-                  :color  - 0xAARRGGBB integer (default 0xFFFFFFFF)
+                  :color  - [r g b a] float array (default [1.0 1.0 1.0 1.0])
 
    Examples:
      (cross-hatch-shader 2 12)                                ;; default 45°/-45°
-     (cross-hatch-shader 1.5 10 {:color 0xFFE74C3C})"
+     (cross-hatch-shader 1.5 10 {:color [0.91 0.30 0.24 1.0]})"
   ([line-width spacing]
    (cross-hatch-shader line-width spacing nil))
   ([line-width spacing opts]
    (let [pi4 (/ Math/PI 4.0)
          {:keys [angle1 angle2 color]
-          :or {angle1 pi4 angle2 (- pi4) color 0xFFFFFFFF}} opts]
+          :or {angle1 pi4 angle2 (- pi4) color [1.0 1.0 1.0 1.0]}} opts]
      (make-shader cross-hatch-effect
        {:uLineWidth (double line-width)
         :uSpacing   (double spacing)
         :uAngle1    (double angle1)
         :uAngle2    (double angle2)
-        :uColor     (argb->premul-float4 color)}))))
+        :uColor     (color->premul-float4 color)}))))

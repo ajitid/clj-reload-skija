@@ -68,12 +68,12 @@
     ;; Title
     (text/text canvas "Inter Variable Weight Animation"
                (/ width 2) 50
-               {:size 24 :weight :medium :align :center :color 0xFFFFFFFF})
+               {:size 24 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
     ;; Axis info
     (text/text canvas (format "Weight Axis: min %.0f | default %.0f | max %.0f"
                               (double min-weight) (double default-weight) (double max-weight))
                (/ width 2) 85
-               {:size 16 :align :center :color 0xFF888888})))
+               {:size 16 :align :center :color [0.53 0.53 0.53 1.0]})))
 
 (defn draw-animated-text [^Canvas canvas width height time]
   "Draw the main animated text."
@@ -86,7 +86,7 @@
                 :family font-family
                 :variations {:wght weight}
                 :align :center
-                :color 0xFFFFFFFF
+                :color [1.0 1.0 1.0 1.0]
                 :animated true})
     ;; Current weight indicator
     ;; Current weight indicator (tabular numbers for stable width)
@@ -96,7 +96,7 @@
                 :family font-family
                 :features "tnum"  ;; tabular numbers - fixed width digits
                 :align :center
-                :color 0xFF4A90D9})))
+                :color [0.29 0.56 0.85 1.0]})))
 
 (defn draw-weight-samples [^Canvas canvas width height]
   "Draw static weight samples at bottom for comparison."
@@ -108,7 +108,7 @@
     ;; Label
     (text/text canvas "Weight Samples"
                (/ width 2) (- y-base 45)
-               {:size 14 :align :center :color 0xFF666666})
+               {:size 14 :align :center :color [0.4 0.4 0.4 1.0]})
     ;; Weight samples
     (doseq [[i w] (map-indexed vector valid-weights)]
       (let [x (* spacing (+ i 1))]
@@ -118,12 +118,12 @@
                     :family font-family
                     :variations {:wght w}
                     :align :center
-                    :color 0xFFCCCCCC})
+                    :color [0.8 0.8 0.8 1.0]})
         (text/text canvas (str (int w))
                    x (+ y-base 25)
                    {:size 11
                     :align :center
-                    :color 0xFF666666})))))
+                    :color [0.4 0.4 0.4 1.0]})))))
 
 ;; ============================================================
 ;; Control Panel Registration

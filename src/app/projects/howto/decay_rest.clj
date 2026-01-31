@@ -17,11 +17,11 @@
 ;; ============================================================
 
 (def ball-radius 20)
-(def orange-color 0xFFE8943A)
-(def blue-color 0xFF4A90D9)
-(def button-color 0xFF3A3A4A)
-(def button-text-color 0xFFFFFFFF)
-(def label-color 0x99FFFFFF)
+(def orange-color [0.91 0.58 0.23 1.0])
+(def blue-color [0.29 0.56 0.85 1.0])
+(def button-color [0.23 0.23 0.29 1.0])
+(def button-text-color [1.0 1.0 1.0 1.0])
+(def label-color [1.0 1.0 1.0 0.6])
 (def decay-rate 0.998)
 (def velocity-threshold 0.5)
 
@@ -120,7 +120,7 @@
 (defn draw-start-line [^Canvas canvas y-top y-bottom]
   (let [sx @start-x]
     (shapes/line canvas sx y-top sx y-bottom
-                 {:color 0x33FFFFFF :stroke-width 1.0 :dash [6 4]})))
+                 {:color [1.0 1.0 1.0 0.2] :stroke-width 1.0 :dash [6 4]})))
 
 (defn draw-ball-row [^Canvas canvas x y color label stopped?]
   ;; Ball
@@ -131,7 +131,7 @@
   ;; Stop marker
   (when stopped?
     (shapes/line canvas x (- y ball-radius 4) x (+ y ball-radius 4)
-                 {:color 0x66FFFFFF :stroke-width 2.0})))
+                 {:color [1.0 1.0 1.0 0.4] :stroke-width 2.0})))
 
 (defn draw-debug [^Canvas canvas height]
   (let [pad 12
@@ -142,12 +142,12 @@
                (format "Orange: vel=%8.1f  at-rest=%-5s  (perceptual)"
                        (double @orange-vel) (str @orange-stopped?))
                pad (- base-y line-h)
-               {:size font-size :color 0x99FFFFFF :features "tnum"})
+               {:size font-size :color [1.0 1.0 1.0 0.6] :features "tnum"})
     (text/text canvas
                (format "Blue:   vel=%8.1f  at-rest=%-5s  (physics)"
                        (double @blue-vel) (str @blue-stopped?))
                pad base-y
-               {:size font-size :color 0x99FFFFFF :features "tnum"})))
+               {:size font-size :color [1.0 1.0 1.0 0.6] :features "tnum"})))
 
 ;; ============================================================
 ;; Example Interface

@@ -18,9 +18,9 @@
 ;; ============================================================
 
 (def circle-radius 25)
-(def circle-color 0xFF4A90D9)
-(def anchor-color 0x44FFFFFF)
-(def line-color 0x33FFFFFF)
+(def circle-color [0.29 0.56 0.85 1.0])
+(def anchor-color [1.0 1.0 1.0 0.27])
+(def line-color [1.0 1.0 1.0 0.2])
 
 ;; ============================================================
 ;; State (persists across hot-reloads)
@@ -178,14 +178,14 @@
             line-x (fmt "X" state-x)]
         (when line-y
           (text/text canvas line-y pad base-y
-                     {:size font-size :color 0x99FFFFFF :features "tnum"}))
+                     {:size font-size :color [1.0 1.0 1.0 0.6] :features "tnum"}))
         (when line-x
           (text/text canvas line-x pad (- base-y line-h)
-                     {:size font-size :color 0x99FFFFFF :features "tnum"})))
+                     {:size font-size :color [1.0 1.0 1.0 0.6] :features "tnum"})))
       ;; No springs active
       (text/text canvas "No spring active (drag and release ball)"
                  pad base-y
-                 {:size font-size :color 0x55FFFFFF}))))
+                 {:size font-size :color [1.0 1.0 1.0 0.33]}))))
 
 ;; ============================================================
 ;; Example Interface

@@ -16,7 +16,7 @@
             [lib.layout.core :as layout]
             [lib.layout.render :as layout-render]
             [lib.magic-move :as magic])
-  (:import [io.github.humbleui.skija Canvas Paint PaintMode Font FontMgr FontStyle]
+  (:import [io.github.humbleui.skija Canvas Color4f Paint PaintMode Font FontMgr FontStyle]
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
@@ -24,11 +24,11 @@
 ;; ============================================================
 
 (flex/defsource items
-  [{:id 1 :text "Apple" :color 0xFFE57373}
-   {:id 2 :text "Banana" :color 0xFFFFD54F}
-   {:id 3 :text "Cherry" :color 0xFFE91E63}
-   {:id 4 :text "Date" :color 0xFFBA68C8}
-   {:id 5 :text "Elderberry" :color 0xFF7986CB}])
+  [{:id 1 :text "Apple" :color [0.9 0.45 0.45 1.0]}
+   {:id 2 :text "Banana" :color [1.0 0.84 0.31 1.0]}
+   {:id 3 :text "Cherry" :color [0.91 0.12 0.39 1.0]}
+   {:id 4 :text "Date" :color [0.73 0.41 0.78 1.0]}
+   {:id 5 :text "Elderberry" :color [0.47 0.53 0.8 1.0]}])
 
 (defonce next-id (atom 6))
 
@@ -45,7 +45,8 @@
 (defn add-item! []
   (let [id (swap! next-id inc)
         fruits ["Fig" "Grape" "Honeydew" "Kiwi" "Lemon" "Mango" "Nectarine" "Orange" "Papaya" "Quince"]
-        colors [0xFF81C784 0xFF4FC3F7 0xFFFFB74D 0xFFF06292 0xFF9575CD 0xFF4DB6AC]]
+        colors [[0.51 0.78 0.52 1.0] [0.31 0.76 0.97 1.0] [1.0 0.72 0.3 1.0]
+                [0.94 0.38 0.57 1.0] [0.58 0.46 0.8 1.0] [0.3 0.71 0.67 1.0]]]
     (items (conj @items {:id id
                          :text (rand-nth fruits)
                          :color (rand-nth colors)}))))
@@ -119,7 +120,7 @@
 ;; ============================================================
 
 (defn draw-button [^Canvas canvas {:keys [x y w h]} label hovered?]
-  (let [color (if hovered? 0xFF666666 0xFF444444)]
+  (let [color (if hovered? [0.4 0.4 0.4 1.0] [0.27 0.27 0.27 1.0])]
     (shapes/rounded-rect canvas x y w h 6 {:color color})
     (with-open [paint (doto (Paint.) (.setColor (unchecked-int 0xFFFFFFFF)))
                 font (Font. (.matchFamilyStyle (FontMgr/getDefault) nil FontStyle/NORMAL) (float 14))]
@@ -131,11 +132,12 @@
 (defn draw-item [^Canvas canvas {:keys [x y w h]} text color opacity]
   (when (pos? opacity)
     (.save canvas)
-    ;; Apply opacity
-    (with-open [paint (doto (Paint.)
-                        (.setColor (unchecked-int color))
-                        (.setAlphaf (float opacity)))]
-      (.drawRRect canvas (io.github.humbleui.types.RRect/makeXYWH x y w h 8 8 8 8) paint))
+    ;; Apply opacity - color is now [r g b a] format
+    (let [[r g b a] color]
+      (with-open [paint (doto (Paint.)
+                          (.setColor4f (io.github.humbleui.skija.Color4f.
+                                        (float r) (float g) (float b) (float (* a opacity)))))]
+        (.drawRRect canvas (io.github.humbleui.types.RRect/makeXYWH x y w h 8 8 8 8) paint)))
     ;; Text
     (with-open [text-paint (doto (Paint.)
                              (.setColor (unchecked-int 0xFF000000))
@@ -187,7 +189,7 @@
     ;; Draw exiting elements (still animating out)
     (doseq [{:keys [id x y w h opacity]} (magic/exiting-elements)]
       ;; Find original item data (may need to cache this)
-      (draw-item canvas {:x x :y y :w w :h h} "..." 0xFF888888 opacity))))
+      (draw-item canvas {:x x :y y :w w :h h} "..." [0.53 0.53 0.53 1.0] opacity))))
 
 (defn cleanup []
   (println "Animated list cleanup")

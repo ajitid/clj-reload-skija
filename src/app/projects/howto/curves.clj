@@ -16,19 +16,19 @@
 (def ^:private point-radius 5)
 (def ^:private curve-width 3.0)
 (def ^:private polygon-width 1.0)
-(def ^:private label-color 0xFFCCCCCC)
-(def ^:private polygon-color 0xFF555555)
-(def ^:private point-color 0xFFE74C3C)
+(def ^:private label-color [0.8 0.8 0.8 1.0])
+(def ^:private polygon-color [0.33 0.33 0.33 1.0])
+(def ^:private point-color [0.91 0.3 0.24 1.0])
 
 (def ^:private panels
   [{:label "Natural Cubic Spline (C2)"
-    :color 0xFF4A90D9
+    :color [0.29 0.56 0.85 1.0]
     :curve-fn #(curves/natural-cubic-spline %)}
    {:label "Hobby Curve (G1 / METAFONT)"
-    :color 0xFF2ECC71
+    :color [0.18 0.8 0.44 1.0]
     :curve-fn #(curves/hobby-curve %)}
    {:label "Catmull-Rom (C1 / centripetal)"
-    :color 0xFF9B59B6
+    :color [0.61 0.35 0.71 1.0]
     :curve-fn #(curves/catmull-rom %)}])
 
 ;; ============================================================
@@ -97,10 +97,10 @@
   ;; Title
   (text/text canvas "Curve Interpolation"
              (/ width 2.0) 40
-             {:size 28 :weight :medium :align :center :color 0xFFFFFFFF})
+             {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
   (text/text canvas "Same 7 control points, three algorithms"
              (/ width 2.0) 68
-             {:size 14 :align :center :color 0xFF888888})
+             {:size 14 :align :center :color [0.53 0.53 0.53 1.0]})
   ;; Three stacked panels
   (let [top-y 90
         panel-h (/ (- height top-y 20) 3.0)
@@ -111,7 +111,7 @@
         ;; Subtle separator line
         (when (pos? i)
           (shapes/line canvas pad py (- width pad) py
-                       {:color 0xFF333333 :stroke-width 1}))
+                       {:color [0.2 0.2 0.2 1.0] :stroke-width 1}))
         (draw-panel canvas panel pad py panel-w panel-h)))))
 
 (defn cleanup []

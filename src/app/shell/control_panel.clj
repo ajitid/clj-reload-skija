@@ -4,7 +4,7 @@
    Shows registered controls organized in collapsible groups when @state/panel-visible? is true.
    Examples register their controls via register-controls! in their init function."
   (:require [app.shell.state :as state])
-  (:import [io.github.humbleui.skija Canvas Paint]
+  (:import [io.github.humbleui.skija Canvas Color4f Paint]
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
@@ -15,7 +15,7 @@
 (def panel-y 10)
 (def panel-width 240)
 (def panel-padding 10)
-(def panel-bg-color 0xDD333333)
+(def panel-bg-color [0.2 0.2 0.2 0.87])
 (def group-spacing 10)
 
 ;; ============================================================
@@ -261,9 +261,10 @@
                                       (* group-spacing (max 0 (dec (count groups)))))
               ph total-content-height]
           ;; Draw panel background
-          (with-open [bg-paint (doto (Paint.)
-                                 (.setColor (unchecked-int panel-bg-color)))]
-            (.drawRect canvas (Rect/makeXYWH (float px) (float py) (float pw) (float ph)) bg-paint))
+          (let [[r g b a] panel-bg-color]
+            (with-open [bg-paint (doto (Paint.)
+                                   (.setColor4f (Color4f. (float r) (float g) (float b) (float a))))]
+              (.drawRect canvas (Rect/makeXYWH (float px) (float py) (float pw) (float ph)) bg-paint)))
           ;; Draw groups
           (loop [groups groups
                  cy (+ py pad)]

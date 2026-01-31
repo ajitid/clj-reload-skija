@@ -17,20 +17,20 @@
             [lib.layout.mixins :as mixins]
             [lib.layout.render :as layout-render]
             [lib.layout.scroll :as scroll])
-  (:import [io.github.humbleui.skija Canvas Paint PaintMode Font FontMgr FontStyle]
+  (:import [io.github.humbleui.skija Canvas Color4f Paint PaintMode Font FontMgr FontStyle]
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
 ;; Example Configuration
 ;; ============================================================
 
-(def circle-color 0xFFFF69B4)
+(def circle-color [1.0 0.41 0.71 1.0])  ;; pink
 (def grid-circle-radius 100)
 (def min-circles 1)
 (def max-circles 250)
 (def demo-circle-radius 25)
-(def demo-circle-color 0xFF4A90D9)
-(def demo-anchor-color 0x44FFFFFF)
+(def demo-circle-color [0.29 0.56 0.85 1.0])  ;; blue
+(def demo-anchor-color [1.0 1.0 1.0 0.27])
 
 ;; ============================================================
 ;; Example State (persists across hot-reloads)
@@ -226,12 +226,20 @@
 ;; Layout demo
 ;; ============================================================
 
+;; Pre-computed fill colors for virtual scroll items (5 variations)
+(def ^:private item-fills
+  [[0.19 0.19 0.31 1.0]   ;; 0xFF303050
+   [0.25 0.25 0.38 1.0]   ;; 0xFF404060
+   [0.31 0.31 0.44 1.0]   ;; 0xFF505070
+   [0.38 0.38 0.5 1.0]    ;; 0xFF606080
+   [0.44 0.44 0.56 1.0]]) ;; 0xFF707090
+
 (def virtual-scroll-mixin
   (mixins/virtual-scroll
     (vec (range 10000))
     40
     (fn [item idx]
-      {:fill (+ 0xFF303050 (* (mod idx 5) 0x101010))
+      {:fill (nth item-fills (mod idx 5))
        :label (str "Item " idx)})))
 
 (defn demo-ui [viewport-height]
@@ -248,29 +256,29 @@
      [{:layout {:y {:size 50}}
        :children-layout {:mode :stack-x :x {:between 10}}
        :children
-       [{:layout {:x {:size 100}} :fill 0xFF4A90D9 :label "100px"}
-        {:layout {:x {:size "1s"}} :fill 0x20FFFFFF :label "spacer (1s)"}
-        {:layout {:x {:size 100}} :fill 0xFF4A90D9 :label "100px"}]}
+       [{:layout {:x {:size 100}} :fill [0.29 0.56 0.85 1.0] :label "100px"}
+        {:layout {:x {:size "1s"}} :fill [1.0 1.0 1.0 0.13] :label "spacer (1s)"}
+        {:layout {:x {:size 100}} :fill [0.29 0.56 0.85 1.0] :label "100px"}]}
 
       {:layout {:y {:size 60}}
        :children-layout {:mode :stack-x :x {:between 10}}
        :children
-       [{:layout {:x {:size "1s"}} :fill 0xFF44AA66 :label "1s"}
-        {:layout {:x {:size "2s"}} :fill 0xFF66CC88 :label "2s"}
-        {:layout {:x {:size "1s"}} :fill 0xFF44AA66 :label "1s"}]}
+       [{:layout {:x {:size "1s"}} :fill [0.27 0.67 0.4 1.0] :label "1s"}
+        {:layout {:x {:size "2s"}} :fill [0.4 0.8 0.53 1.0] :label "2s"}
+        {:layout {:x {:size "1s"}} :fill [0.27 0.67 0.4 1.0] :label "1s"}]}
 
       {:layout {:y {:size 50}}
        :children-layout {:mode :stack-x :x {:between 10}}
        :children
-       [{:layout {:x {:size "30%"}} :fill 0xFFD94A4A :label "30%"}
-        {:layout {:x {:size "70%"}} :fill 0xFFD97A4A :label "70%"}]}
+       [{:layout {:x {:size "30%"}} :fill [0.85 0.29 0.29 1.0] :label "30%"}
+        {:layout {:x {:size "70%"}} :fill [0.85 0.48 0.29 1.0] :label "70%"}]}
 
-      {:layout {:y {:size "1s"}} :fill 0x15FFFFFF :label "stretch (1s)"}]}
+      {:layout {:y {:size "1s"}} :fill [1.0 1.0 1.0 0.08] :label "stretch (1s)"}]}
 
     ;; Middle column: Scrollable list demo
     {:id :scroll-demo
      :layout {:x {:size 180} :y {:size "100%"}}
-     :fill 0x20FFFFFF
+     :fill [1.0 1.0 1.0 0.13]
      :children-layout {:mode :stack-y
                        :overflow {:y :scroll}
                        :y {:before 10 :between 8 :after 10}
@@ -278,14 +286,14 @@
      :children
      (vec (for [i (range 30)]
             {:layout {:y {:size 40}}
-             :fill (+ 0xFF303050 (* (mod i 5) 0x101010))
+             :fill (nth item-fills (mod i 5))
              :label (str "Item " (inc i))}))}
 
     ;; Right column: Virtual scroll demo
     (let [y-padding {:before 10 :after 10}]
       {:id :virtual-list
        :layout {:x {:size 180} :y {:size "100%"}}
-       :fill 0x20FFFFFF
+       :fill [1.0 1.0 1.0 0.13]
        :children-layout {:mode :stack-y
                          :overflow {:y :scroll}
                          :y y-padding
@@ -345,12 +353,12 @@
         (scroll/set-dimensions! :scroll-demo viewport content)))
     (reset! sys/current-tree laid-out)
     (with-open [fill-paint (Paint.)
-                text-paint (doto (Paint.) (.setColor (unchecked-int 0xFFFFFFFF)))
+                text-paint (doto (Paint.) (.setColor4f (io.github.humbleui.skija.Color4f. 1.0 1.0 1.0 1.0)))
                 font (Font. (.matchFamilyStyle (FontMgr/getDefault) nil FontStyle/NORMAL) (float 10))]
       (layout-render/walk-layout laid-out canvas
         (fn [node {:keys [x y w h]} _canvas]
-          (when-let [color (:fill node)]
-            (.setColor fill-paint (unchecked-int color))
+          (when-let [[r g b a] (:fill node)]
+            (.setColor4f fill-paint (io.github.humbleui.skija.Color4f. (float r) (float g) (float b) (float a)))
             (.setMode fill-paint PaintMode/FILL)
             (.drawRect canvas (Rect/makeXYWH x y w h) fill-paint))
           (when (and (:label node) (not (:children node)))

@@ -35,15 +35,15 @@
         offset (mod (* time animation-speed) path-len)]
     ;; Draw the path outline for reference
     (shapes/circle canvas cx cy radius
-                   {:color 0xFF333333 :mode :stroke :stroke-width 1})
+                   {:color [0.2 0.2 0.2 1.0] :mode :stroke :stroke-width 1})
     ;; Draw text along the path
     (text-path/text-on-path canvas "Hello Circle! " p
                             {:size font-size
                              :offset offset
-                             :color 0xFF4A90D9})
+                             :color [0.29 0.56 0.85 1.0]})
     ;; Label
     (text/text canvas "Circle Path" cx (+ cy radius 40)
-               {:size 14 :align :center :color 0xFF666666})))
+               {:size 14 :align :center :color [0.4 0.4 0.4 1.0]})))
 
 ;; ============================================================
 ;; Drawing: Wave Path
@@ -57,15 +57,15 @@
         path-len (path/length p)
         offset (mod (* time animation-speed) path-len)]
     ;; Draw the wave path for reference
-    (shapes/path canvas p {:color 0xFF333333 :mode :stroke :stroke-width 1})
+    (shapes/path canvas p {:color [0.2 0.2 0.2 1.0] :mode :stroke :stroke-width 1})
     ;; Draw text along the wave
     (text-path/text-on-path canvas "Wavy Text ~ " p
                             {:size 20
                              :offset offset
-                             :color 0xFF9B59B6})
+                             :color [0.61 0.35 0.71 1.0]})
     ;; Label
     (text/text canvas "Wave Path" (+ x (/ width 2)) (+ y amplitude 50)
-               {:size 14 :align :center :color 0xFF666666})))
+               {:size 14 :align :center :color [0.4 0.4 0.4 1.0]})))
 
 ;; ============================================================
 ;; Drawing: Arc Path
@@ -78,14 +78,14 @@
         sweep-angle 120   ;; Sweep 120 degrees
         p (path/arc cx cy radius start-angle sweep-angle)]
     ;; Draw the arc path for reference
-    (shapes/path canvas p {:color 0xFF333333 :mode :stroke :stroke-width 1})
+    (shapes/path canvas p {:color [0.2 0.2 0.2 1.0] :mode :stroke :stroke-width 1})
     ;; Draw text along the arc
     (text-path/text-on-path canvas "Arc Text!" p
                             {:size font-size
-                             :color 0xFF2ECC71})
+                             :color [0.18 0.8 0.44 1.0]})
     ;; Label
     (text/text canvas "Arc Path" cx (+ cy radius 30)
-               {:size 14 :align :center :color 0xFF666666})))
+               {:size 14 :align :center :color [0.4 0.4 0.4 1.0]})))
 
 ;; ============================================================
 ;; Drawing: Line Path (diagonal)
@@ -101,15 +101,15 @@
         offset (* t (- path-len 150))]
     ;; Draw the line path for reference
     (shapes/line canvas x1 y1 x2 y2
-                 {:color 0xFF333333 :stroke-width 1})
+                 {:color [0.2 0.2 0.2 1.0] :stroke-width 1})
     ;; Draw text along the line
     (text-path/text-on-path canvas "Diagonal!" p
                             {:size 20
                              :offset (max 0 offset)
-                             :color 0xFFE74C3C})
+                             :color [0.91 0.3 0.24 1.0]})
     ;; Label
     (text/text canvas "Line Path" (/ (+ x1 x2) 2) (+ (/ (+ y1 y2) 2) 40)
-               {:size 14 :align :center :color 0xFF666666})))
+               {:size 14 :align :center :color [0.4 0.4 0.4 1.0]})))
 
 ;; ============================================================
 ;; Example Interface
@@ -133,10 +133,10 @@
     ;; Title
     (text/text canvas "Text on Path Examples"
                (/ width 2) 40
-               {:size 28 :weight :medium :align :center :color 0xFFFFFFFF})
+               {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
     (text/text canvas "Using RSXform for GPU-optimized rendering"
                (/ width 2) 70
-               {:size 14 :align :center :color 0xFF888888})
+               {:size 14 :align :center :color [0.53 0.53 0.53 1.0]})
     ;; 2x2 grid of examples
     (draw-circle-example canvas col1-x row1-y time)
     (draw-wave-example canvas (- col2-x 150) row1-y 300 time)

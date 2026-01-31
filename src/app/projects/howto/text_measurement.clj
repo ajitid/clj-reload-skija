@@ -21,7 +21,7 @@
 (def metrics-text "Sphinx")
 (def bounds-font-size 36)
 (def bounds-text "Typography")
-(def label-color 0xFF888888)
+(def label-color [0.53 0.53 0.53 1.0])
 
 ;; ============================================================
 ;; State (persists across hot-reloads)
@@ -36,7 +36,7 @@
 
 (defn draw-metrics-section [^Canvas canvas x y]
   (text/text canvas "Font Metrics" x y
-             {:size 20 :weight :medium :color 0xFFFFFFFF})
+             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
   (let [metrics (measure/font-metrics {:size metrics-font-size})
         baseline-y (+ y 80)
         text-x (+ x 120)
@@ -44,35 +44,35 @@
         label-x (+ line-end-x 10)]
     ;; Draw the text
     (text/text canvas metrics-text text-x baseline-y
-               {:size metrics-font-size :color 0xFFFFFFFF})
+               {:size metrics-font-size :color [1.0 1.0 1.0 1.0]})
     ;; Baseline (green)
     (shapes/line canvas text-x baseline-y line-end-x baseline-y
-                 {:color 0xFF2ECC71 :stroke-width 1})
-    (text/text canvas "baseline" label-x baseline-y {:size 11 :color 0xFF2ECC71})
+                 {:color [0.18 0.8 0.44 1.0] :stroke-width 1})
+    (text/text canvas "baseline" label-x baseline-y {:size 11 :color [0.18 0.8 0.44 1.0]})
     ;; Ascent (red) - ascent is negative, so add it to baseline
     (let [ascent-y (+ baseline-y (:ascent metrics))]
       (shapes/line canvas text-x ascent-y line-end-x ascent-y
-                   {:color 0xFFE74C3C :stroke-width 1})
+                   {:color [0.91 0.3 0.24 1.0] :stroke-width 1})
       (text/text canvas (format "ascent (%.1f)" (:ascent metrics))
-                 label-x ascent-y {:size 11 :color 0xFFE74C3C}))
+                 label-x ascent-y {:size 11 :color [0.91 0.3 0.24 1.0]}))
     ;; Descent (blue)
     (let [descent-y (+ baseline-y (:descent metrics))]
       (shapes/line canvas text-x descent-y line-end-x descent-y
-                   {:color 0xFF3498DB :stroke-width 1})
+                   {:color [0.2 0.6 0.86 1.0] :stroke-width 1})
       (text/text canvas (format "descent (%.1f)" (:descent metrics))
-                 label-x descent-y {:size 11 :color 0xFF3498DB}))
+                 label-x descent-y {:size 11 :color [0.2 0.6 0.86 1.0]}))
     ;; Cap height (orange) - label on LEFT to avoid overlapping ascent
     (let [cap-y (- baseline-y (:cap-height metrics))]
       (shapes/line canvas text-x cap-y line-end-x cap-y
-                   {:color 0xFFF39C12 :stroke-width 1})
+                   {:color [0.95 0.61 0.07 1.0] :stroke-width 1})
       (text/text canvas (format "cap-height (%.1f)" (:cap-height metrics))
-                 (- text-x 10) (+ cap-y 3) {:size 11 :color 0xFFF39C12 :align :right}))
+                 (- text-x 10) (+ cap-y 3) {:size 11 :color [0.95 0.61 0.07 1.0] :align :right}))
     ;; X-height (purple)
     (let [xh-y (- baseline-y (:x-height metrics))]
       (shapes/line canvas text-x xh-y line-end-x xh-y
-                   {:color 0xFF9B59B6 :stroke-width 1})
+                   {:color [0.61 0.35 0.71 1.0] :stroke-width 1})
       (text/text canvas (format "x-height (%.1f)" (:x-height metrics))
-                 label-x xh-y {:size 11 :color 0xFF9B59B6}))))
+                 label-x xh-y {:size 11 :color [0.61 0.35 0.71 1.0]}))))
 
 ;; ============================================================
 ;; Drawing: Text Bounds Section
@@ -80,31 +80,31 @@
 
 (defn draw-bounds-section [^Canvas canvas x y]
   (text/text canvas "Text Bounds" x y
-             {:size 20 :weight :medium :color 0xFFFFFFFF})
+             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
   (let [bounds (measure/text-bounds bounds-text {:size bounds-font-size})
         advance (measure/text-width bounds-text {:size bounds-font-size})
         baseline-y (+ y 60)
         text-x (+ x 20)]
     ;; Draw text
     (text/text canvas bounds-text text-x baseline-y
-               {:size bounds-font-size :color 0xFFFFFFFF})
+               {:size bounds-font-size :color [1.0 1.0 1.0 1.0]})
     ;; Tight bounding box (dashed-style with dotted color)
     (shapes/rectangle canvas
                       (+ text-x (:left bounds))
                       (+ baseline-y (:top bounds))
                       (:width bounds)
                       (:height bounds)
-                      {:color 0xAAE74C3C :mode :stroke :stroke-width 1.5})
+                      {:color [0.91 0.3 0.24 0.67] :mode :stroke :stroke-width 1.5})
     ;; Advance width line (solid green)
     (shapes/line canvas text-x (+ baseline-y 10) (+ text-x advance) (+ baseline-y 10)
-                 {:color 0xFF2ECC71 :stroke-width 2})
+                 {:color [0.18 0.8 0.44 1.0] :stroke-width 2})
     ;; Labels
     (text/text canvas (format "bounds: %.1f x %.1f" (:width bounds) (:height bounds))
                (+ text-x 10) (+ baseline-y 35)
-               {:size 12 :color 0xAAE74C3C})
+               {:size 12 :color [0.91 0.3 0.24 0.67]})
     (text/text canvas (format "advance width: %.1f" advance)
                (+ text-x 10) (+ baseline-y 50)
-               {:size 12 :color 0xFF2ECC71})))
+               {:size 12 :color [0.18 0.8 0.44 1.0]})))
 
 ;; ============================================================
 ;; Drawing: Hit Testing Section
@@ -119,14 +119,14 @@
 
 (defn draw-hit-test-section [^Canvas canvas x y]
   (text/text canvas "Hit Testing (click in text)" x y
-             {:size 20 :weight :medium :color 0xFFFFFFFF})
+             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
   (let [py (+ y 30)
         p (para/paragraph hit-test-text
-            {:width hit-para-width :size 16 :color 0xFFFFFFFF})
+            {:width hit-para-width :size 16 :color [1.0 1.0 1.0 1.0]})
         h (para/height p)]
     ;; Box outline
     (shapes/rectangle canvas x py hit-para-width h
-                      {:color 0x33FFFFFF :mode :stroke :stroke-width 1})
+                      {:color [1.0 1.0 1.0 0.2] :mode :stroke :stroke-width 1})
     ;; Draw word highlight if clicked
     (when-let [{:keys [start end]} @click-word]
       (let [rects (para/rects-for-range p start end)]
@@ -134,7 +134,7 @@
           (shapes/rectangle canvas
                             (+ x (:x r)) (+ py (:y r))
                             (:width r) (:height r)
-                            {:color 0x444A90D9}))))
+                            {:color [0.29 0.56 0.85 0.27]}))))
     ;; Draw character highlight if clicked
     (when-let [idx @click-index]
       (let [rects (para/rects-for-range p idx (inc idx))]
@@ -142,7 +142,7 @@
           (shapes/rectangle canvas
                             (+ x (:x r)) (+ py (:y r))
                             (:width r) (:height r)
-                            {:color 0x88E74C3C}))))
+                            {:color [0.91 0.3 0.24 0.53]}))))
     ;; Draw paragraph
     (para/draw canvas p x py)
     ;; Info label
@@ -163,33 +163,33 @@
 
 (defn draw-intrinsic-section [^Canvas canvas x y]
   (text/text canvas "Intrinsic Widths" x y
-             {:size 20 :weight :medium :color 0xFFFFFFFF})
+             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
   (let [;; Max intrinsic (single line)
-        p-max (para/paragraph intrinsic-text {:width Float/MAX_VALUE :size 18 :color 0xFFFFFFFF})
+        p-max (para/paragraph intrinsic-text {:width Float/MAX_VALUE :size 18 :color [1.0 1.0 1.0 1.0]})
         max-w (para/max-intrinsic-width p-max)
         ;; Min intrinsic (maximum wrapping)
-        p-min (para/paragraph intrinsic-text {:width 1 :size 18 :color 0xFFFFFFFF})
+        p-min (para/paragraph intrinsic-text {:width 1 :size 18 :color [1.0 1.0 1.0 1.0]})
         min-w (para/min-intrinsic-width p-min)
         ;; Re-layout at actual widths
-        p-at-max (para/paragraph intrinsic-text {:width max-w :size 18 :color 0xFFFFFFFF})
-        p-at-min (para/paragraph intrinsic-text {:width min-w :size 18 :color 0xFFFFFFFF})
+        p-at-max (para/paragraph intrinsic-text {:width max-w :size 18 :color [1.0 1.0 1.0 1.0]})
+        p-at-min (para/paragraph intrinsic-text {:width min-w :size 18 :color [1.0 1.0 1.0 1.0]})
         y-start (+ y 30)
         gap 20]
     ;; Max intrinsic
     (let [h (para/height p-at-max)]
       (shapes/rectangle canvas x y-start max-w h
-                        {:color 0x442ECC71 :mode :stroke :stroke-width 1.5})
+                        {:color [0.18 0.8 0.44 0.27] :mode :stroke :stroke-width 1.5})
       (para/draw canvas p-at-max x y-start)
       (text/text canvas (format "max-intrinsic-width: %.1f px" max-w)
-                 x (+ y-start h 16) {:size 12 :color 0xFF2ECC71}))
+                 x (+ y-start h 16) {:size 12 :color [0.18 0.8 0.44 1.0]}))
     ;; Min intrinsic
     (let [y2 (+ y-start 60)
           h (para/height p-at-min)]
       (shapes/rectangle canvas x y2 min-w h
-                        {:color 0x44E74C3C :mode :stroke :stroke-width 1.5})
+                        {:color [0.91 0.3 0.24 0.27] :mode :stroke :stroke-width 1.5})
       (para/draw canvas p-at-min x y2)
       (text/text canvas (format "min-intrinsic-width: %.1f px" min-w)
-                 x (+ y2 h 16) {:size 12 :color 0xFFE74C3C}))))
+                 x (+ y2 h 16) {:size 12 :color [0.91 0.3 0.24 1.0]}))))
 
 ;; ============================================================
 ;; Gesture Handlers
@@ -206,7 +206,7 @@
            local-x (- mx hit-para-x)
            local-y (- my py)
            p (para/paragraph hit-test-text
-               {:width hit-para-width :size 16 :color 0xFFFFFFFF})
+               {:width hit-para-width :size 16 :color [1.0 1.0 1.0 1.0]})
            {:keys [index]} (para/index-at-point p local-x local-y)]
        (reset! click-index index)
        (reset! click-word (para/word-boundary p index))))})
@@ -220,7 +220,7 @@
        :bounds-fn (fn [_ctx]
                     (let [py @hit-test-origin-y
                           p (para/paragraph hit-test-text
-                              {:width hit-para-width :size 16 :color 0xFFFFFFFF})]
+                              {:width hit-para-width :size 16 :color [1.0 1.0 1.0 1.0]})]
                       [hit-para-x py hit-para-width (para/height p)]))
        :gesture-recognizers [:tap]
        :handlers hit-test-handlers})))
@@ -242,7 +242,7 @@
     ;; Title
     (text/text canvas "Text Measurement"
                (/ width 2) 35
-               {:size 28 :weight :medium :align :center :color 0xFFFFFFFF})
+               {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
     ;; Sections
     (draw-metrics-section canvas x 70)
     (draw-bounds-section canvas x 220)

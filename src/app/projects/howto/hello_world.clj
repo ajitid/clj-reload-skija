@@ -23,12 +23,12 @@
 ;; Trail
 (def trail-max-length 30)
 (def trail-base-radius 40)  ;; base size for trail circles
-(def trail-color 0xFFFF69B4)
+(def trail-color [1.0 0.41 0.71 1.0])  ;; pink
 
 ;; Colors
-(def bg-circle-color 0xFF4A90D9)
-(def draggable-color 0xFFFF69B4)
-(def draggable-stroke-color 0xFFFFFFFF)
+(def bg-circle-color [0.29 0.56 0.85 1.0])  ;; blue
+(def draggable-color [1.0 0.41 0.71 1.0])   ;; pink
+(def draggable-stroke-color [1.0 1.0 1.0 1.0])
 
 ;; ============================================================
 ;; State (persists across hot-reloads)
@@ -120,18 +120,17 @@
 (defn draw-trail [^Canvas canvas]
   "Draw fading trail of past positions."
   (let [positions (vec @trail)
-        len (count positions)]
+        len (count positions)
+        [tr tg tb _] trail-color]
     (dotimes [i len]
       (let [[x y] (nth positions i)
-            ;; Fade alpha from 0 to 255 based on position in trail
+            ;; Fade alpha from 0 to ~0.7 based on position in trail
             progress (/ (double i) (max 1 (dec len)))
-            alpha (int (* 180 progress))
+            alpha (* 0.7 progress)
             ;; Shrink radius for older positions
-            radius (* trail-base-radius 0.5 progress)
-            color (bit-or (bit-and trail-color 0x00FFFFFF)
-                          (bit-shift-left alpha 24))]
+            radius (* trail-base-radius 0.5 progress)]
         (when (> radius 2)
-          (shapes/circle canvas x y radius {:color color}))))))
+          (shapes/circle canvas x y radius {:color [tr tg tb alpha]}))))))
 
 ;; ============================================================
 ;; Drawing
@@ -140,7 +139,8 @@
 (defn draw-orbiting-circles
   "Draw circles orbiting around the draggable center using sine waves."
   [^Canvas canvas cx cy time]
-  (let [phase-offset (/ (* 2 Math/PI) circle-count)]
+  (let [phase-offset (/ (* 2 Math/PI) circle-count)
+        [br bg bb _] bg-circle-color]
     (doseq [i (range circle-count)]
       (let [;; Base angle for this circle
             base-angle (* i phase-offset)
@@ -155,11 +155,10 @@
             ;; Pulse size with sine wave
             size-wave (+ 1.0 (* 0.3 (Math/sin (+ (* time 4) (* i 0.5)))))
             radius (* circle-radius size-wave)
-            ;; Vary alpha based on position
-            alpha (int (+ 180 (* 75 (Math/sin (+ angle (* time 2))))))]
+            ;; Vary alpha based on position (0.7 to 1.0 range)
+            alpha (+ 0.7 (* 0.3 (Math/sin (+ angle (* time 2)))))]
         (shapes/circle canvas x y radius
-                       {:color (bit-or (bit-and bg-circle-color 0x00FFFFFF)
-                                       (bit-shift-left alpha 24))})))))
+                       {:color [br bg bb alpha]})))))
 
 (defn draw-draggable-circle
   "Draw the central draggable circle."

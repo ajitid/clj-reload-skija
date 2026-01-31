@@ -6,7 +6,7 @@
   (:require [app.shell.state :as state]
             [lib.graphics.batch :as batch]
             [lib.text.core :as text])
-  (:import [io.github.humbleui.skija Canvas Paint PaintMode]
+  (:import [io.github.humbleui.skija Canvas Color4f Paint PaintMode]
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
@@ -18,29 +18,33 @@
 (def display-width 200)
 (def display-height 80)
 (def display-padding 12)
-(def display-bg-color 0xDD333333)
-(def display-text-color 0xFFFFFFFF)
+(def display-bg-color [0.2 0.2 0.2 0.87])
+(def display-text-color [1.0 1.0 1.0 1.0])
 (def font-size 14)
 (def text-graph-spacing 8)
 
 ;; FPS graph settings
 (def fps-graph-height 40)
-(def fps-graph-color 0xFF4AE88C)
-(def fps-graph-bg-color 0xFF1A1A1A)
+(def fps-graph-color [0.29 0.91 0.55 1.0])
+(def fps-graph-bg-color [0.1 0.1 0.1 1.0])
 (def fps-target 60)
 
 ;; ============================================================
 ;; Pre-allocated resources (zero per-frame allocations)
 ;; ============================================================
 
-(def fps-graph-bg-paint (doto (Paint.) (.setColor (unchecked-int fps-graph-bg-color))))
-(def fps-graph-line-paint (doto (Paint.) (.setColor (unchecked-int 0x44FFFFFF))))
+(def fps-graph-bg-paint
+  (let [[r g b a] fps-graph-bg-color]
+    (doto (Paint.) (.setColor4f (Color4f. (float r) (float g) (float b) (float a))))))
+(def fps-graph-line-paint
+  (doto (Paint.) (.setColor4f (Color4f. 1.0 1.0 1.0 0.27))))
 (def fps-graph-stroke-paint
-  (doto (Paint.)
-    (.setMode PaintMode/STROKE)
-    (.setStrokeWidth (float 1.5))
-    (.setAntiAlias true)
-    (.setColor (unchecked-int fps-graph-color))))
+  (let [[r g b a] fps-graph-color]
+    (doto (Paint.)
+      (.setMode PaintMode/STROKE)
+      (.setStrokeWidth (float 1.5))
+      (.setAntiAlias true)
+      (.setColor4f (Color4f. (float r) (float g) (float b) (float a))))))
 ;; Line segments: (n-1) segments x 4 floats (x1,y1,x2,y2) each
 (def fps-graph-lines (float-array (* (dec state/fps-history-size) 4)))
 
@@ -102,9 +106,10 @@
           ph display-height
           pad display-padding]
       ;; Draw panel background
-      (with-open [bg-paint (doto (Paint.)
-                             (.setColor (unchecked-int display-bg-color)))]
-        (.drawRect canvas (Rect/makeXYWH (float px) (float py) (float pw) (float ph)) bg-paint))
+      (let [[r g b a] display-bg-color]
+        (with-open [bg-paint (doto (Paint.)
+                               (.setColor4f (Color4f. (float r) (float g) (float b) (float a))))]
+          (.drawRect canvas (Rect/makeXYWH (float px) (float py) (float pw) (float ph)) bg-paint)))
       ;; Draw FPS text at top
       (text/text canvas
                  (format "FPS: %.0f" (double @state/fps))
