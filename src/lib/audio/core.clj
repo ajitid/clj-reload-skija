@@ -71,11 +71,6 @@
                   (swap! state/sources dissoc id)))
      source)))
 
-;; Legacy alias for backwards compatibility
-(def new-source
-  "DEPRECATED: Use from-file instead."
-  from-file)
-
 ;; ============================================================
 ;; Playback control
 ;; ============================================================
@@ -138,13 +133,6 @@
   (when-let [{:keys [clip]} (get-source-data source)]
     (audio/set-clip-loop! clip looping?)
     (update-source-data! source assoc :looping? looping?))
-  source)
-
-(defn set-pitch!
-  "Set pitch/playback rate.
-   Note: Java Sound Clip does not support pitch modification.
-   This is a no-op for API compatibility."
-  [source _pitch]
   source)
 
 ;; ============================================================

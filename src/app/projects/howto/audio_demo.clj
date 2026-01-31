@@ -80,8 +80,8 @@
           progress (if (and current-pos total-dur (pos? total-dur))
                      (/ current-pos total-dur)
                      0)]
-      (shapes/rect canvas bar-x bar-y bar-w bar-h {:color [0.267 0.267 0.267 1.0] :radius 4})
-      (shapes/rect canvas bar-x bar-y (* bar-w progress) bar-h {:color status-color :radius 4}))
+      (shapes/rounded-rect canvas bar-x bar-y bar-w bar-h 4 {:color [0.267 0.267 0.267 1.0]})
+      (shapes/rounded-rect canvas bar-x bar-y (* bar-w progress) bar-h 4 {:color status-color}))
     ;; Volume and loop status
     (text/text canvas vol-text (- cx 50) (+ cy 100) {:size 18 :color text-color})
     (text/text canvas loop-text (- cx 30) (+ cy 130) {:size 18 :color text-color})
