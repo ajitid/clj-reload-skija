@@ -1,11 +1,12 @@
 (ns app.projects.howto.audio-demo
-  "Audio Demo - Love2D-style audio playback.
+  "Audio Demo - Love2D-style audio playback with streaming.
 
    Demonstrates:
-   - Loading and playing audio files (MP3, OGG, WAV)
+   - Loading audio with {:type :stream} for low-memory streaming
    - Play, pause, resume, stop controls
-   - Volume adjustment
+   - Volume adjustment (immediate response with SourceDataLine)
    - Looping toggle
+   - Seek (via stream rewind)
 
    Controls:
    - SPACE: Play/Pause toggle
@@ -132,9 +133,9 @@
 (defn init []
   "Called once when example starts."
   (println "Audio Demo loaded!")
-  (println "Loading audio file:" audio-file)
+  (println "Loading audio file:" audio-file "(streaming mode)")
   (try
-    (reset! music (audio/from-file audio-file))
+    (reset! music (audio/from-file audio-file {:type :stream}))
     (println "Audio loaded successfully. Duration:" (format-time (audio/duration @music)))
     (catch Exception e
       (println "Failed to load audio:" (.getMessage e)))))

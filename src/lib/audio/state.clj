@@ -3,8 +3,12 @@
    Uses defonce so state survives hot-reloads.")
 
 ;; Registry of all loaded sources
-;; {id -> {:clip Clip :path String :looping? boolean :volume float}}
+;; {id -> {:type :static/:stream :clip Clip :path String :looping? boolean :volume float ...}}
 (defonce sources (atom {}))
 
 ;; Counter for generating unique source IDs
 (defonce source-counter (atom 0))
+
+;; Registry of active streaming threads for cleanup
+;; {id -> Thread}
+(defonce stream-threads (atom {}))
