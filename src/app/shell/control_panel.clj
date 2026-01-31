@@ -3,7 +3,9 @@
 
    Shows registered controls organized in collapsible groups when @state/panel-visible? is true.
    Examples register their controls via register-controls! in their init function."
-  (:require [app.shell.state :as state])
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [app.shell.state :as state])
   (:import [io.github.humbleui.skija Canvas Color4f Paint]
            [io.github.humbleui.types Rect]))
 
@@ -15,7 +17,7 @@
 (def panel-y 10)
 (def panel-width 240)
 (def panel-padding 10)
-(def panel-bg-color [0.2 0.2 0.2 0.87])
+(def panel-bg-color (color/with-alpha oc/gray-8 0.87))
 (def group-spacing 10)
 
 ;; ============================================================

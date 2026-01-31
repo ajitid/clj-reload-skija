@@ -5,7 +5,8 @@
    Examples can use this to create parameter controls.
 
    Colors use [r g b a] float vectors (0.0-1.0) for Skia Color4f."
-  (:require [lib.text.core :as text])
+  (:require [lib.color.core :as color]
+            [lib.text.core :as text])
   (:import [io.github.humbleui.skija Canvas Paint Color4f]
            [io.github.humbleui.types Rect]))
 
@@ -16,7 +17,7 @@
 (def default-track-color [0.333 0.333 0.333 1.0])
 (def default-fill-color [1.0 0.412 0.706 1.0])  ;; hot pink
 (def default-label-color [0.667 0.667 0.667 1.0])
-(def default-value-color [1.0 1.0 1.0 1.0])
+(def default-value-color color/white)
 (def default-height 16)
 (def default-width 160)
 (def default-font-size 14)
@@ -51,7 +52,7 @@
      - :track-color [r g b a] floats (default [0.333 0.333 0.333 1.0])
      - :fill-color [r g b a] floats (default [1.0 0.412 0.706 1.0])
      - :label-color [r g b a] floats (default [0.667 0.667 0.667 1.0])
-     - :value-color [r g b a] floats (default [1.0 1.0 1.0 1.0])
+     - :value-color [r g b a] floats (default color/white)
      - :font-size (default 14)
 
    Layout:  Label: <value>

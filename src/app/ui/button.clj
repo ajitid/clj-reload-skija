@@ -5,7 +5,8 @@
    with a centered text label. Swaps color when pressed.
 
    Colors use [r g b a] float vectors (0.0-1.0) for Skia Color4f."
-  (:require [lib.text.core :as text])
+  (:require [lib.color.core :as color]
+            [lib.text.core :as text])
   (:import [io.github.humbleui.skija Canvas Paint Color4f]
            [io.github.humbleui.types Rect]))
 
@@ -15,7 +16,7 @@
 
 (def default-color [0.333 0.333 0.333 1.0])
 (def default-pressed-color [0.467 0.467 0.467 1.0])
-(def default-text-color [1.0 1.0 1.0 1.0])
+(def default-text-color color/white)
 (def default-font-size 16)
 
 ;; ============================================================
@@ -42,7 +43,7 @@
    - opts: Map of options:
      - :color [r g b a] floats (default [0.333 0.333 0.333 1.0])
      - :pressed-color [r g b a] floats (default [0.467 0.467 0.467 1.0])
-     - :text-color [r g b a] floats (default [1.0 1.0 1.0 1.0])
+     - :text-color [r g b a] floats (default color/white)
      - :font-size (default 16)
      - :pressed? (default false)"
   [^Canvas canvas label [bx by bw bh] opts]

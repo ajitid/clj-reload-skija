@@ -6,7 +6,9 @@
    - Pixel-level color sampling via Bitmap
    - Click-to-pick interaction with gesture system
    - Button widget for controls"
-  (:require [app.ui.button :as button]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [app.ui.button :as button]
             [lib.flex.core :as flex]
             [lib.graphics.image :as image]
             [lib.graphics.shapes :as shapes]
@@ -155,7 +157,7 @@
         h @window-height]
     (if-let [[ox oy iw ih] (image-offset w h)]
       [ox oy iw ih]
-      [0 0 0 0])))
+      (color/with-alpha color/black 0.0))))
 
 ;; ============================================================
 ;; Gesture setup
@@ -225,7 +227,7 @@
             ;; Swatch square
             (shapes/rectangle canvas px py palette-size palette-size {:color color4f})
             (shapes/rectangle canvas px py palette-size palette-size
-                              {:color [1 1 1 1] :mode :stroke :stroke-width 1.5})
+                              {:color color/white :mode :stroke :stroke-width 1.5})
             ;; Hex label
             (text/text canvas (color->hex color)
                        (+ px (/ palette-size 2)) (+ py palette-size 16)
@@ -237,12 +239,12 @@
 
   ;; Title
   (text/text canvas "Pipette Photo" (/ width 2) 40
-             {:size 28 :weight :medium :align :center :color [1 1 1 1]})
+             {:size 28 :weight :medium :align :center :color color/white})
 
   ;; Buttons
   (let [[bx by bw bh] (new-photo-btn-bounds nil)]
     (button/draw canvas "New Photo" [bx by bw bh]
-                 {:color [0.29 0.56 0.85 1.0] :pressed-color [0.227 0.478 0.725 1.0]}))
+                 {:color oc/blue-6 :pressed-color oc/blue-7}))
   (let [[bx by bw bh] (clear-btn-bounds nil)]
     (button/draw canvas "Clear" [bx by bw bh]
                  {:color [0.4 0.4 0.4 1.0] :pressed-color [0.533 0.533 0.533 1.0]}))
@@ -267,14 +269,14 @@
                 color4f (color-int->color4f color)]
             ;; White outline
             (shapes/circle canvas sx sy (+ sample-radius outline-width)
-                           {:color [1 1 1 1]})
+                           {:color color/white})
             ;; Filled with sampled color
             (shapes/circle canvas sx sy sample-radius
                            {:color color4f})
             ;; Hex label
             (text/text canvas (color->hex color)
                        sx (+ sy sample-radius 18)
-                       {:size 11 :color [1 1 1 1] :align :center})))
+                       {:size 11 :color color/white :align :center})))
 
         ;; Hint text
         (when (empty? @sampled-points)

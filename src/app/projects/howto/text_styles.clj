@@ -7,7 +7,9 @@
    - Strikethrough styles
    - Letter spacing, word spacing, and line height
    - Background-colored text spans"
-  (:require [lib.text.core :as text]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [lib.text.core :as text]
             [lib.text.paragraph :as para]
             [lib.graphics.shapes :as shapes])
   (:import [io.github.humbleui.skija Canvas]))
@@ -25,14 +27,14 @@
 
 (defn draw-rich-text-section [^Canvas canvas x y]
   (text/text canvas "Rich Text Spans" x y
-             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
+             {:size 20 :weight :medium :color color/white})
   (let [p (para/rich-text {:width section-width}
-            [{:text "Small " :size 14 :color [0.8 0.8 0.8 1.0]}
-             {:text "Medium " :size 20 :color [0.29 0.56 0.85 1.0]}
-             {:text "Large " :size 32 :color [0.18 0.8 0.44 1.0] :weight :bold}
-             {:text "and " :size 16 :color [0.8 0.8 0.8 1.0]}
+            [{:text "Small " :size 14 :color oc/gray-4}
+             {:text "Medium " :size 20 :color oc/blue-6}
+             {:text "Large " :size 32 :color oc/green-5 :weight :bold}
+             {:text "and " :size 16 :color oc/gray-4}
              {:text "italic " :size 20 :slant :italic :color [0.61 0.35 0.71 1.0]}
-             {:text "text mix nicely in one paragraph, wrapping across lines as needed." :size 16 :color [0.8 0.8 0.8 1.0]}])
+             {:text "text mix nicely in one paragraph, wrapping across lines as needed." :size 16 :color oc/gray-4}])
         h (para/height p)]
     (para/draw canvas p x (+ y 30))
     (+ y 30 h 10)))
@@ -43,16 +45,16 @@
 
 (defn draw-underline-section [^Canvas canvas x y]
   (text/text canvas "Underline Styles" x y
-             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
-  (let [styles [{:name "Solid"  :style :solid  :color [0.29 0.56 0.85 1.0]}
-                {:name "Double" :style :double :color [0.18 0.8 0.44 1.0]}
-                {:name "Dotted" :style :dotted :color [0.91 0.3 0.24 1.0]}
+             {:size 20 :weight :medium :color color/white})
+  (let [styles [{:name "Solid"  :style :solid  :color oc/blue-6}
+                {:name "Double" :style :double :color oc/green-5}
+                {:name "Dotted" :style :dotted :color oc/red-7}
                 {:name "Dashed" :style :dashed :color [0.61 0.35 0.71 1.0]}
-                {:name "Wavy"   :style :wavy   :color [0.95 0.61 0.07 1.0]}]
+                {:name "Wavy"   :style :wavy   :color oc/yellow-7}]
         spans (mapv (fn [{:keys [name style color]}]
                       {:text (str name "  ")
                        :size 22
-                       :color [1.0 1.0 1.0 1.0]
+                       :color color/white
                        :underline {:style style :color color :thickness-multiplier 2.0}})
                     styles)
         p (para/rich-text {:width section-width} spans)]
@@ -65,10 +67,10 @@
 
 (defn draw-strikethrough-section [^Canvas canvas x y]
   (text/text canvas "Strikethrough" x y
-             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
+             {:size 20 :weight :medium :color color/white})
   (let [p (para/rich-text {:width section-width}
-            [{:text "Plain strikethrough  " :size 20 :color [0.8 0.8 0.8 1.0] :strikethrough true}
-             {:text "Styled double red" :size 20 :color [0.8 0.8 0.8 1.0]
+            [{:text "Plain strikethrough  " :size 20 :color oc/gray-4 :strikethrough true}
+             {:text "Styled double red" :size 20 :color oc/gray-4
               :strikethrough {:style :double :color [1.0 0.0 0.0 1.0] :thickness-multiplier 1.5}}])]
     (para/draw canvas p x (+ y 30))
     (+ y 30 (para/height p) 10)))
@@ -79,7 +81,7 @@
 
 (defn draw-spacing-section [^Canvas canvas x y]
   (text/text canvas "Spacing" x y
-             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
+             {:size 20 :weight :medium :color color/white})
   (let [w (/ section-width 3)
         y-start (+ y 30)
         ;; Letter spacing row
@@ -91,7 +93,7 @@
         ;; Draw letter spacing
         _ (doseq [[i {:keys [label opts]}] (map-indexed vector ls-configs)]
             (let [cx (+ x (* i (+ w 10)))
-                  p (para/paragraph letter-text (merge {:width w :size 18 :color [1.0 1.0 1.0 1.0]} opts))]
+                  p (para/paragraph letter-text (merge {:width w :size 18 :color color/white} opts))]
               (para/draw canvas p cx y1)
               (text/text canvas label cx (+ y1 30) {:size 11 :color label-color})))
         ;; Word spacing row
@@ -101,7 +103,7 @@
                     {:label "word-spacing: 20" :opts {:word-spacing 20.0}}]
         _ (doseq [[i {:keys [label opts]}] (map-indexed vector ws-configs)]
             (let [cx (+ x (* i (+ w 10)))
-                  p (para/paragraph ws-text (merge {:width w :size 14 :color [1.0 1.0 1.0 1.0]} opts))]
+                  p (para/paragraph ws-text (merge {:width w :size 14 :color color/white} opts))]
               (para/draw canvas p cx y2)
               (text/text canvas label cx (+ y2 (para/height p) 14) {:size 11 :color label-color})))
         ;; Line height row
@@ -112,9 +114,9 @@
                     {:label "line-height: 2.0" :opts {:line-height 2.0}}]]
     (doseq [[i {:keys [label opts]}] (map-indexed vector lh-configs)]
       (let [cx (+ x (* i (+ w 10)))
-            p (para/paragraph lh-text (merge {:width w :size 13 :color [1.0 1.0 1.0 1.0]} opts))
+            p (para/paragraph lh-text (merge {:width w :size 13 :color color/white} opts))
             h (para/height p)]
-        (shapes/rectangle canvas cx y3 w h {:color [1.0 1.0 1.0 0.13] :mode :stroke :stroke-width 1})
+        (shapes/rectangle canvas cx y3 w h {:color (color/with-alpha color/white 0.13) :mode :stroke :stroke-width 1})
         (para/draw canvas p cx y3)
         (text/text canvas label cx (+ y3 h 14) {:size 11 :color label-color})))
     (+ y3 160)))
@@ -125,15 +127,15 @@
 
 (defn draw-background-section [^Canvas canvas x y]
   (text/text canvas "Background Color" x y
-             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
+             {:size 20 :weight :medium :color color/white})
   (let [p (para/rich-text {:width section-width}
-            [{:text "Normal text " :size 18 :color [1.0 1.0 1.0 1.0]}
-             {:text " highlighted " :size 18 :color [0.0 0.0 0.0 1.0] :background-color [0.95 0.77 0.06 1.0]}
-             {:text " more text " :size 18 :color [1.0 1.0 1.0 1.0]}
-             {:text " green " :size 18 :color [0.0 0.0 0.0 1.0] :background-color [0.18 0.8 0.44 1.0]}
-             {:text " and " :size 18 :color [1.0 1.0 1.0 1.0]}
-             {:text " blue " :size 18 :color [1.0 1.0 1.0 1.0] :background-color [0.2 0.6 0.86 1.0]}
-             {:text " highlights in one paragraph." :size 18 :color [1.0 1.0 1.0 1.0]}])]
+            [{:text "Normal text " :size 18 :color color/white}
+             {:text " highlighted " :size 18 :color color/black :background-color oc/yellow-5}
+             {:text " more text " :size 18 :color color/white}
+             {:text " green " :size 18 :color color/black :background-color oc/green-5}
+             {:text " and " :size 18 :color color/white}
+             {:text " blue " :size 18 :color color/white :background-color oc/blue-5}
+             {:text " highlights in one paragraph." :size 18 :color color/white}])]
     (para/draw canvas p x (+ y 30))
     (+ y 30 (para/height p) 10)))
 
@@ -153,7 +155,7 @@
     ;; Title
     (text/text canvas "Text Styles"
                (/ width 2) 35
-               {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
+               {:size 28 :weight :medium :align :center :color color/white})
     ;; Sections
     (let [y1 (draw-rich-text-section canvas x 70)
           y2 (draw-underline-section canvas x (+ y1 20))

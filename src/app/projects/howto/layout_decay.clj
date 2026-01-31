@@ -8,7 +8,9 @@
    - Slider controls for grid configuration
 
    Previously the default example (ball-spring). Renamed to reflect actual content."
-  (:require [app.state.system :as sys]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [app.state.system :as sys]
             [app.ui.slider :as slider]
             [lib.flex.core :as flex]
             [lib.graphics.batch :as batch]
@@ -29,8 +31,8 @@
 (def min-circles 1)
 (def max-circles 250)
 (def demo-circle-radius 25)
-(def demo-circle-color [0.29 0.56 0.85 1.0])  ;; blue
-(def demo-anchor-color [1.0 1.0 1.0 0.27])
+(def demo-circle-color oc/blue-6)  ;; blue
+(def demo-anchor-color (color/with-alpha color/white 0.27))
 
 ;; ============================================================
 ;; Example State (persists across hot-reloads)
@@ -256,9 +258,9 @@
      [{:layout {:y {:size 50}}
        :children-layout {:mode :stack-x :x {:between 10}}
        :children
-       [{:layout {:x {:size 100}} :fill [0.29 0.56 0.85 1.0] :label "100px"}
-        {:layout {:x {:size "1s"}} :fill [1.0 1.0 1.0 0.13] :label "spacer (1s)"}
-        {:layout {:x {:size 100}} :fill [0.29 0.56 0.85 1.0] :label "100px"}]}
+       [{:layout {:x {:size 100}} :fill oc/blue-6 :label "100px"}
+        {:layout {:x {:size "1s"}} :fill (color/with-alpha color/white 0.13) :label "spacer (1s)"}
+        {:layout {:x {:size 100}} :fill oc/blue-6 :label "100px"}]}
 
       {:layout {:y {:size 60}}
        :children-layout {:mode :stack-x :x {:between 10}}
@@ -270,15 +272,15 @@
       {:layout {:y {:size 50}}
        :children-layout {:mode :stack-x :x {:between 10}}
        :children
-       [{:layout {:x {:size "30%"}} :fill [0.85 0.29 0.29 1.0] :label "30%"}
+       [{:layout {:x {:size "30%"}} :fill oc/red-7 :label "30%"}
         {:layout {:x {:size "70%"}} :fill [0.85 0.48 0.29 1.0] :label "70%"}]}
 
-      {:layout {:y {:size "1s"}} :fill [1.0 1.0 1.0 0.08] :label "stretch (1s)"}]}
+      {:layout {:y {:size "1s"}} :fill (color/with-alpha color/white 0.08) :label "stretch (1s)"}]}
 
     ;; Middle column: Scrollable list demo
     {:id :scroll-demo
      :layout {:x {:size 180} :y {:size "100%"}}
-     :fill [1.0 1.0 1.0 0.13]
+     :fill (color/with-alpha color/white 0.13)
      :children-layout {:mode :stack-y
                        :overflow {:y :scroll}
                        :y {:before 10 :between 8 :after 10}
@@ -293,7 +295,7 @@
     (let [y-padding {:before 10 :after 10}]
       {:id :virtual-list
        :layout {:x {:size 180} :y {:size "100%"}}
-       :fill [1.0 1.0 1.0 0.13]
+       :fill (color/with-alpha color/white 0.13)
        :children-layout {:mode :stack-y
                          :overflow {:y :scroll}
                          :y y-padding

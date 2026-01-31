@@ -5,7 +5,9 @@
    - Programmatic gradient image generation (no external files)
    - Pixel sampling via Bitmap (CPU readback)
    - Colored circles with hex labels at sample positions"
-  (:require [lib.graphics.image :as image]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [lib.graphics.image :as image]
             [lib.graphics.shapes :as shapes]
             [lib.graphics.gradients :as grad]
             [lib.text.core :as text])
@@ -66,10 +68,10 @@
     ;; Layer 1: horizontal rainbow gradient
     (with-open [shader (grad/linear-gradient 0 0 image-w 0
                          [[1.0 0.0 0.0 1.0]
-                          [1.0 0.533 0.0 1.0]
+                          oc/orange-5
                           [1.0 1.0 0.0 1.0]
                           [0.0 1.0 0.0 1.0]
-                          [0.0 0.533 1.0 1.0]
+                          oc/blue-6
                           [0.533 0.0 1.0 1.0]
                           [1.0 0.0 0.533 1.0]])
                 paint (doto (Paint.) (.setShader shader))]
@@ -77,16 +79,16 @@
 
     ;; Layer 2: vertical white→transparent→black overlay
     (with-open [shader (grad/linear-gradient 0 0 0 image-h
-                         [[1.0 1.0 1.0 0.533]
-                          [0.0 0.0 0.0 0.0]
-                          [0.0 0.0 0.0 0.533]]
+                         [(color/with-alpha color/white 0.533)
+                          (color/with-alpha color/black 0.0)
+                          (color/with-alpha color/black 0.533)]
                          [0.0 0.5 1.0])
                 paint (doto (Paint.) (.setShader shader))]
       (.drawRect canvas (io.github.humbleui.types.Rect/makeXYWH 0 0 (float image-w) (float image-h)) paint))
 
     ;; Layer 3: radial gradient spots for variety
     (doseq [[cx cy r colors] [[150 120 100
-                                [[1.0 1.0 1.0 0.4] [1.0 1.0 1.0 0.0]]]
+                                [(color/with-alpha color/white 0.4) (color/with-alpha color/white 0.0)]]
                                [450 280 120
                                 [[0.0 1.0 1.0 0.4] [0.0 1.0 1.0 0.0]]]
                                [300 200 80
@@ -142,7 +144,7 @@
 
     ;; Title
     (text/text canvas "Pipette - Color Sampling" (/ width 2) 40
-               {:size 28 :weight :medium :align :center :color [1 1 1 1]})
+               {:size 28 :weight :medium :align :center :color color/white})
 
     ;; Draw gradient image
     (when-let [img @gradient-image]
@@ -155,14 +157,14 @@
             color4f (color-int->color4f color)]
         ;; White outline circle
         (shapes/circle canvas screen-x screen-y (+ sample-radius outline-width)
-                       {:color [1 1 1 1]})
+                       {:color color/white})
         ;; Filled circle in sampled color
         (shapes/circle canvas screen-x screen-y sample-radius
                        {:color color4f})
         ;; Hex label below
         (text/text canvas (color->hex color)
                    screen-x (+ screen-y sample-radius 20)
-                   {:size 12 :color [1 1 1 1] :align :center})))))
+                   {:size 12 :color color/white :align :center})))))
 
 (defn cleanup []
   (println "Pipette demo cleanup")

@@ -6,7 +6,9 @@
    - Animation registry (lib.anim.registry)
    - Velocity tracking from drag for natural momentum
    - Gesture handling (drag recognizer)"
-  (:require [app.state.system :as sys]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [app.state.system :as sys]
             [lib.flex.core :as flex]
             [lib.graphics.shapes :as shapes]
             [lib.anim.spring :as spring]
@@ -18,9 +20,9 @@
 ;; ============================================================
 
 (def circle-radius 25)
-(def circle-color [0.29 0.56 0.85 1.0])
-(def anchor-color [1.0 1.0 1.0 0.27])
-(def line-color [1.0 1.0 1.0 0.2])
+(def circle-color oc/blue-6)
+(def anchor-color (color/with-alpha color/white 0.27))
+(def line-color (color/with-alpha color/white 0.2))
 
 ;; ============================================================
 ;; State (persists across hot-reloads)
@@ -178,14 +180,14 @@
             line-x (fmt "X" state-x)]
         (when line-y
           (text/text canvas line-y pad base-y
-                     {:size font-size :color [1.0 1.0 1.0 0.6] :features "tnum"}))
+                     {:size font-size :color (color/with-alpha color/white 0.6) :features "tnum"}))
         (when line-x
           (text/text canvas line-x pad (- base-y line-h)
-                     {:size font-size :color [1.0 1.0 1.0 0.6] :features "tnum"})))
+                     {:size font-size :color (color/with-alpha color/white 0.6) :features "tnum"})))
       ;; No springs active
       (text/text canvas "No spring active (drag and release ball)"
                  pad base-y
-                 {:size font-size :color [1.0 1.0 1.0 0.33]}))))
+                 {:size font-size :color (color/with-alpha color/white 0.33)}))))
 
 ;; ============================================================
 ;; Example Interface

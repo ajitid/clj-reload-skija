@@ -5,7 +5,9 @@
    Examples can use this to create boolean controls.
 
    Colors use [r g b a] float vectors (0.0-1.0) for Skia Color4f."
-  (:require [lib.text.core :as text])
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [lib.text.core :as text])
   (:import [io.github.humbleui.skija Canvas Paint PaintMode Color4f]
            [io.github.humbleui.types Rect]))
 
@@ -15,8 +17,8 @@
 
 (def default-box-size 14)
 (def default-box-color [0.333 0.333 0.333 1.0])
-(def default-check-color [0.29 0.91 0.549 1.0])  ;; green
-(def default-text-color [1.0 1.0 1.0 1.0])
+(def default-check-color oc/green-4)  ;; green
+(def default-text-color color/white)
 (def default-font-size 14)
 (def default-spacing 8)
 
@@ -35,8 +37,8 @@
    - opts: Map of options:
      - :box-size (default 14)
      - :box-color [r g b a] floats (default [0.333 0.333 0.333 1.0])
-     - :check-color [r g b a] floats (default [0.29 0.91 0.549 1.0])
-     - :text-color [r g b a] floats (default [1.0 1.0 1.0 1.0])
+     - :check-color [r g b a] floats (default oc/green-4)
+     - :text-color [r g b a] floats (default color/white)
      - :font-size (default 14)
      - :spacing (default 8)
 

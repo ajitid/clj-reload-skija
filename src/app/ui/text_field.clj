@@ -6,7 +6,9 @@
    clipboard copy/cut/paste, and select-all.
 
    Colors use [r g b a] float vectors (0.0-1.0) for Skia Color4f."
-  (:require [app.state.system :as sys]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [app.state.system :as sys]
             [lib.text.break :as brk]
             [lib.text.core :as text]
             [lib.text.measure :as measure])
@@ -41,13 +43,13 @@
 ;; Styling - [r g b a] floats
 ;; ============================================================
 
-(def ^:private box-bg-color        [0.165 0.165 0.165 1.0])
-(def ^:private border-focused      [0.29 0.565 0.851 1.0])
+(def ^:private box-bg-color        oc/gray-9)
+(def ^:private border-focused      oc/blue-6)
 (def ^:private border-unfocused    [0.333 0.333 0.333 1.0])
-(def ^:private text-color          [1.0 1.0 1.0 1.0])
-(def ^:private cursor-color        [1.0 1.0 1.0 1.0])
+(def ^:private text-color          color/white)
+(def ^:private cursor-color        color/white)
 (def ^:private label-color         [0.667 0.667 0.667 1.0])
-(def ^:private selection-color     [0.29 0.565 0.851 0.4])
+(def ^:private selection-color     (color/with-alpha oc/blue-6 0.4))
 (def ^:private font-size           13)
 (def ^:private pad-x               5)
 (def ^:private pad-y               3)

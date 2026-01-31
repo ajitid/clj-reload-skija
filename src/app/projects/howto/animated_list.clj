@@ -10,7 +10,8 @@
    - Click 'Add' to add item (fades in from top)
    - Click 'Remove' to remove random item (fades out)
    - Click 'Shuffle' to reorder (smooth position animation)"
-  (:require [lib.flex.core :as flex]
+  (:require [lib.color.open-color :as oc]
+            [lib.flex.core :as flex]
             [lib.gesture.api :as gesture]
             [lib.graphics.shapes :as shapes]
             [lib.layout.core :as layout]
@@ -24,9 +25,9 @@
 ;; ============================================================
 
 (flex/defsource items
-  [{:id 1 :text "Apple" :color [0.9 0.45 0.45 1.0]}
-   {:id 2 :text "Banana" :color [1.0 0.84 0.31 1.0]}
-   {:id 3 :text "Cherry" :color [0.91 0.12 0.39 1.0]}
+  [{:id 1 :text "Apple" :color oc/red-5}
+   {:id 2 :text "Banana" :color oc/yellow-4}
+   {:id 3 :text "Cherry" :color oc/pink-7}
    {:id 4 :text "Date" :color [0.73 0.41 0.78 1.0]}
    {:id 5 :text "Elderberry" :color [0.47 0.53 0.8 1.0]}])
 
@@ -45,8 +46,8 @@
 (defn add-item! []
   (let [id (swap! next-id inc)
         fruits ["Fig" "Grape" "Honeydew" "Kiwi" "Lemon" "Mango" "Nectarine" "Orange" "Papaya" "Quince"]
-        colors [[0.51 0.78 0.52 1.0] [0.31 0.76 0.97 1.0] [1.0 0.72 0.3 1.0]
-                [0.94 0.38 0.57 1.0] [0.58 0.46 0.8 1.0] [0.3 0.71 0.67 1.0]]]
+        colors [[0.51 0.78 0.52 1.0] [0.31 0.76 0.97 1.0] oc/yellow-6
+                oc/pink-5 [0.58 0.46 0.8 1.0] [0.3 0.71 0.67 1.0]]]
     (items (conj @items {:id id
                          :text (rand-nth fruits)
                          :color (rand-nth colors)}))))

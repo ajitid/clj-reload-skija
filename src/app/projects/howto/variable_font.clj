@@ -6,7 +6,9 @@
    - Query variation axes (min/max weight)
    - Animate weight continuously using sine wave
    - Edit display text via control panel"
-  (:require [app.state.system :as sys]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [app.state.system :as sys]
             [lib.flex.core :as flex]
             [lib.text.core :as text])
   (:import [io.github.humbleui.skija Canvas]))
@@ -68,7 +70,7 @@
     ;; Title
     (text/text canvas "Inter Variable Weight Animation"
                (/ width 2) 50
-               {:size 24 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
+               {:size 24 :weight :medium :align :center :color color/white})
     ;; Axis info
     (text/text canvas (format "Weight Axis: min %.0f | default %.0f | max %.0f"
                               (double min-weight) (double default-weight) (double max-weight))
@@ -86,7 +88,7 @@
                 :family font-family
                 :variations {:wght weight}
                 :align :center
-                :color [1.0 1.0 1.0 1.0]
+                :color color/white
                 :animated true})
     ;; Current weight indicator
     ;; Current weight indicator (tabular numbers for stable width)
@@ -96,7 +98,7 @@
                 :family font-family
                 :features "tnum"  ;; tabular numbers - fixed width digits
                 :align :center
-                :color [0.29 0.56 0.85 1.0]})))
+                :color oc/blue-6})))
 
 (defn draw-weight-samples [^Canvas canvas width height]
   "Draw static weight samples at bottom for comparison."
@@ -118,7 +120,7 @@
                     :family font-family
                     :variations {:wght w}
                     :align :center
-                    :color [0.8 0.8 0.8 1.0]})
+                    :color oc/gray-4})
         (text/text canvas (str (int w))
                    x (+ y-base 25)
                    {:size 11

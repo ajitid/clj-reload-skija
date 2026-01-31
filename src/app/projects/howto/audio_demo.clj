@@ -14,7 +14,8 @@
    - L: Toggle looping
    - UP/DOWN: Volume up/down
    - LEFT/RIGHT: Seek backward/forward"
-  (:require [lib.audio.core :as audio]
+  (:require [lib.color.open-color :as oc]
+            [lib.audio.core :as audio]
             [lib.graphics.shapes :as shapes]
             [lib.graphics.path :as path]
             [lib.text.core :as text])
@@ -37,9 +38,9 @@
 ;; Drawing
 ;; ============================================================
 
-(def text-color [0.8 0.8 0.8 1.0])
-(def playing-color [0.298 0.686 0.314 1.0])
-(def paused-color [1.0 0.596 0.0 1.0])
+(def text-color oc/gray-4)
+(def playing-color oc/green-7)
+(def paused-color oc/yellow-8)
 (def stopped-color [0.4 0.4 0.4 1.0])
 
 (defn format-time [seconds]

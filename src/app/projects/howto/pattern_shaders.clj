@@ -3,7 +3,9 @@
 
    Shows hatch, grid, dot, and cross-hatch patterns applied to rounded
    rectangles. All patterns run entirely on the GPU via SkSL shaders."
-  (:require [lib.graphics.shapes :as shapes]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [lib.graphics.shapes :as shapes]
             [lib.graphics.shaders :as shaders]
             [lib.text.core :as text])
   (:import [io.github.humbleui.skija Canvas]))
@@ -12,7 +14,7 @@
 ;; Configuration
 ;; ============================================================
 
-(def ^:private label-color [0.8 0.8 0.8 1.0])
+(def ^:private label-color oc/gray-4)
 (def ^:private sub-label-color [0.53 0.53 0.53 1.0])
 (def ^:private cell-bg [0.1 0.1 0.18 1.0])
 (def ^:private corner-radius 12)
@@ -20,20 +22,20 @@
 (def ^:private cells
   [{:label "Hatch (0°)"
     :sub   "(hatch-shader 2 10)"
-    :color [0.29 0.56 0.85 1.0]}
+    :color oc/blue-6}
    {:label "Hatch (45°)"
     :sub   "(hatch-shader 2 10 {:angle π/4})"
-    :color [0.18 0.80 0.44 1.0]}
+    :color oc/green-5}
    {:label "Grid"
     :sub   "(grid-shader 1 20 20)"
     :color [0.61 0.35 0.71 1.0]}
    {:label "Dot Pattern"
     :sub   "(dot-pattern-shader 3 15 15)"
-    :color [0.90 0.49 0.13 1.0]}])
+    :color oc/yellow-9}])
 
 (def ^:private crosshatch-label "Cross-hatch (composed)")
 (def ^:private crosshatch-sub "(cross-hatch-shader 1.5 12)")
-(def ^:private crosshatch-color [0.91 0.30 0.24 1.0])
+(def ^:private crosshatch-color oc/red-7)
 
 ;; ============================================================
 ;; Shader factories
@@ -99,7 +101,7 @@
   ;; Title
   (text/text canvas "2D Pattern Shaders (GPU)"
              (/ width 2.0) 40
-             {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
+             {:size 28 :weight :medium :align :center :color color/white})
   (text/text canvas "GPU-accelerated repeating patterns using SkSL"
              (/ width 2.0) 68
              {:size 14 :align :center :color [0.53 0.53 0.53 1.0]})

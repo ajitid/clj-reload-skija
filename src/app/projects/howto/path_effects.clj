@@ -3,7 +3,9 @@
 
    Shows five rows, each applying a different path effect to a shared
    wavy S-curve base path."
-  (:require [lib.graphics.shapes :as shapes]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [lib.graphics.shapes :as shapes]
             [lib.graphics.path :as path]
             [lib.graphics.filters :as filters]
             [lib.text.core :as text])
@@ -16,19 +18,19 @@
 (def ^:private base-color [0.33 0.33 0.33 1.0])
 (def ^:private base-width 1.5)
 (def ^:private effect-width 3.0)
-(def ^:private label-color [0.8 0.8 0.8 1.0])
+(def ^:private label-color oc/gray-4)
 
 (def ^:private rows
   [{:label "Stamp :move (translate only)"
-    :color [0.29 0.56 0.85 1.0]}
+    :color oc/blue-6}
    {:label "Stamp :turn (rotate to follow)"
-    :color [0.18 0.8 0.44 1.0]}
+    :color oc/green-5}
    {:label "Stamp :follow (bend to curvature)"
-    :color [0.9 0.49 0.13 1.0]}
+    :color oc/yellow-9}
    {:label "Composed: dash + corner"
     :color [0.61 0.35 0.71 1.0]}
    {:label "Sum: dash + discrete"
-    :color [0.91 0.3 0.24 1.0]}])
+    :color oc/red-7}])
 
 ;; ============================================================
 ;; Marker shapes (built once, reused)
@@ -146,7 +148,7 @@
   ;; Title
   (text/text canvas "Path Effects"
              (/ width 2.0) 40
-             {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
+             {:size 28 :weight :medium :align :center :color color/white})
   (text/text canvas "stamp, compose, and sum effects on a shared S-curve"
              (/ width 2.0) 68
              {:size 14 :align :center :color [0.53 0.53 0.53 1.0]})
@@ -160,7 +162,7 @@
         ;; Separator line
         (when (pos? i)
           (shapes/line canvas pad ry (- width pad) ry
-                       {:color [0.2 0.2 0.2 1.0] :stroke-width 1}))
+                       {:color oc/gray-8 :stroke-width 1}))
         (draw-row canvas i row pad ry row-w row-h)))))
 
 (defn cleanup []

@@ -8,7 +8,9 @@
    - Animate text offset along paths
 
    Note: Path creation uses lib.graphics.path, text rendering uses lib.text.path."
-  (:require [app.state.system :as sys]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [app.state.system :as sys]
             [lib.text.core :as text]
             [lib.text.path :as text-path]
             [lib.graphics.path :as path]
@@ -35,12 +37,12 @@
         offset (mod (* time animation-speed) path-len)]
     ;; Draw the path outline for reference
     (shapes/circle canvas cx cy radius
-                   {:color [0.2 0.2 0.2 1.0] :mode :stroke :stroke-width 1})
+                   {:color oc/gray-8 :mode :stroke :stroke-width 1})
     ;; Draw text along the path
     (text-path/text-on-path canvas "Hello Circle! " p
                             {:size font-size
                              :offset offset
-                             :color [0.29 0.56 0.85 1.0]})
+                             :color oc/blue-6})
     ;; Label
     (text/text canvas "Circle Path" cx (+ cy radius 40)
                {:size 14 :align :center :color [0.4 0.4 0.4 1.0]})))
@@ -57,7 +59,7 @@
         path-len (path/length p)
         offset (mod (* time animation-speed) path-len)]
     ;; Draw the wave path for reference
-    (shapes/path canvas p {:color [0.2 0.2 0.2 1.0] :mode :stroke :stroke-width 1})
+    (shapes/path canvas p {:color oc/gray-8 :mode :stroke :stroke-width 1})
     ;; Draw text along the wave
     (text-path/text-on-path canvas "Wavy Text ~ " p
                             {:size 20
@@ -78,11 +80,11 @@
         sweep-angle 120   ;; Sweep 120 degrees
         p (path/arc cx cy radius start-angle sweep-angle)]
     ;; Draw the arc path for reference
-    (shapes/path canvas p {:color [0.2 0.2 0.2 1.0] :mode :stroke :stroke-width 1})
+    (shapes/path canvas p {:color oc/gray-8 :mode :stroke :stroke-width 1})
     ;; Draw text along the arc
     (text-path/text-on-path canvas "Arc Text!" p
                             {:size font-size
-                             :color [0.18 0.8 0.44 1.0]})
+                             :color oc/green-5})
     ;; Label
     (text/text canvas "Arc Path" cx (+ cy radius 30)
                {:size 14 :align :center :color [0.4 0.4 0.4 1.0]})))
@@ -101,12 +103,12 @@
         offset (* t (- path-len 150))]
     ;; Draw the line path for reference
     (shapes/line canvas x1 y1 x2 y2
-                 {:color [0.2 0.2 0.2 1.0] :stroke-width 1})
+                 {:color oc/gray-8 :stroke-width 1})
     ;; Draw text along the line
     (text-path/text-on-path canvas "Diagonal!" p
                             {:size 20
                              :offset (max 0 offset)
-                             :color [0.91 0.3 0.24 1.0]})
+                             :color oc/red-7})
     ;; Label
     (text/text canvas "Line Path" (/ (+ x1 x2) 2) (+ (/ (+ y1 y2) 2) 40)
                {:size 14 :align :center :color [0.4 0.4 0.4 1.0]})))
@@ -133,7 +135,7 @@
     ;; Title
     (text/text canvas "Text on Path Examples"
                (/ width 2) 40
-               {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
+               {:size 28 :weight :medium :align :center :color color/white})
     (text/text canvas "Using RSXform for GPU-optimized rendering"
                (/ width 2) 70
                {:size 14 :align :center :color [0.53 0.53 0.53 1.0]})

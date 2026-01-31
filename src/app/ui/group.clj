@@ -5,7 +5,9 @@
    and optionally shows indented child controls.
 
    Colors use [r g b a] float vectors (0.0-1.0) for Skia Color4f."
-  (:require [lib.text.core :as text]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [lib.text.core :as text]
             [lib.graphics.path :as gpath]
             [lib.graphics.shapes :as shapes])
   (:import [io.github.humbleui.skija Canvas Paint Color4f]
@@ -17,8 +19,8 @@
 
 (def default-header-height 26)
 (def default-header-bg-color [0.267 0.267 0.267 1.0])
-(def default-header-text-color [1.0 1.0 1.0 1.0])
-(def default-arrow-color [0.8 0.8 0.8 1.0])
+(def default-header-text-color color/white)
+(def default-arrow-color oc/gray-4)
 (def default-font-size 14)
 (def default-indent 10)
 (def default-vertical-spacing 6)
@@ -84,8 +86,8 @@
    - opts: Map of options:
      - :header-height (default 26)
      - :header-bg-color [r g b a] floats (default [0.267 0.267 0.267 1.0])
-     - :header-text-color [r g b a] floats (default [1.0 1.0 1.0 1.0])
-     - :arrow-color [r g b a] floats (default [0.8 0.8 0.8 1.0])
+     - :header-text-color [r g b a] floats (default color/white)
+     - :arrow-color [r g b a] floats (default oc/gray-4)
      - :font-size (default 14)
      - :indent (default 10)
      - :vertical-spacing (default 6)

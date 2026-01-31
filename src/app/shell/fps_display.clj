@@ -3,7 +3,9 @@
 
    Shows FPS number and graph when @state/fps-display-visible? is true.
    Independent of the control panel."
-  (:require [app.shell.state :as state]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [app.shell.state :as state]
             [lib.graphics.batch :as batch]
             [lib.text.core :as text])
   (:import [io.github.humbleui.skija Canvas Color4f Paint PaintMode]
@@ -18,15 +20,15 @@
 (def display-width 200)
 (def display-height 80)
 (def display-padding 12)
-(def display-bg-color [0.2 0.2 0.2 0.87])
-(def display-text-color [1.0 1.0 1.0 1.0])
+(def display-bg-color (color/with-alpha oc/gray-8 0.87))
+(def display-text-color color/white)
 (def font-size 14)
 (def text-graph-spacing 8)
 
 ;; FPS graph settings
 (def fps-graph-height 40)
-(def fps-graph-color [0.29 0.91 0.55 1.0])
-(def fps-graph-bg-color [0.1 0.1 0.1 1.0])
+(def fps-graph-color oc/green-4)
+(def fps-graph-bg-color oc/gray-9)
 (def fps-target 60)
 
 ;; ============================================================

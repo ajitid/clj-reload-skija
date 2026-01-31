@@ -6,7 +6,9 @@
    - GPU-resident image snapshot (no CPU readback)
    - Semi-transparent overlay of captured frame
    - Button widget with tap gesture"
-  (:require [app.ui.button :as button]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [app.ui.button :as button]
             [lib.flex.core :as flex]
             [lib.graphics.image :as image]
             [lib.graphics.shapes :as shapes]
@@ -19,9 +21,9 @@
 ;; ============================================================
 
 (def panel-width 200)
-(def panel-bg-color [0.2 0.2 0.2 1.0])
+(def panel-bg-color oc/gray-8)
 (def ball-radius 30)
-(def ball-color [0.29 0.56 0.85 1.0])
+(def ball-color oc/blue-6)
 (def button-w 150)
 (def button-h 40)
 (def button-margin 25)
@@ -157,14 +159,14 @@
 
       ;; Title
       (text/text canvas "Controls" (+ area-w (/ panel-width 2)) 40
-                 {:size 18 :color [1 1 1 1] :align :center})
+                 {:size 18 :color color/white :align :center})
 
       ;; Capture button
       (let [bx (+ area-w button-margin)
             by (- (/ height 2) (/ button-h 2))]
         (button/draw canvas "Capture" [bx by button-w button-h]
-                     {:color [0.29 0.56 0.85 1.0]
-                      :pressed-color [0.227 0.478 0.725 1.0]
+                     {:color oc/blue-6
+                      :pressed-color oc/blue-7
                       :pressed? @button-pressed?}))
 
       ;; Status text

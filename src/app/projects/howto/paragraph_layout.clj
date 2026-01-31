@@ -7,7 +7,9 @@
    - OpenType font features (tabular numbers)
    - Multiple font families (fallback chain)
    - Truncation detection with exceeded-max-lines?"
-  (:require [lib.text.core :as text]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [lib.text.core :as text]
             [lib.text.paragraph :as para]
             [lib.graphics.shapes :as shapes])
   (:import [io.github.humbleui.skija Canvas]))
@@ -17,7 +19,7 @@
 ;; ============================================================
 
 (def label-color [0.53 0.53 0.53 1.0])
-(def box-color [1.0 1.0 1.0 0.2])
+(def box-color (color/with-alpha color/white 0.2))
 
 ;; ============================================================
 ;; Drawing: Line Metrics Section
@@ -28,10 +30,10 @@
 
 (defn draw-line-metrics-section [^Canvas canvas x y]
   (text/text canvas "Line Metrics" x y
-             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
+             {:size 20 :weight :medium :color color/white})
   (let [w 450
         py (+ y 30)
-        p (para/paragraph line-metrics-text {:width w :size 16 :color [1.0 1.0 1.0 1.0]})
+        p (para/paragraph line-metrics-text {:width w :size 16 :color color/white})
         metrics (para/line-metrics p)
         h (para/height p)]
     ;; Box outline
@@ -45,10 +47,10 @@
         ;; Ascent/descent shaded rect
         (shapes/rectangle canvas (+ x (:left m)) (+ py (- (:baseline m) (:ascent m)))
                           (:width m) line-h
-                          {:color [0.29 0.56 0.85 0.07]})
+                          {:color (color/with-alpha oc/blue-6 0.07)})
         ;; Baseline line
         (shapes/line canvas x line-y (+ x w) line-y
-                     {:color [0.18 0.8 0.44 0.53] :stroke-width 0.5})
+                     {:color (color/with-alpha oc/green-5 0.53) :stroke-width 0.5})
         ;; Line number label
         (text/text canvas (str (:line-number m))
                    (- x 15) line-y
@@ -63,14 +65,14 @@
 
 (defn draw-strut-section [^Canvas canvas x y]
   (text/text canvas "Strut Style" x y
-             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
+             {:size 20 :weight :medium :color color/white})
   (let [w 180
         py (+ y 30)
-        spans [{:text "Small " :size 12 :color [0.8 0.8 0.8 1.0]}
-               {:text "BIG " :size 28 :color [0.29 0.56 0.85 1.0] :weight :bold}
-               {:text "small again " :size 12 :color [0.8 0.8 0.8 1.0]}
-               {:text "MED " :size 20 :color [0.18 0.8 0.44 1.0]}
-               {:text "tiny" :size 12 :color [0.8 0.8 0.8 1.0]}]
+        spans [{:text "Small " :size 12 :color oc/gray-4}
+               {:text "BIG " :size 28 :color oc/blue-6 :weight :bold}
+               {:text "small again " :size 12 :color oc/gray-4}
+               {:text "MED " :size 20 :color oc/green-5}
+               {:text "tiny" :size 12 :color oc/gray-4}]
         ;; Without strut
         p-no-strut (para/rich-text {:width w} spans)
         h-no (para/height p-no-strut)
@@ -103,7 +105,7 @@
 
 (defn draw-features-section [^Canvas canvas x y]
   (text/text canvas "Font Features & Families" x y
-             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
+             {:size 20 :weight :medium :color color/white})
   (let [py (+ y 30)
         w 500
         font-family "Inter Variable"
@@ -112,13 +114,13 @@
         ;; Multiple number sets for clear proportional vs tabular comparison
         num-text "0123456789\n1111111111\n$1,234.00  $9,876.50\n09:45:30   12:00:00"
         ;; Proportional numbers (default)
-        p-prop (para/paragraph num-text {:width w :size 24 :color [1.0 1.0 1.0 1.0]
+        p-prop (para/paragraph num-text {:width w :size 24 :color color/white
                                          :family font-family})
         h-prop (para/height p-prop)
         prop-y (+ py label-gap)
         ;; Tabular numbers (tnum feature)
         tnum-label-y (+ prop-y h-prop gap)
-        p-tnum (para/paragraph num-text {:width w :size 24 :color [1.0 1.0 1.0 1.0]
+        p-tnum (para/paragraph num-text {:width w :size 24 :color color/white
                                          :family font-family :features "tnum"})
         h-tnum (para/height p-tnum)
         tnum-y (+ tnum-label-y label-gap)
@@ -127,7 +129,7 @@
         fam-label-y (+ tnum-y h-tnum gap)
         fam-y (+ fam-label-y label-gap)
         p-fallback (para/paragraph emoji-text
-                     {:width w :size 22 :color [1.0 1.0 1.0 1.0]
+                     {:width w :size 22 :color color/white
                       :family ["Helvetica" "Apple Color Emoji"]})
         h-fallback (para/height p-fallback)
         fam-attr-y (+ fam-y h-fallback 4)
@@ -137,7 +139,7 @@
         trunc-w 300
         trunc-text "This paragraph has been truncated because it exceeds the maximum number of lines allowed by the layout configuration."
         p-trunc (para/paragraph trunc-text
-                  {:width trunc-w :size 14 :color [1.0 1.0 1.0 1.0] :max-lines 2 :ellipsis "..."})
+                  {:width trunc-w :size 14 :color color/white :max-lines 2 :ellipsis "..."})
         h-trunc (para/height p-trunc)
         truncated? (para/exceeded-max-lines? p-trunc)]
     ;; Proportional label + paragraph
@@ -162,7 +164,7 @@
     (para/draw canvas p-trunc x trunc-y)
     (when truncated?
       (text/text canvas "⬆ exceeded-max-lines? → true"
-                 x (+ trunc-y h-trunc 16) {:size 12 :color [0.91 0.3 0.24 1.0]}))
+                 x (+ trunc-y h-trunc 16) {:size 12 :color oc/red-7}))
     (+ trunc-y h-trunc 40)))
 
 ;; ============================================================
@@ -181,7 +183,7 @@
     ;; Title
     (text/text canvas "Paragraph Layout"
                (/ width 2) 35
-               {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
+               {:size 28 :weight :medium :align :center :color color/white})
     ;; Sections
     (let [y1 (draw-line-metrics-section canvas x 70)
           y2 (draw-strut-section canvas x (+ y1 10))]

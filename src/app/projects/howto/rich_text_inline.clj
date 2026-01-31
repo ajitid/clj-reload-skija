@@ -6,7 +6,9 @@
    - Placeholder alignment modes: baseline, middle, top, bottom
    - In-place paragraph updates: alignment, font size, foreground color
    - Animated in-place updates using game-time"
-  (:require [app.state.system :as sys]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [app.state.system :as sys]
             [lib.text.core :as text]
             [lib.text.paragraph :as para]
             [lib.graphics.shapes :as shapes])
@@ -17,8 +19,8 @@
 ;; ============================================================
 
 (def label-color [0.53 0.53 0.53 1.0])
-(def box-color [1.0 1.0 1.0 0.2])
-(def placeholder-colors [[0.29 0.56 0.85 1.0] [0.18 0.8 0.44 1.0] [0.91 0.3 0.24 1.0] [0.61 0.35 0.71 1.0]])
+(def box-color (color/with-alpha color/white 0.2))
+(def placeholder-colors [oc/blue-6 oc/green-5 oc/red-7 [0.61 0.35 0.71 1.0]])
 
 ;; ============================================================
 ;; State (persists across hot-reloads)
@@ -35,9 +37,9 @@
 (defn draw-placeholder-row [^Canvas canvas x y align-kw w]
   "Draw a rich-text row with a placeholder at the given alignment."
   (let [p (para/rich-text {:width w :size 18}
-            [{:text "Text " :color [1.0 1.0 1.0 1.0]}
+            [{:text "Text " :color color/white}
              {:placeholder true :width 24 :height 24 :align align-kw}
-             {:text " continues here" :color [1.0 1.0 1.0 1.0]}])
+             {:text " continues here" :color color/white}])
         h (para/height p)
         rects (para/placeholder-rects p)]
     ;; Draw paragraph
@@ -57,7 +59,7 @@
 
 (defn draw-placeholder-section [^Canvas canvas x y]
   (text/text canvas "Inline Placeholders" x y
-             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
+             {:size 20 :weight :medium :color color/white})
   (let [w 350
         py (+ y 30)
         aligns [:baseline :middle :top :bottom]]
@@ -79,11 +81,11 @@
   (when (nil? @update-para)
     (reset! update-para
       (para/paragraph update-text
-        {:width @update-para-width :size 18 :color [0.8 0.8 0.8 1.0]}))))
+        {:width @update-para-width :size 18 :color oc/gray-4}))))
 
 (defn draw-update-section [^Canvas canvas x y]
   (text/text canvas "In-Place Updates (animated)" x y
-             {:size 20 :weight :medium :color [1.0 1.0 1.0 1.0]})
+             {:size 20 :weight :medium :color color/white})
   (let [py (+ y 30)
         w @update-para-width
         time @sys/game-time
@@ -132,7 +134,7 @@
     ;; Title
     (text/text canvas "Rich Text Inline"
                (/ width 2) 35
-               {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
+               {:size 28 :weight :medium :align :center :color color/white})
     ;; Sections
     (let [y1 (draw-placeholder-section canvas x 70)]
       (draw-update-section canvas x (+ y1 20)))))

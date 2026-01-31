@@ -5,7 +5,9 @@
    - Setting system cursors by keyword via lib.window.cursor
    - Hiding and showing the cursor
    - Polling mouse position each frame for hover detection"
-  (:require [lib.graphics.shapes :as shapes]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [lib.graphics.shapes :as shapes]
             [lib.text.core :as text]
             [lib.window.cursor :as cursor]
             [lib.window.core :as window])
@@ -23,18 +25,18 @@
 
 (def zones
   "Each zone: [keyword label color]"
-  [[:default     "Default"      [0.29 0.56 0.85 1.0]]
+  [[:default     "Default"      oc/blue-6]
    [:pointer     "Pointer"      [1.0 0.41 0.71 1.0]]
-   [:text        "Text"         [0.31 0.78 0.47 1.0]]
-   [:crosshair   "Crosshair"    [1.0 0.55 0.0 1.0]]
+   [:text        "Text"         oc/green-5]
+   [:crosshair   "Crosshair"    oc/orange-5]
    [:move        "Move"         [0.61 0.35 0.71 1.0]]
-   [:wait        "Wait"         [0.91 0.3 0.24 1.0]]
-   [:progress    "Progress"     [0.1 0.74 0.61 1.0]]
+   [:wait        "Wait"         oc/red-7]
+   [:progress    "Progress"     oc/teal-6]
    [:not-allowed "Not Allowed"  [0.58 0.65 0.65 1.0]]
-   [:ew-resize   "↔ EW Resize"  [0.95 0.61 0.07 1.0]]
-   [:ns-resize   "↕ NS Resize"  [0.18 0.8 0.44 1.0]]
-   [:nwse-resize "╲ NWSE"       [0.9 0.49 0.13 1.0]]
-   [:nesw-resize "╱ NESW"       [0.2 0.6 0.86 1.0]]])
+   [:ew-resize   "↔ EW Resize"  oc/yellow-7]
+   [:ns-resize   "↕ NS Resize"  oc/green-5]
+   [:nwse-resize "╲ NWSE"       oc/yellow-9]
+   [:nesw-resize "╱ NESW"       oc/blue-5]])
 
 ;; ============================================================
 ;; State
@@ -96,12 +98,12 @@
       ;; Border when hovered
       (when hovered?
         (shapes/rounded-rect canvas x y w h corner-r
-                             {:color [1.0 1.0 1.0 1.0] :mode :stroke :stroke-width 2.0}))
+                             {:color color/white :mode :stroke :stroke-width 2.0}))
       ;; Label
       (text/text canvas label
                  (+ x (/ w 2)) (+ y (/ h 2) 5)
                  {:size 15 :weight :medium :align :center
-                  :color (if hovered? [1.0 1.0 1.0 1.0] [1.0 1.0 1.0 0.87])}))))
+                  :color (if hovered? color/white (color/with-alpha color/white 0.87))}))))
 
 ;; ============================================================
 ;; Example Interface
@@ -122,12 +124,12 @@
 
     ;; Title
     (text/text canvas "Cursor Demo" (/ width 2) (- origin-y 40)
-               {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
+               {:size 28 :weight :medium :align :center :color color/white})
 
     ;; Subtitle
     (text/text canvas "Hover over a zone to change the mouse cursor"
                (/ width 2) (- origin-y 12)
-               {:size 14 :align :center :color [1.0 1.0 1.0 0.67]})
+               {:size 14 :align :center :color (color/with-alpha color/white 0.67)})
 
     ;; Poll mouse and update cursor
     (update-cursor! origin-x origin-y)

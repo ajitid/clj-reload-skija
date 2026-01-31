@@ -3,7 +3,9 @@
 
    Shows Natural Cubic Spline (C2), Hobby Curve (G1), and Catmull-Rom (C1)
    side by side with the same control points."
-  (:require [lib.graphics.curves :as curves]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [lib.graphics.curves :as curves]
             [lib.graphics.shapes :as shapes]
             [lib.graphics.path :as path]
             [lib.text.core :as text])
@@ -16,16 +18,16 @@
 (def ^:private point-radius 5)
 (def ^:private curve-width 3.0)
 (def ^:private polygon-width 1.0)
-(def ^:private label-color [0.8 0.8 0.8 1.0])
+(def ^:private label-color oc/gray-4)
 (def ^:private polygon-color [0.33 0.33 0.33 1.0])
-(def ^:private point-color [0.91 0.3 0.24 1.0])
+(def ^:private point-color oc/red-7)
 
 (def ^:private panels
   [{:label "Natural Cubic Spline (C2)"
-    :color [0.29 0.56 0.85 1.0]
+    :color oc/blue-6
     :curve-fn #(curves/natural-cubic-spline %)}
    {:label "Hobby Curve (G1 / METAFONT)"
-    :color [0.18 0.8 0.44 1.0]
+    :color oc/green-5
     :curve-fn #(curves/hobby-curve %)}
    {:label "Catmull-Rom (C1 / centripetal)"
     :color [0.61 0.35 0.71 1.0]
@@ -97,7 +99,7 @@
   ;; Title
   (text/text canvas "Curve Interpolation"
              (/ width 2.0) 40
-             {:size 28 :weight :medium :align :center :color [1.0 1.0 1.0 1.0]})
+             {:size 28 :weight :medium :align :center :color color/white})
   (text/text canvas "Same 7 control points, three algorithms"
              (/ width 2.0) 68
              {:size 14 :align :center :color [0.53 0.53 0.53 1.0]})
@@ -111,7 +113,7 @@
         ;; Subtle separator line
         (when (pos? i)
           (shapes/line canvas pad py (- width pad) py
-                       {:color [0.2 0.2 0.2 1.0] :stroke-width 1}))
+                       {:color oc/gray-8 :stroke-width 1}))
         (draw-panel canvas panel pad py panel-w panel-h)))))
 
 (defn cleanup []

@@ -7,7 +7,9 @@
    - Basic Skija drawing
 
    Use this as a starting point for new examples."
-  (:require [app.state.system :as sys]
+  (:require [lib.color.core :as color]
+            [lib.color.open-color :as oc]
+            [app.state.system :as sys]
             [lib.graphics.shapes :as shapes])
   (:import [io.github.humbleui.skija Canvas]))
 
@@ -26,9 +28,9 @@
 (def trail-color [1.0 0.41 0.71 1.0])  ;; pink
 
 ;; Colors
-(def bg-circle-color [0.29 0.56 0.85 1.0])  ;; blue
+(def bg-circle-color oc/blue-6)  ;; blue
 (def draggable-color [1.0 0.41 0.71 1.0])   ;; pink
-(def draggable-stroke-color [1.0 1.0 1.0 1.0])
+(def draggable-stroke-color color/white)
 
 ;; ============================================================
 ;; State (persists across hot-reloads)
