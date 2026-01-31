@@ -191,6 +191,9 @@ JNIEXPORT jboolean JNICALL Java_lib_window_macos_MainThread_isMainThread
 JNIEXPORT void JNICALL Java_lib_window_macos_MainThread_activateApp
   (JNIEnv *env, jclass cls) {
     @autoreleasepool {
+        // Convert from CLI app to regular GUI app (dock icon + menu bar ownership)
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+
         // Check if running macOS 14+ (Sonoma)
         if (@available(macOS 14.0, *)) {
             // Modern API: [NSApp activate] - requires cooperative yielding
