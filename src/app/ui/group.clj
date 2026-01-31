@@ -2,21 +2,23 @@
   "Collapsible group widget for organizing controls.
 
    A group displays a clickable header with expand/collapse arrow
-   and optionally shows indented child controls."
+   and optionally shows indented child controls.
+
+   Colors use [r g b a] float vectors (0.0-1.0) for Skia Color4f."
   (:require [lib.text.core :as text]
             [lib.graphics.path :as gpath]
             [lib.graphics.shapes :as shapes])
-  (:import [io.github.humbleui.skija Canvas Paint]
+  (:import [io.github.humbleui.skija Canvas Paint Color4f]
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
-;; Default styling
+;; Default styling - [r g b a] floats
 ;; ============================================================
 
 (def default-header-height 26)
-(def default-header-bg-color 0xFF444444)
-(def default-header-text-color 0xFFFFFFFF)
-(def default-arrow-color 0xFFCCCCCC)
+(def default-header-bg-color [0.267 0.267 0.267 1.0])
+(def default-header-text-color [1.0 1.0 1.0 1.0])
+(def default-arrow-color [0.8 0.8 0.8 1.0])
 (def default-font-size 14)
 (def default-indent 10)
 (def default-vertical-spacing 6)
@@ -60,11 +62,11 @@
   "Draw expand/collapse arrow indicator."
   [^Canvas canvas x y collapsed? arrow-color]
   (let [arrow-path (if collapsed?
-                     ;; Right-pointing arrow (▶)
+                     ;; Right-pointing arrow
                      (gpath/polygon [x y
                                      (+ x 6) (+ y 4)
                                      x (+ y 8)])
-                     ;; Down-pointing arrow (▼)
+                     ;; Down-pointing arrow
                      (gpath/polygon [x y
                                      (+ x 8) y
                                      (+ x 4) (+ y 6)]))]
@@ -80,26 +82,26 @@
    - bounds: [x y w h] bounding box
    - children: Vector of {:height num :draw-fn (fn [canvas x y w])}
    - opts: Map of options:
-     - :header-height (default 28)
-     - :header-bg-color (default 0xFF444444)
-     - :header-text-color (default 0xFFFFFFFF)
-     - :arrow-color (default 0xFFCCCCCC)
-     - :font-size (default 16)
-     - :indent (default 12)
-     - :vertical-spacing (default 4)
-     - :top-padding (default 4)
-     - :bottom-padding (default 4)
+     - :header-height (default 26)
+     - :header-bg-color [r g b a] floats (default [0.267 0.267 0.267 1.0])
+     - :header-text-color [r g b a] floats (default [1.0 1.0 1.0 1.0])
+     - :arrow-color [r g b a] floats (default [0.8 0.8 0.8 1.0])
+     - :font-size (default 14)
+     - :indent (default 10)
+     - :vertical-spacing (default 6)
+     - :top-padding (default 6)
+     - :bottom-padding (default 6)
 
    Layout:
-     ┌─────────────────┐
-     │ ▼ Group Label   │  (clickable header)
-     ├─────────────────┤
-     │   [child 1]     │  (indented when expanded)
-     │   [child 2]     │
-     └─────────────────┘"
+     +------------------+
+     | > Group Label    |  (clickable header)
+     +------------------+
+     |   [child 1]      |  (indented when expanded)
+     |   [child 2]      |
+     +------------------+"
   [^Canvas canvas label collapsed? [gx gy gw gh] children opts]
   (let [header-height (or (:header-height opts) default-header-height)
-        header-bg-color (or (:header-bg-color opts) default-header-bg-color)
+        [hr hg hb ha] (or (:header-bg-color opts) default-header-bg-color)
         header-text-color (or (:header-text-color opts) default-header-text-color)
         arrow-color (or (:arrow-color opts) default-arrow-color)
         font-size (or (:font-size opts) default-font-size)
@@ -108,7 +110,7 @@
         top-padding (or (:top-padding opts) default-top-padding)]
     ;; Draw header background
     (with-open [bg-paint (doto (Paint.)
-                           (.setColor (unchecked-int header-bg-color)))]
+                           (.setColor4f (Color4f. (float hr) (float hg) (float hb) (float ha))))]
       (.drawRect canvas (Rect/makeXYWH (float gx) (float gy) (float gw) (float header-height)) bg-paint))
     ;; Draw arrow
     (draw-arrow canvas (+ gx 8) (+ gy (/ (- header-height 8) 2)) collapsed? arrow-color)

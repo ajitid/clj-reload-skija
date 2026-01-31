@@ -2,19 +2,21 @@
   "Generic checkbox widget for UI controls.
 
    A checkbox displays a label with a checkable box.
-   Examples can use this to create boolean controls."
+   Examples can use this to create boolean controls.
+
+   Colors use [r g b a] float vectors (0.0-1.0) for Skia Color4f."
   (:require [lib.text.core :as text])
-  (:import [io.github.humbleui.skija Canvas Paint PaintMode]
+  (:import [io.github.humbleui.skija Canvas Paint PaintMode Color4f]
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
-;; Default styling
+;; Default styling - [r g b a] floats
 ;; ============================================================
 
 (def default-box-size 14)
-(def default-box-color 0xFF555555)
-(def default-check-color 0xFF4AE88C)
-(def default-text-color 0xFFFFFFFF)
+(def default-box-color [0.333 0.333 0.333 1.0])
+(def default-check-color [0.29 0.91 0.549 1.0])  ;; green
+(def default-text-color [1.0 1.0 1.0 1.0])
 (def default-font-size 14)
 (def default-spacing 8)
 
@@ -31,25 +33,25 @@
    - checked?: Boolean indicating checked state
    - bounds: [x y w h] bounding box
    - opts: Map of options:
-     - :box-size (default 16)
-     - :box-color (default 0xFF555555)
-     - :check-color (default 0xFF4AE88C)
-     - :text-color (default 0xFFFFFFFF)
-     - :font-size (default 18)
+     - :box-size (default 14)
+     - :box-color [r g b a] floats (default [0.333 0.333 0.333 1.0])
+     - :check-color [r g b a] floats (default [0.29 0.91 0.549 1.0])
+     - :text-color [r g b a] floats (default [1.0 1.0 1.0 1.0])
+     - :font-size (default 14)
      - :spacing (default 8)
 
-   Layout: [✓] Label"
+   Layout: [checkmark] Label"
   [^Canvas canvas label checked? [x y w h] opts]
   (let [box-size (or (:box-size opts) default-box-size)
-        box-color (or (:box-color opts) default-box-color)
-        check-color (or (:check-color opts) default-check-color)
+        [br bg bb ba] (or (:box-color opts) default-box-color)
+        [cr cg cb ca] (or (:check-color opts) default-check-color)
         text-color (or (:text-color opts) default-text-color)
         font-size (or (:font-size opts) default-font-size)
         spacing (or (:spacing opts) default-spacing)
         box-y (+ y (/ (- h box-size) 2))]  ;; Center box vertically
     ;; Draw checkbox box
     (with-open [box-paint (doto (Paint.)
-                            (.setColor (unchecked-int box-color)))]
+                            (.setColor4f (Color4f. (float br) (float bg) (float bb) (float ba))))]
       (.drawRect canvas (Rect/makeXYWH (float x) (float box-y) (float box-size) (float box-size)) box-paint))
     ;; Draw check mark if checked
     (when checked?
@@ -57,7 +59,7 @@
                                 (.setMode PaintMode/STROKE)
                                 (.setStrokeWidth (float 2.0))
                                 (.setAntiAlias true)
-                                (.setColor (unchecked-int check-color)))]
+                                (.setColor4f (Color4f. (float cr) (float cg) (float cb) (float ca))))]
         (let [check-x (+ x 3)
               check-y (+ box-y 3)
               check-size (- box-size 6)]

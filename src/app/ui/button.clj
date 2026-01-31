@@ -2,18 +2,20 @@
   "Generic button widget for UI controls.
 
    A button displays a rectangular background (square corners)
-   with a centered text label. Swaps color when pressed."
+   with a centered text label. Swaps color when pressed.
+
+   Colors use [r g b a] float vectors (0.0-1.0) for Skia Color4f."
   (:require [lib.text.core :as text])
-  (:import [io.github.humbleui.skija Canvas Paint]
+  (:import [io.github.humbleui.skija Canvas Paint Color4f]
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
-;; Default styling
+;; Default styling - [r g b a] floats
 ;; ============================================================
 
-(def default-color 0xFF555555)
-(def default-pressed-color 0xFF777777)
-(def default-text-color 0xFFFFFFFF)
+(def default-color [0.333 0.333 0.333 1.0])
+(def default-pressed-color [0.467 0.467 0.467 1.0])
+(def default-text-color [1.0 1.0 1.0 1.0])
 (def default-font-size 16)
 
 ;; ============================================================
@@ -38,21 +40,21 @@
    - label: String label for the button
    - bounds: [x y w h] bounding box
    - opts: Map of options:
-     - :color (default 0xFF555555)
-     - :pressed-color (default 0xFF777777)
-     - :text-color (default 0xFFFFFFFF)
+     - :color [r g b a] floats (default [0.333 0.333 0.333 1.0])
+     - :pressed-color [r g b a] floats (default [0.467 0.467 0.467 1.0])
+     - :text-color [r g b a] floats (default [1.0 1.0 1.0 1.0])
      - :font-size (default 16)
      - :pressed? (default false)"
   [^Canvas canvas label [bx by bw bh] opts]
   (let [pressed? (or (:pressed? opts) false)
-        bg-color (if pressed?
-                   (or (:pressed-color opts) default-pressed-color)
-                   (or (:color opts) default-color))
+        [r g b a] (if pressed?
+                    (or (:pressed-color opts) default-pressed-color)
+                    (or (:color opts) default-color))
         text-color (or (:text-color opts) default-text-color)
         font-size (or (:font-size opts) default-font-size)]
     ;; Draw background rectangle (square corners)
     (with-open [bg-paint (doto (Paint.)
-                           (.setColor (unchecked-int bg-color)))]
+                           (.setColor4f (Color4f. (float r) (float g) (float b) (float a))))]
       (.drawRect canvas (Rect/makeXYWH (float bx) (float by) (float bw) (float bh)) bg-paint))
     ;; Draw centered text label
     (let [center-x (+ bx (/ bw 2))

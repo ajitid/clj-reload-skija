@@ -3,12 +3,14 @@
 
    A text field displays an editable text box with cursor and selection.
    Supports focus management, text insertion, deletion, cursor movement,
-   clipboard copy/cut/paste, and select-all."
+   clipboard copy/cut/paste, and select-all.
+
+   Colors use [r g b a] float vectors (0.0-1.0) for Skia Color4f."
   (:require [app.state.system :as sys]
             [lib.text.break :as brk]
             [lib.text.core :as text]
             [lib.text.measure :as measure])
-  (:import [io.github.humbleui.skija Canvas Paint]
+  (:import [io.github.humbleui.skija Canvas Paint PaintMode Color4f]
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
@@ -36,16 +38,16 @@
 (def ^:private MOD_CMD   0x0CC0)  ;; Ctrl or Cmd (for shortcuts)
 
 ;; ============================================================
-;; Styling
+;; Styling - [r g b a] floats
 ;; ============================================================
 
-(def ^:private box-bg-color        0xFF2A2A2A)
-(def ^:private border-focused      0xFF4A90D9)
-(def ^:private border-unfocused    0xFF555555)
-(def ^:private text-color          0xFFFFFFFF)
-(def ^:private cursor-color        0xFFFFFFFF)
-(def ^:private label-color         0xFFAAAAAA)
-(def ^:private selection-color     0x664A90D9)
+(def ^:private box-bg-color        [0.165 0.165 0.165 1.0])
+(def ^:private border-focused      [0.29 0.565 0.851 1.0])
+(def ^:private border-unfocused    [0.333 0.333 0.333 1.0])
+(def ^:private text-color          [1.0 1.0 1.0 1.0])
+(def ^:private cursor-color        [1.0 1.0 1.0 1.0])
+(def ^:private label-color         [0.667 0.667 0.667 1.0])
+(def ^:private selection-color     [0.29 0.565 0.851 0.4])
 (def ^:private font-size           13)
 (def ^:private pad-x               5)
 (def ^:private pad-y               3)
@@ -501,18 +503,19 @@
   ;; Store bounds for mouse hit-testing
   (swap! field-bounds assoc field-id [bx by bw bh])
   (let [focused? (= field-id (focused-field-id))
-        border-color (if focused? border-focused border-unfocused)]
+        [br bg bb ba] (if focused? border-focused border-unfocused)
+        [bgr bgg bgb bga] box-bg-color]
     ;; Draw label above
     (text/text canvas (str label ":") bx (- by 4)
                {:size font-size :color label-color})
     ;; Draw box background
     (with-open [bg-paint (doto (Paint.)
-                           (.setColor (unchecked-int box-bg-color)))]
+                           (.setColor4f (Color4f. (float bgr) (float bgg) (float bgb) (float bga))))]
       (.drawRect canvas (Rect/makeXYWH (float bx) (float by) (float bw) (float bh)) bg-paint))
     ;; Draw box border
     (with-open [border-paint (doto (Paint.)
-                               (.setColor (unchecked-int border-color))
-                               (.setMode io.github.humbleui.skija.PaintMode/STROKE)
+                               (.setColor4f (Color4f. (float br) (float bg) (float bb) (float ba)))
+                               (.setMode PaintMode/STROKE)
                                (.setStrokeWidth (float 1.0)))]
       (.drawRect canvas (Rect/makeXYWH (float bx) (float by) (float bw) (float bh)) border-paint))
     ;; Draw text with clipping
@@ -531,10 +534,11 @@
                 clamped-end (min sel-end (count text-str))
                 sel-x-start (+ text-x (measure/coord-at-offset line clamped-start))
                 sel-x-end (+ text-x (measure/coord-at-offset line clamped-end))
-                sel-width (- sel-x-end sel-x-start)]
+                sel-width (- sel-x-end sel-x-start)
+                [sr sg sb sa] selection-color]
             (when (pos? sel-width)
               (with-open [sel-paint (doto (Paint.)
-                                     (.setColor (unchecked-int selection-color)))]
+                                     (.setColor4f (Color4f. (float sr) (float sg) (float sb) (float sa))))]
                 (.drawRect canvas
                            (Rect/makeXYWH (float sel-x-start)
                                           (float (+ by pad-y))
@@ -557,10 +561,11 @@
               blink-delay (/ cursor-blink-ms 1000.0)
               blink-on? (or has-sel?
                             (< elapsed-since-activity blink-delay)
-                            (< (mod (* elapsed-since-activity 1000) (* 2 cursor-blink-ms)) cursor-blink-ms))]
+                            (< (mod (* elapsed-since-activity 1000) (* 2 cursor-blink-ms)) cursor-blink-ms))
+              [cr cg cb ca] cursor-color]
           (when blink-on?
             (with-open [cursor-paint (doto (Paint.)
-                                      (.setColor (unchecked-int cursor-color))
+                                      (.setColor4f (Color4f. (float cr) (float cg) (float cb) (float ca)))
                                       (.setStrokeWidth (float 1.5)))]
               (.drawLine canvas
                          (float cursor-x) (float (+ by pad-y))

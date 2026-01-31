@@ -2,19 +2,21 @@
   "Generic slider widget for UI controls.
 
    A slider displays a label, value, and draggable track.
-   Examples can use this to create parameter controls."
+   Examples can use this to create parameter controls.
+
+   Colors use [r g b a] float vectors (0.0-1.0) for Skia Color4f."
   (:require [lib.text.core :as text])
-  (:import [io.github.humbleui.skija Canvas Paint]
+  (:import [io.github.humbleui.skija Canvas Paint Color4f]
            [io.github.humbleui.types Rect]))
 
 ;; ============================================================
-;; Default styling
+;; Default styling - [r g b a] floats
 ;; ============================================================
 
-(def default-track-color 0xFF555555)
-(def default-fill-color 0xFFFF69B4)
-(def default-label-color 0xFFAAAAAA)
-(def default-value-color 0xFFFFFFFF)
+(def default-track-color [0.333 0.333 0.333 1.0])
+(def default-fill-color [1.0 0.412 0.706 1.0])  ;; hot pink
+(def default-label-color [0.667 0.667 0.667 1.0])
+(def default-value-color [1.0 1.0 1.0 1.0])
 (def default-height 16)
 (def default-width 160)
 (def default-font-size 14)
@@ -46,10 +48,10 @@
    - opts: Map of options:
      - :min (default 1)
      - :max (default 100)
-     - :track-color (default 0xFF555555)
-     - :fill-color (default 0xFFFF69B4)
-     - :label-color (default 0xFFAAAAAA)
-     - :value-color (default 0xFFFFFFFF)
+     - :track-color [r g b a] floats (default [0.333 0.333 0.333 1.0])
+     - :fill-color [r g b a] floats (default [1.0 0.412 0.706 1.0])
+     - :label-color [r g b a] floats (default [0.667 0.667 0.667 1.0])
+     - :value-color [r g b a] floats (default [1.0 1.0 1.0 1.0])
      - :font-size (default 14)
 
    Layout:  Label: <value>
@@ -57,8 +59,8 @@
   [^Canvas canvas label value [sx sy sw sh] opts]
   (let [min-val (or (:min opts) 1)
         max-val (or (:max opts) 100)
-        track-color (or (:track-color opts) default-track-color)
-        fill-color (or (:fill-color opts) default-fill-color)
+        [tr tg tb ta] (or (:track-color opts) default-track-color)
+        [fr fg fb fa] (or (:fill-color opts) default-fill-color)
         label-color (or (:label-color opts) default-label-color)
         value-color (or (:value-color opts) default-value-color)
         font-size (or (:font-size opts) default-font-size)
@@ -73,9 +75,9 @@
                      {:size font-size :color value-color}))
     ;; Draw track
     (with-open [track-paint (doto (Paint.)
-                              (.setColor (unchecked-int track-color)))]
+                              (.setColor4f (Color4f. (float tr) (float tg) (float tb) (float ta))))]
       (.drawRect canvas (Rect/makeXYWH (float sx) (float sy) (float sw) (float sh)) track-paint))
     ;; Draw fill
     (with-open [fill-paint (doto (Paint.)
-                             (.setColor (unchecked-int fill-color)))]
+                             (.setColor4f (Color4f. (float fr) (float fg) (float fb) (float fa))))]
       (.drawRect canvas (Rect/makeXYWH (float sx) (float sy) (float fill-w) (float sh)) fill-paint))))
