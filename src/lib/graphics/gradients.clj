@@ -4,26 +4,21 @@
    All gradient functions accept colors as [r g b a] float vectors (0.0-1.0).
 
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern)."
-  (:import [io.github.humbleui.skija Shader GradientStyle FilterTileMode]))
+  (:import [io.github.humbleui.skija Shader GradientStyle FilterTileMode Color4f ColorSpace]))
 
 ;; ============================================================
 ;; Internal Helpers
 ;; ============================================================
 
-(defn- color4f->int
-  "Convert [r g b a] floats to packed ARGB int for Skija."
+(defn- vec->color4f
+  "Convert [r g b a] floats to Color4f."
   [[r g b a]]
-  (let [a (or a 1.0)]
-    (unchecked-int
-     (bit-or (bit-shift-left (int (* a 255)) 24)
-             (bit-shift-left (int (* r 255)) 16)
-             (bit-shift-left (int (* g 255)) 8)
-             (int (* b 255))))))
+  (Color4f. (float r) (float g) (float b) (float (or a 1.0))))
 
-(defn- colors->int-array
-  "Convert sequence of [r g b a] colors to int array."
+(defn- colors->color4f-array
+  "Convert sequence of [r g b a] colors to Color4f array."
   [colors]
-  (int-array (map color4f->int colors)))
+  (into-array Color4f (map vec->color4f colors)))
 
 (defn- parse-tile-mode
   "Convert keyword to FilterTileMode."
@@ -73,11 +68,11 @@
   ([x0 y0 x1 y1 colors positions]
    (linear-gradient x0 y0 x1 y1 colors positions :clamp))
   ([x0 y0 x1 y1 colors positions tile-mode]
-   (let [colors-arr (colors->int-array colors)
+   (let [colors-arr (colors->color4f-array colors)
          positions-arr (when positions (float-array positions))
          style (make-gradient-style tile-mode)]
      (Shader/makeLinearGradient (float x0) (float y0) (float x1) (float y1)
-                                colors-arr positions-arr style))))
+                                colors-arr (ColorSpace/getSRGB) positions-arr style))))
 
 ;; ============================================================
 ;; Radial Gradients
@@ -106,11 +101,11 @@
   ([cx cy radius colors positions]
    (radial-gradient cx cy radius colors positions :clamp))
   ([cx cy radius colors positions tile-mode]
-   (let [colors-arr (colors->int-array colors)
+   (let [colors-arr (colors->color4f-array colors)
          positions-arr (when positions (float-array positions))
          style (make-gradient-style tile-mode)]
      (Shader/makeRadialGradient (float cx) (float cy) (float radius)
-                                colors-arr positions-arr style))))
+                                colors-arr (ColorSpace/getSRGB) positions-arr style))))
 
 ;; ============================================================
 ;; Two-Point Conical Gradients
@@ -134,12 +129,12 @@
   ([x0 y0 r0 x1 y1 r1 colors positions]
    (conical-gradient x0 y0 r0 x1 y1 r1 colors positions :clamp))
   ([x0 y0 r0 x1 y1 r1 colors positions tile-mode]
-   (let [colors-arr (colors->int-array colors)
+   (let [colors-arr (colors->color4f-array colors)
          positions-arr (when positions (float-array positions))
          style (make-gradient-style tile-mode)]
      (Shader/makeTwoPointConicalGradient (float x0) (float y0) (float r0)
                                          (float x1) (float y1) (float r1)
-                                         colors-arr positions-arr style))))
+                                         colors-arr (ColorSpace/getSRGB) positions-arr style))))
 
 ;; ============================================================
 ;; Sweep Gradients (Angular)
@@ -169,16 +164,17 @@
   ([cx cy colors positions start-angle end-angle]
    (sweep-gradient cx cy colors positions start-angle end-angle :clamp))
   ([cx cy colors positions start-angle end-angle tile-mode]
-   (let [colors-arr (colors->int-array colors)
+   (let [colors-arr (colors->color4f-array colors)
          positions-arr (when positions (float-array positions))
          style (make-gradient-style tile-mode)]
      (if (and (= start-angle 0) (= end-angle 360))
        ;; Full sweep
-       (Shader/makeSweepGradient (float cx) (float cy) colors-arr positions-arr)
+       (Shader/makeSweepGradient (float cx) (float cy)
+                                 colors-arr (ColorSpace/getSRGB) positions-arr)
        ;; Partial sweep
        (Shader/makeSweepGradient (float cx) (float cy)
                                  (float start-angle) (float end-angle)
-                                 colors-arr positions-arr style)))))
+                                 colors-arr (ColorSpace/getSRGB) positions-arr style)))))
 
 ;; ============================================================
 ;; Solid Color Shader
@@ -193,4 +189,4 @@
    Example:
      (solid-color [0.29 0.56 0.85 1.0])"
   [color]
-  (Shader/makeColor (color4f->int color)))
+  (Shader/makeColor (vec->color4f color) (ColorSpace/getSRGB)))

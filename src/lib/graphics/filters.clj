@@ -4,9 +4,8 @@
    All functions that take colors accept [r g b a] float vectors (0.0-1.0).
 
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern)."
-  (:require [lib.color.core :as color])
   (:import [io.github.humbleui.skija ImageFilter MaskFilter ColorFilter ColorMatrix Shader
-            FilterTileMode FilterBlurMode PathEffect PathEffect1DStyle Path]))
+            FilterTileMode FilterBlurMode PathEffect PathEffect1DStyle Path Color4f ColorSpace]))
 
 ;; ============================================================
 ;; Image Filters (blur, shadows, etc.)
@@ -46,8 +45,11 @@
    Example:
      (drop-shadow 2 2 3.0 [0 0 0 0.5])  ; 2px offset, 3px blur, semi-transparent black"
   ([dx dy sigma color]
-   (let [[sx sy] (if (vector? sigma) sigma [sigma sigma])]
-     (ImageFilter/makeDropShadow (float dx) (float dy) (float sx) (float sy) (color/color4f->hex color)))))
+   (let [[sx sy] (if (vector? sigma) sigma [sigma sigma])
+         [r g b a] color]
+     (ImageFilter/makeDropShadow (float dx) (float dy) (float sx) (float sy)
+                                 (Color4f. (float r) (float g) (float b) (float (or a 1.0)))
+                                 (ColorSpace/getSRGB) nil nil))))
 
 (defn drop-shadow-only
   "Create a drop shadow image filter (shadow only, no original content).
@@ -60,8 +62,11 @@
    Example:
      (drop-shadow-only 2 2 3.0 [0 0 0 1])  ; Just the shadow"
   ([dx dy sigma color]
-   (let [[sx sy] (if (vector? sigma) sigma [sigma sigma])]
-     (ImageFilter/makeDropShadowOnly (float dx) (float dy) (float sx) (float sy) (color/color4f->hex color)))))
+   (let [[sx sy] (if (vector? sigma) sigma [sigma sigma])
+         [r g b a] color]
+     (ImageFilter/makeDropShadowOnly (float dx) (float dy) (float sx) (float sy)
+                                     (Color4f. (float r) (float g) (float b) (float (or a 1.0)))
+                                     (ColorSpace/getSRGB) nil nil))))
 
 ;; ============================================================
 ;; Mask Filters (blur for strokes/fills)
