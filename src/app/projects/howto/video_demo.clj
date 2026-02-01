@@ -147,13 +147,30 @@
   "Called once when example starts."
   (println "Video Demo loaded!")
   (println "Loading video file:" video-file)
+  ;; Log system hwaccel capabilities
+  (let [sys-info (video/system-info)]
+    (println (format "System: %s %s, GPU: %s"
+                     (name (:platform sys-info))
+                     (name (:arch sys-info))
+                     (name (:gpu-vendor sys-info))))
+    (println (format "  Available decoders: %s"
+                     (->> (:available sys-info)
+                          (filter val)
+                          (map key)
+                          (map name)
+                          (clojure.string/join ", ")))))
   (try
-    (reset! video-source (video/from-file video-file {:hw-accel? true}))
-    (let [source @video-source]
+    (reset! video-source (video/from-file video-file {:hw-accel? true :debug? true}))
+    (let [source @video-source
+          hwaccel (video/hwaccel-type source)
+          info (video/decoder-info source)]
       (println "Video loaded successfully.")
       (println (format "  Resolution: %dx%d" (video/width source) (video/height source)))
       (println (format "  Duration: %s" (format-time (video/duration source))))
-      (println (format "  FPS: %.2f" (double (video/fps source)))))
+      (println (format "  FPS: %.2f" (double (video/fps source))))
+      (println (format "  Decoder: %s" (if hwaccel (name hwaccel) "software")))
+      (when (:fallback? info)
+        (println "  (Fell back from hardware to software)")))
     (catch Exception e
       (println "Failed to load video:" (.getMessage e))
       (println "Make sure the video file exists at:" video-file))))
