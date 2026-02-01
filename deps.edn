@@ -24,7 +24,11 @@
   dev.mccue/vorbisspi {:mvn/version "2024.04.19"}
 
   ;; JavaCV for video decoding (FFmpeg bindings)
-  org.bytedeco/javacv {:mvn/version "1.5.10"}}
+  org.bytedeco/javacv {:mvn/version "1.5.10"}
+
+  ;; JNA for platform-specific native API calls (IOSurface, VAAPI, etc.)
+  net.java.dev.jna/jna {:mvn/version "5.14.0"}
+  net.java.dev.jna/jna-platform {:mvn/version "5.14.0"}}
 
  :aliases
  {;; Platform-specific Skija + LWJGL natives

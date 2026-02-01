@@ -9,6 +9,13 @@
    - (current-frame source direct-context) -> Skia Image
    - (close! source)
 
+   Hardware Acceleration:
+   - macOS: VideoToolbox (H.264, HEVC) - automatic
+   - Linux Intel/AMD: VAAPI
+   - Linux NVIDIA: NVDEC/CUDA
+   - Windows: D3D11VA
+   - Automatic fallback to software decode if hwaccel unavailable
+
    Designed for real-time rendering:
    - Call (advance-frame! source dt) each frame to update playback
    - Call (current-frame source ctx) to get GPU-backed Skia Image
@@ -18,7 +25,9 @@
    Each frame update invalidates the previous image."
   (:require [lib.video.protocol :as proto]
             [lib.video.state :as state]
-            [lib.video.decoder :as decoder])
+            [lib.video.decoder :as decoder]
+            [lib.video.hwaccel.decoder :as hwdecoder]
+            [lib.video.hwaccel.detect :as detect])
   (:import [java.lang.ref Cleaner]))
 
 ;; ============================================================
@@ -31,13 +40,19 @@
 ;; Source record
 ;; ============================================================
 
-(defrecord Source [id])
+(defrecord Source [id hwaccel-type])
 
 (defn- get-source-data
   "Get the internal data for a source."
   [source]
   (when source
     (get @state/sources (:id source))))
+
+(defn- get-source-meta
+  "Get metadata for a source."
+  [source]
+  (when source
+    (get @state/source-meta (:id source))))
 
 ;; ============================================================
 ;; Loading
@@ -47,7 +62,14 @@
   "Load video source from file (MP4/WebM/MOV/etc).
 
    Options:
-     :hw-accel? - Try hardware acceleration (VideoToolbox/VAAPI/NVDEC)
+     :hw-accel? - Try hardware acceleration (default true)
+                  - macOS: VideoToolbox
+                  - Linux Intel/AMD: VAAPI
+                  - Linux NVIDIA: NVDEC/CUDA
+                  - Windows: D3D11VA
+                  Falls back to software decode if unavailable.
+     :decoder   - Force specific decoder (:videotoolbox, :vaapi, :nvdec-cuda, :d3d11va, :software)
+     :debug?    - Enable debug logging for decoder
 
    Returns a Source handle. Resources are automatically released when
    the Source is garbage collected.
@@ -63,9 +85,22 @@
    (from-file path {}))
   ([path opts]
    (let [id (swap! state/source-counter inc)
-         source-impl (decoder/create-software-decoder path opts)
-         source (->Source id)]
-     (swap! state/sources assoc id source-impl)
+         ;; Default to hardware acceleration
+         use-hwaccel? (get opts :hw-accel? true)
+         ;; Create decoder - try hwaccel if requested
+         {:keys [decoder hwaccel-type fallback?]}
+         (if use-hwaccel?
+           (hwdecoder/create-hwaccel-decoder path opts)
+           {:decoder (decoder/create-software-decoder path opts)
+            :hwaccel-type nil
+            :fallback? false})
+         source (->Source id hwaccel-type)]
+     ;; Store decoder implementation
+     (swap! state/sources assoc id decoder)
+     ;; Store metadata
+     (swap! state/source-meta assoc id {:hwaccel-type hwaccel-type
+                                         :fallback? fallback?
+                                         :path path})
      ;; Register automatic cleanup when Source is GC'd
      (.register cleaner source
                 (fn []
@@ -73,7 +108,8 @@
                     (try
                       (proto/close* impl)
                       (catch Exception _)))
-                  (swap! state/sources dissoc id)))
+                  (swap! state/sources dissoc id)
+                  (swap! state/source-meta dissoc id)))
      source)))
 
 ;; ============================================================
@@ -197,6 +233,33 @@
     (proto/fps* impl)))
 
 ;; ============================================================
+;; Hardware Acceleration Info
+;; ============================================================
+
+(defn hwaccel-type
+  "Get the hardware acceleration type used by this source.
+   Returns :videotoolbox, :vaapi, :nvdec-cuda, :d3d11va, or nil (software)."
+  [source]
+  (:hwaccel-type source))
+
+(defn hwaccel?
+  "Check if this source is using hardware acceleration."
+  [source]
+  (some? (hwaccel-type source)))
+
+(defn decoder-info
+  "Get detailed decoder information for a source.
+   Returns {:hwaccel-type :fallback? :path}."
+  [source]
+  (get-source-meta source))
+
+(defn system-info
+  "Get system hardware acceleration capabilities.
+   Returns {:platform :arch :gpu-vendor :decoder :available}."
+  []
+  (detect/decoder-info))
+
+;; ============================================================
 ;; Resource management
 ;; ============================================================
 
@@ -206,7 +269,8 @@
   [source]
   (when-let [impl (get-source-data source)]
     (proto/close* impl)
-    (swap! state/sources dissoc (:id source)))
+    (swap! state/sources dissoc (:id source))
+    (swap! state/source-meta dissoc (:id source)))
   nil)
 
 (defn cleanup!
@@ -216,4 +280,5 @@
     (try
       (proto/close* impl)
       (catch Exception _)))
-  (reset! state/sources {}))
+  (reset! state/sources {})
+  (reset! state/source-meta {}))

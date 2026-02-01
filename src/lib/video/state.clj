@@ -4,5 +4,8 @@
 ;; Counter for generating unique source IDs
 (defonce source-counter (atom 0))
 
-;; Map of source-id -> source implementation
+;; Map of source-id -> source implementation (decoder)
 (defonce sources (atom {}))
+
+;; Map of source-id -> metadata (hwaccel info, path, etc.)
+(defonce source-meta (atom {}))
