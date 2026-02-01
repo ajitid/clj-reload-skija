@@ -26,7 +26,7 @@
 ;; Configuration
 ;; ============================================================
 
-(def audio-file "resources/sounds/from-pixabay-dot-com.mp3")
+(def audio-file "resources/sounds/audio-sample.mp3")
 
 ;; ============================================================
 ;; State

@@ -21,7 +21,10 @@
 
   ;; Java Sound SPIs for OGG + MP3 (Java 17+ modularized)
   dev.mccue/mp3spi {:mvn/version "2024.04.19"}
-  dev.mccue/vorbisspi {:mvn/version "2024.04.19"}}
+  dev.mccue/vorbisspi {:mvn/version "2024.04.19"}
+
+  ;; JavaCV for video decoding (FFmpeg bindings)
+  org.bytedeco/javacv {:mvn/version "1.5.10"}}
 
  :aliases
  {;; Platform-specific Skija + LWJGL natives
@@ -30,28 +33,36 @@
    {io.github.humbleui/skija-macos-arm64 {:mvn/version "0.143.5" :exclusions [io.github.humbleui/types]}
     org.lwjgl/lwjgl$natives-macos-arm64 {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-sdl$natives-macos-arm64 {:mvn/version "3.4.0"}
-    org.lwjgl/lwjgl-opengl$natives-macos-arm64 {:mvn/version "3.4.0"}}}
+    org.lwjgl/lwjgl-opengl$natives-macos-arm64 {:mvn/version "3.4.0"}
+    ;; FFmpeg natives for video decoding
+    org.bytedeco/ffmpeg$macosx-arm64 {:mvn/version "6.1.1-1.5.10"}}}
 
   :macos-x64
   {:extra-deps
    {io.github.humbleui/skija-macos-x64 {:mvn/version "0.143.5" :exclusions [io.github.humbleui/types]}
     org.lwjgl/lwjgl$natives-macos {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-sdl$natives-macos {:mvn/version "3.4.0"}
-    org.lwjgl/lwjgl-opengl$natives-macos {:mvn/version "3.4.0"}}}
+    org.lwjgl/lwjgl-opengl$natives-macos {:mvn/version "3.4.0"}
+    ;; FFmpeg natives for video decoding
+    org.bytedeco/ffmpeg$macosx-x86_64 {:mvn/version "6.1.1-1.5.10"}}}
 
   :windows
   {:extra-deps
    {io.github.humbleui/skija-windows-x64 {:mvn/version "0.143.5" :exclusions [io.github.humbleui/types]}
     org.lwjgl/lwjgl$natives-windows {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-sdl$natives-windows {:mvn/version "3.4.0"}
-    org.lwjgl/lwjgl-opengl$natives-windows {:mvn/version "3.4.0"}}}
+    org.lwjgl/lwjgl-opengl$natives-windows {:mvn/version "3.4.0"}
+    ;; FFmpeg natives for video decoding
+    org.bytedeco/ffmpeg$windows-x86_64 {:mvn/version "6.1.1-1.5.10"}}}
 
   :linux
   {:extra-deps
    {io.github.humbleui/skija-linux-x64 {:mvn/version "0.143.5" :exclusions [io.github.humbleui/types]}
     org.lwjgl/lwjgl$natives-linux {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-sdl$natives-linux {:mvn/version "3.4.0"}
-    org.lwjgl/lwjgl-opengl$natives-linux {:mvn/version "3.4.0"}}}
+    org.lwjgl/lwjgl-opengl$natives-linux {:mvn/version "3.4.0"}
+    ;; FFmpeg natives for video decoding
+    org.bytedeco/ffmpeg$linux-x86_64 {:mvn/version "6.1.1-1.5.10"}}}
 
   :dev
   {:extra-paths ["dev"]
