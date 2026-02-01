@@ -122,7 +122,9 @@
               (when (pos? target-bytes)
                 (skip-by-reading! stream target-bytes))
               (reset! position target-frame)
-              (reset! display-pos target-frame))
+              ;; Only update display-pos if no newer seek request came in
+              (when (nil? @seek-request)
+                (reset! display-pos target-frame)))
             (when was-playing?
               (.start sdl)
               (reset! state :playing))
@@ -169,7 +171,9 @@
                 (let [frames-written (/ bytes-read frame-size)]
                   (.write sdl buffer 0 bytes-read)
                   (swap! position + frames-written)
-                  (reset! display-pos @position)
+                  ;; Only sync display-pos if not seeking (prevents backward jumps)
+                  (when (nil? @seek-request)
+                    (reset! display-pos @position))
                   (recur))
 
                 :else
