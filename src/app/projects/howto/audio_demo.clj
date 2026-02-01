@@ -18,7 +18,8 @@
             [lib.audio.core :as audio]
             [lib.graphics.shapes :as shapes]
             [lib.graphics.path :as path]
-            [lib.text.core :as text])
+            [lib.text.core :as text]
+            [lib.gesture.api :as gesture])
   (:import [io.github.humbleui.skija Canvas]))
 
 ;; ============================================================
@@ -33,6 +34,10 @@
 
 (defonce music (atom nil))
 (defonce volume (atom 1.0))
+
+;; Window dimensions (updated each frame for gesture handlers)
+(defonce window-width (atom 800))
+(defonce window-height (atom 600))
 
 ;; ============================================================
 ;; Drawing
@@ -77,6 +82,31 @@
   (let [half (/ size 2)]
     (shapes/rounded-rect canvas (- cx half) (- cy half) size size 3 {:color color})))
 
+;; ============================================================
+;; Seek Bar Helpers
+;; ============================================================
+
+(defn- get-seek-bar-bounds
+  "Return seek bar bounds as [x y w h] given window dimensions."
+  [w h]
+  (let [bar-w 300
+        bar-h 8
+        cx (/ w 2)
+        cy (/ h 2)
+        bar-x (- cx (/ bar-w 2))
+        bar-y (+ cy 50)]
+    [bar-x bar-y bar-w bar-h]))
+
+(defn- seek-from-x
+  "Seek audio to position based on x coordinate within seek bar."
+  [x w h]
+  (when-let [music-source @music]
+    (let [[bar-x _ bar-w _] (get-seek-bar-bounds w h)
+          ratio (/ (- x bar-x) bar-w)
+          ratio (max 0.0 (min 1.0 ratio))
+          duration (audio/duration music-source)]
+      (audio/seek! music-source (* ratio duration)))))
+
 (defn draw-status [^Canvas canvas w h]
   (let [music-source @music
         is-playing (and music-source (audio/playing? music-source))
@@ -109,11 +139,8 @@
     (text/text canvas status-text cx (- cy 35) {:size 20 :color status-color :align :center})
     ;; Time
     (text/text canvas time-text cx (+ cy 20) {:size 24 :color text-color :align :center})
-    ;; Progress bar
-    (let [bar-w 300
-          bar-h 8
-          bar-x (- cx (/ bar-w 2))
-          bar-y (+ cy 50)
+    ;; Progress bar (using shared bounds for gesture hit-testing)
+    (let [[bar-x bar-y bar-w bar-h] (get-seek-bar-bounds w h)
           progress (if (and current-pos total-dur (pos? total-dur))
                      (min 1.0 (/ current-pos total-dur))
                      0)]
@@ -139,7 +166,21 @@
     (reset! music (audio/from-file audio-file {:type :stream}))
     (println "Audio loaded successfully. Duration:" (format-time (audio/duration @music)))
     (catch Exception e
-      (println "Failed to load audio:" (.getMessage e)))))
+      (println "Failed to load audio:" (.getMessage e))))
+  ;; Register seek bar for click/drag
+  (gesture/register-target!
+    {:id :audio-seek-bar
+     :layer :content
+     :z-index 10
+     :bounds-fn (fn [_ctx]
+                  (get-seek-bar-bounds @window-width @window-height))
+     :gesture-recognizers [:drag]
+     :handlers {:on-pointer-down (fn [event]
+                                   (let [x (get-in event [:pointer :x])]
+                                     (seek-from-x x @window-width @window-height)))
+                :on-drag (fn [event]
+                           (let [x (get-in event [:pointer :x])]
+                             (seek-from-x x @window-width @window-height)))}}))
 
 (defn tick [_dt]
   "Called every frame with delta time."
@@ -196,11 +237,15 @@
 
 (defn draw [^Canvas canvas width height]
   "Called every frame for rendering."
+  ;; Update window dimensions for gesture handlers
+  (reset! window-width width)
+  (reset! window-height height)
   (draw-status canvas width height))
 
 (defn cleanup []
   "Called when switching away from this example.
    Note: close! is optional - audio cleanup happens automatically on window close."
+  (gesture/unregister-target! :audio-seek-bar)
   (when @music
     (audio/stop! @music))  ;; Just stop playback, close is automatic
   (reset! music nil)
