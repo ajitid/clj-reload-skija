@@ -303,8 +303,12 @@
               text-field-focused? (when-let [f (requiring-resolve 'app.ui.text-field/any-focused?)] (f))
               consumed? (when (and text-field-focused? pressed?)
                           (when-let [handle-fn (requiring-resolve 'app.ui.text-field/handle-key-event!)]
-                            (handle-fn event)))]
-          (when-not consumed?
+                            (handle-fn event)))
+              ;; Delegate to example's on-key-pressed handler
+              example-consumed? (when-not consumed?
+                                  (when-let [handle-fn (requiring-resolve 'app.shell.core/handle-key-event!)]
+                                    (handle-fn event)))]
+          (when-not (or consumed? example-consumed?)
             (when pressed?
               ;; Ctrl+E copies error
               (when (and (= key 0x65) (pos? (bit-and modifiers 0x00C0))

@@ -177,6 +177,9 @@
         ;; Cleanup capture resources (only if namespace was loaded)
         (when-let [cleanup-fn (resolve 'lib.window.capture/cleanup!)]
           (cleanup-fn))
+        ;; Cleanup audio resources (only if namespace was loaded)
+        (when-let [audio-cleanup-fn (resolve 'lib.audio.core/cleanup!)]
+          (audio-cleanup-fn))
         (layer/cleanup!)
         (sdl/cleanup! (:gl-context window) handle)))))
 

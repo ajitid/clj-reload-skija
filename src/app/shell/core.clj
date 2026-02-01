@@ -110,3 +110,12 @@
     (draw-fn canvas width height))
   ;; Draw debug overlays (FPS display and control panel each check their own visibility)
   (debug-panel/draw-panel canvas width))
+
+(defn handle-key-event!
+  "Shell key event handler - delegates to example.
+   Returns true if the example consumed the event, false otherwise."
+  [{:keys [key pressed? modifiers]}]
+  (when pressed?
+    (when-let [handle-fn (example-fn "on-key-pressed")]
+      (handle-fn key modifiers)
+      true)))

@@ -17,7 +17,11 @@
   ;; LWJGL 3.4.0 with SDL3 and OpenGL
   org.lwjgl/lwjgl {:mvn/version "3.4.0"}
   org.lwjgl/lwjgl-sdl {:mvn/version "3.4.0"}
-  org.lwjgl/lwjgl-opengl {:mvn/version "3.4.0"}}
+  org.lwjgl/lwjgl-opengl {:mvn/version "3.4.0"}
+
+  ;; Java Sound SPIs for OGG + MP3 (Java 17+ modularized)
+  dev.mccue/mp3spi {:mvn/version "2024.04.19"}
+  dev.mccue/vorbisspi {:mvn/version "2024.04.19"}}
 
  :aliases
  {;; Platform-specific Skija + LWJGL natives
