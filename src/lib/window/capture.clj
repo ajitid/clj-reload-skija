@@ -493,40 +493,47 @@
 
 (defn- save-screenshot!
   "Save pixels as PNG or JPEG using FFmpeg (supports scaling).
-   Sets DPI metadata on macOS so images display at logical size."
+   Sets DPI metadata on macOS so images display at logical size.
+   Runs asynchronously to avoid blocking the render thread."
   [^ByteBuffer pixels src-width src-height path format opts scale]
-  (try
-    (let [{:keys [width height]} opts
-          vf (build-vf-filter {:width width :height height})
-          fmt-args (case format
-                     :jpeg ["-q:v" "2"]  ;; High quality JPEG
-                     [])                  ;; PNG needs no extra args
-          cmd (into ["ffmpeg" "-y"
-                     "-f" "rawvideo"
-                     "-pix_fmt" "rgba"
-                     "-s" (str src-width "x" src-height)
-                     "-i" "-"
-                     "-vf" vf
-                     "-frames:v" "1"]
-                    (concat fmt-args [path]))
-          pb (ProcessBuilder. ^java.util.List cmd)
-          _ (.redirectErrorStream pb true)
-          process (.start pb)
-          stdin (.getOutputStream process)
-          bytes (byte-array (* src-width src-height 4))]
+  ;; Copy pixel data to byte array before freeing the ByteBuffer
+  ;; This lets us free GPU memory immediately and process async
+  (let [size (* src-width src-height 4)
+        bytes (byte-array size)]
+    (try
       (.get pixels bytes)
-      (.write stdin bytes)
-      (.close stdin)
-      (.waitFor process)
-      (if (zero? (.exitValue process))
-        (do
-          (set-image-dpi! path scale)
-          (println "[capture] Screenshot saved:" path))
-        (println "[capture] Screenshot failed, FFmpeg exit code:" (.exitValue process))))
-    (catch Exception e
-      (println "[capture] Screenshot error:" (.getMessage e)))
-    (finally
-      (MemoryUtil/memFree pixels))))
+      (finally
+        (MemoryUtil/memFree pixels)))
+    ;; Run FFmpeg asynchronously in a future
+    (future
+      (try
+        (let [{:keys [width height]} opts
+              vf (build-vf-filter {:width width :height height})
+              fmt-args (case format
+                         :jpeg ["-q:v" "2"]  ;; High quality JPEG
+                         [])                  ;; PNG needs no extra args
+              cmd (into ["ffmpeg" "-y"
+                         "-f" "rawvideo"
+                         "-pix_fmt" "rgba"
+                         "-s" (str src-width "x" src-height)
+                         "-i" "-"
+                         "-vf" vf
+                         "-frames:v" "1"]
+                        (concat fmt-args [path]))
+              pb (ProcessBuilder. ^java.util.List cmd)
+              _ (.redirectErrorStream pb true)
+              process (.start pb)
+              stdin (.getOutputStream process)]
+          (.write stdin bytes)
+          (.close stdin)
+          (.waitFor process)
+          (if (zero? (.exitValue process))
+            (do
+              (set-image-dpi! path scale)
+              (println "[capture] Screenshot saved:" path))
+            (println "[capture] Screenshot failed, FFmpeg exit code:" (.exitValue process))))
+        (catch Exception e
+          (println "[capture] Screenshot error:" (.getMessage e)))))))
 
 (defn screenshot!
   "Request a screenshot to be saved on the next frame.
