@@ -35,7 +35,8 @@
    (def region (path/make-hit-region my-path))
    (path/region-contains? region x y)
    ```"
-  (:import [io.github.humbleui.skija Path PathBuilder PathOp PathMeasure Matrix33 Region]
+  (:import [io.github.humbleui.skija Path PathBuilder PathOp PathMeasure Matrix33 Region
+                                     Paint PaintMode PaintStrokeCap PaintStrokeJoin]
            [io.github.humbleui.types Rect RRect IRect]))
 
 ;; ============================================================
@@ -306,6 +307,55 @@
   "Rotate a path around origin (degrees). Returns new Path."
   [^Path p degrees]
   (.transform p (Matrix33/makeRotate (float degrees))))
+
+(defn stroke->fill
+  "Convert a stroked path to its filled outline.
+
+   Takes a path and stroke options, returns a NEW path representing
+   the filled area that the stroke would cover. Useful for:
+   - Hit testing on stroke boundaries
+   - Boolean operations with stroked shapes
+   - Applying fill effects to stroke outlines
+
+   Args:
+     path - source Path
+     opts - stroke settings map:
+            :stroke-width (default 1.0)
+            :stroke-cap   :butt | :round | :square (default :butt)
+            :stroke-join  :miter | :round | :bevel (default :miter)
+            :stroke-miter miter limit (default 4.0)
+
+   Returns: New Path, or nil if path is hairline (can't be filled)
+
+   Examples:
+     (stroke->fill (path/line 0 0 100 0) {:stroke-width 10})
+     ;; => rectangular path 100x10
+
+     (stroke->fill my-curve {:stroke-width 5 :stroke-cap :round})
+     ;; => outline with rounded ends"
+  ([^Path p] (stroke->fill p {}))
+  ([^Path p opts]
+   (let [width (float (get opts :stroke-width 1.0))
+         cap (case (get opts :stroke-cap :butt)
+               :butt   PaintStrokeCap/BUTT
+               :round  PaintStrokeCap/ROUND
+               :square PaintStrokeCap/SQUARE)
+         join (case (get opts :stroke-join :miter)
+                :miter PaintStrokeJoin/MITER
+                :round PaintStrokeJoin/ROUND
+                :bevel PaintStrokeJoin/BEVEL)
+         miter (float (get opts :stroke-miter 4.0))
+         paint (doto (Paint.)
+                 (.setMode PaintMode/STROKE)
+                 (.setStrokeWidth width)
+                 (.setStrokeCap cap)
+                 (.setStrokeJoin join)
+                 (.setStrokeMiter miter))
+         pb (PathBuilder.)
+         success (.fillWithPaint p paint pb)]
+     (.close paint)
+     (when success
+       (.build pb)))))
 
 ;; ============================================================
 ;; PathMeasure (length, trim, position along path)
