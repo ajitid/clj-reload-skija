@@ -14,7 +14,8 @@
    The hardware frame pointer is then passed to platform-specific modules
    (videotoolbox.clj, vaapi.clj, cuda.clj, d3d11.clj) for texture binding."
   (:require [lib.video.hwaccel.detect :as detect])
-  (:import [org.bytedeco.ffmpeg.avformat AVFormatContext AVStream]
+  (:import [org.bytedeco.ffmpeg.global avformat avcodec avutil]
+           [org.bytedeco.ffmpeg.avformat AVFormatContext AVStream]
            [org.bytedeco.ffmpeg.avcodec AVCodec AVCodecContext AVPacket]
            [org.bytedeco.ffmpeg.avutil AVFrame AVRational AVDictionary
             AVBufferRef AVHWDeviceContext]
@@ -51,7 +52,7 @@
   [error-code]
   (let [buf-size 256
         buf (byte-array buf-size)]
-    (org.bytedeco.ffmpeg.global.avutil/av_strerror error-code buf buf-size)
+    (avutil/av_strerror error-code buf buf-size)
     (String. buf 0 (min buf-size
                         (count (take-while #(not= % 0) buf))))))
 
@@ -71,19 +72,19 @@
 
 (def ^:private hwaccel-type->av-hwdevice-type
   "Map our decoder types to FFmpeg AV_HWDEVICE_TYPE constants."
-  {:videotoolbox org.bytedeco.ffmpeg.global.avutil/AV_HWDEVICE_TYPE_VIDEOTOOLBOX
-   :vaapi        org.bytedeco.ffmpeg.global.avutil/AV_HWDEVICE_TYPE_VAAPI
-   :cuda         org.bytedeco.ffmpeg.global.avutil/AV_HWDEVICE_TYPE_CUDA
-   :nvdec-cuda   org.bytedeco.ffmpeg.global.avutil/AV_HWDEVICE_TYPE_CUDA
-   :d3d11va      org.bytedeco.ffmpeg.global.avutil/AV_HWDEVICE_TYPE_D3D11VA
-   :d3d11        org.bytedeco.ffmpeg.global.avutil/AV_HWDEVICE_TYPE_D3D11VA})
+  {:videotoolbox avutil/AV_HWDEVICE_TYPE_VIDEOTOOLBOX
+   :vaapi        avutil/AV_HWDEVICE_TYPE_VAAPI
+   :cuda         avutil/AV_HWDEVICE_TYPE_CUDA
+   :nvdec-cuda   avutil/AV_HWDEVICE_TYPE_CUDA
+   :d3d11va      avutil/AV_HWDEVICE_TYPE_D3D11VA
+   :d3d11        avutil/AV_HWDEVICE_TYPE_D3D11VA})
 
 (def ^:private av-hwdevice-type->name
   "Map FFmpeg hardware device types to human-readable names."
-  {org.bytedeco.ffmpeg.global.avutil/AV_HWDEVICE_TYPE_VIDEOTOOLBOX "videotoolbox"
-   org.bytedeco.ffmpeg.global.avutil/AV_HWDEVICE_TYPE_VAAPI        "vaapi"
-   org.bytedeco.ffmpeg.global.avutil/AV_HWDEVICE_TYPE_CUDA         "cuda"
-   org.bytedeco.ffmpeg.global.avutil/AV_HWDEVICE_TYPE_D3D11VA      "d3d11va"})
+  {avutil/AV_HWDEVICE_TYPE_VIDEOTOOLBOX "videotoolbox"
+   avutil/AV_HWDEVICE_TYPE_VAAPI        "vaapi"
+   avutil/AV_HWDEVICE_TYPE_CUDA         "cuda"
+   avutil/AV_HWDEVICE_TYPE_D3D11VA      "d3d11va"})
 
 ;; ============================================================
 ;; FFmpeg Error Constants
@@ -151,7 +152,7 @@
         device-ctx-ptr (PointerPointer. 1)]
     (when hw-type
       (debug-log "Creating hw device context, type:" (get av-hwdevice-type->name hw-type "unknown"))
-      (let [ret (org.bytedeco.ffmpeg.global.avutil/av_hwdevice_ctx_create
+      (let [ret (avutil/av_hwdevice_ctx_create
                   device-ctx-ptr
                   hw-type
                   device-path      ; device path (nil for auto)
@@ -176,7 +177,7 @@
   (let [hw-configs (.hw_configs codec)]
     (when hw-configs
       (loop [i 0]
-        (let [cfg-ptr (org.bytedeco.ffmpeg.global.avcodec/avcodec_get_hw_config codec i)]
+        (let [cfg-ptr (avcodec/avcodec_get_hw_config codec i)]
           (when cfg-ptr
             (let [device-type (.device_type cfg-ptr)
                   methods (.methods cfg-ptr)
@@ -185,7 +186,7 @@
                          "methods:" methods "pix_fmt:" pix-fmt)
               (if (and (= device-type hw-device-type)
                        (not (zero? (bit-and methods
-                                            org.bytedeco.ffmpeg.global.avcodec/AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX))))
+                                            avcodec/AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX))))
                 (do
                   (debug-log "  Found matching hw config, pix_fmt:" pix-fmt)
                   pix-fmt)
@@ -203,12 +204,12 @@
         ^AVDictionary null-dict nil]
     ;; Open input file
     (check-error!
-      (org.bytedeco.ffmpeg.global.avformat/avformat_open_input fmt-ctx path nil null-dict)
+      (avformat/avformat_open_input fmt-ctx path nil null-dict)
       "avformat_open_input")
     ;; Find stream info
     (let [^PointerPointer null-pp nil]
       (check-error!
-        (org.bytedeco.ffmpeg.global.avformat/avformat_find_stream_info fmt-ctx null-pp)
+        (avformat/avformat_find_stream_info fmt-ctx null-pp)
         "avformat_find_stream_info"))
     fmt-ctx))
 
@@ -217,9 +218,9 @@
    Returns {:stream-idx int :stream AVStream :codec AVCodec}."
   [^AVFormatContext fmt-ctx]
   (let [codec-ptr (PointerPointer. 1)
-        stream-idx (org.bytedeco.ffmpeg.global.avformat/av_find_best_stream
+        stream-idx (avformat/av_find_best_stream
                      fmt-ctx
-                     org.bytedeco.ffmpeg.global.avutil/AVMEDIA_TYPE_VIDEO
+                     avutil/AVMEDIA_TYPE_VIDEO
                      -1      ; wanted stream
                      -1      ; related stream
                      codec-ptr
@@ -240,13 +241,13 @@
 
    Returns {:codec-ctx AVCodecContext :hw-device-ctx AVBufferRef}."
   [^AVFormatContext fmt-ctx ^AVStream stream ^AVCodec codec decoder-type]
-  (let [codec-ctx (org.bytedeco.ffmpeg.global.avcodec/avcodec_alloc_context3 codec)
+  (let [codec-ctx (avcodec/avcodec_alloc_context3 codec)
         codec-params (.codecpar stream)
         ^PointerPointer null-pp nil]
 
     ;; Copy codec parameters from stream
     (check-error!
-      (org.bytedeco.ffmpeg.global.avcodec/avcodec_parameters_to_context codec-ctx codec-params)
+      (avcodec/avcodec_parameters_to_context codec-ctx codec-params)
       "avcodec_parameters_to_context")
 
     ;; Create hardware device context if hardware decoding requested
@@ -258,7 +259,7 @@
 
       (when hw-device-ctx
         ;; Set hardware device context on codec
-        (.hw_device_ctx codec-ctx (org.bytedeco.ffmpeg.global.avutil/av_buffer_ref hw-device-ctx))
+        (.hw_device_ctx codec-ctx (avutil/av_buffer_ref hw-device-ctx))
         (debug-log "Set hw_device_ctx on codec context"))
 
       ;; Set thread count for software fallback
@@ -266,7 +267,7 @@
 
       ;; Open codec
       (check-error!
-        (org.bytedeco.ffmpeg.global.avcodec/avcodec_open2 codec-ctx codec null-pp)
+        (avcodec/avcodec_open2 codec-ctx codec null-pp)
         "avcodec_open2")
 
       (debug-log "Codec opened successfully, pix_fmt:" (.pix_fmt codec-ctx))
@@ -323,9 +324,9 @@
                       0.0))
 
          ;; Allocate reusable packet and frames
-         packet (org.bytedeco.ffmpeg.global.avcodec/av_packet_alloc)
-         hw-frame (org.bytedeco.ffmpeg.global.avutil/av_frame_alloc)
-         sw-frame (org.bytedeco.ffmpeg.global.avutil/av_frame_alloc)]
+         packet (avcodec/av_packet_alloc)
+         hw-frame (avutil/av_frame_alloc)
+         sw-frame (avutil/av_frame_alloc)]
 
      (debug-log "Video info - " width "x" height "@" fps "fps, duration:" duration "s")
 
@@ -354,7 +355,7 @@
    Returns true if packet read, false at EOF."
   [^AVFormatContext fmt-ctx ^AVPacket packet video-stream-idx]
   (loop []
-    (let [ret (org.bytedeco.ffmpeg.global.avformat/av_read_frame fmt-ctx packet)]
+    (let [ret (avformat/av_read_frame fmt-ctx packet)]
       (cond
         ;; EOF or error
         (neg? ret)
@@ -367,7 +368,7 @@
         ;; Not video, skip and try again
         :else
         (do
-          (org.bytedeco.ffmpeg.global.avcodec/av_packet_unref packet)
+          (avcodec/av_packet_unref packet)
           (recur))))))
 
 (defn decode-next-frame!
@@ -393,7 +394,7 @@
       ;; Try to receive a frame from the decoder
       (loop [need-packet? true]
         (let [recv-ret (when-not need-packet?
-                         (org.bytedeco.ffmpeg.global.avcodec/avcodec_receive_frame codec-ctx hw-frame))]
+                         (avcodec/avcodec_receive_frame codec-ctx hw-frame))]
 
           (cond
             ;; Successfully received a frame
@@ -427,14 +428,14 @@
             (if (read-next-packet! format-ctx packet video-stream-idx)
               (do
                 ;; Send packet to decoder
-                (let [send-ret (org.bytedeco.ffmpeg.global.avcodec/avcodec_send_packet codec-ctx packet)]
-                  (org.bytedeco.ffmpeg.global.avcodec/av_packet_unref packet)
+                (let [send-ret (avcodec/avcodec_send_packet codec-ctx packet)]
+                  (avcodec/av_packet_unref packet)
                   (when (neg? send-ret)
                     (debug-log "Send packet error:" (averror->string send-ret))))
                 (recur false))
               ;; EOF - flush decoder
               (do
-                (org.bytedeco.ffmpeg.global.avcodec/avcodec_send_packet codec-ctx nil)
+                (avcodec/avcodec_send_packet codec-ctx nil)
                 (recur false)))
 
             ;; EOF from decoder
@@ -463,13 +464,13 @@
       (debug-log "Seeking to:" seconds "s (ts:" target-ts ")")
 
       ;; Seek in format context
-      (let [ret (org.bytedeco.ffmpeg.global.avformat/av_seek_frame format-ctx video-stream-idx target-ts
-                                        org.bytedeco.ffmpeg.global.avformat/AVSEEK_FLAG_BACKWARD)]
+      (let [ret (avformat/av_seek_frame format-ctx video-stream-idx target-ts
+                                        avformat/AVSEEK_FLAG_BACKWARD)]
         (when (neg? ret)
           (debug-log "Seek error:" (averror->string ret))))
 
       ;; Flush decoder
-      (org.bytedeco.ffmpeg.global.avcodec/avcodec_flush_buffers codec-ctx)
+      (avcodec/avcodec_flush_buffers codec-ctx)
       (reset! current-pts-atom seconds)))
 
   decoder)
@@ -510,25 +511,25 @@
 
       ;; Free packet and frames
       (when packet
-        (org.bytedeco.ffmpeg.global.avcodec/av_packet_free (doto (PointerPointer. 1) (.put packet))))
+        (avcodec/av_packet_free (doto (PointerPointer. 1) (.put packet))))
       (when hw-frame
-        (org.bytedeco.ffmpeg.global.avutil/av_frame_free (doto (PointerPointer. 1) (.put hw-frame))))
+        (avutil/av_frame_free (doto (PointerPointer. 1) (.put hw-frame))))
       (when sw-frame
-        (org.bytedeco.ffmpeg.global.avutil/av_frame_free (doto (PointerPointer. 1) (.put sw-frame))))
+        (avutil/av_frame_free (doto (PointerPointer. 1) (.put sw-frame))))
 
       ;; Close codec context
       (when codec-ctx
-        (org.bytedeco.ffmpeg.global.avcodec/avcodec_free_context
+        (avcodec/avcodec_free_context
           (doto (PointerPointer. 1) (.put codec-ctx))))
 
       ;; Free hardware device context
       (when hw-device-ctx
-        (org.bytedeco.ffmpeg.global.avutil/av_buffer_unref
+        (avutil/av_buffer_unref
           (doto (PointerPointer. 1) (.put hw-device-ctx))))
 
       ;; Close format context
       (when format-ctx
-        (org.bytedeco.ffmpeg.global.avformat/avformat_close_input
+        (avformat/avformat_close_input
           (doto (PointerPointer. 1) (.put format-ctx))))))
 
   decoder)
@@ -545,11 +546,11 @@
   [^RawHWDecoder decoder ^AVFrame hw-frame]
   (let [sw-frame (:sw-frame decoder)]
     ;; Transfer data from GPU to CPU
-    (let [ret (org.bytedeco.ffmpeg.global.avutil/av_hwframe_transfer_data sw-frame hw-frame 0)]
+    (let [ret (avutil/av_hwframe_transfer_data sw-frame hw-frame 0)]
       (if (zero? ret)
         (do
           ;; Copy frame properties
-          (org.bytedeco.ffmpeg.global.avutil/av_frame_copy_props sw-frame hw-frame)
+          (avutil/av_frame_copy_props sw-frame hw-frame)
           sw-frame)
         (do
           (debug-log "Hardware frame transfer failed:" (averror->string ret))
