@@ -140,22 +140,41 @@
       ;; Process frame capture (PBO async read) - only if capture is active
       (when @capture-active?
         (when-let [capture-fn (resolve 'lib.window.capture/process-frame!)]
-          (capture-fn pw ph @(:scale window))))
+          (capture-fn pw ph @(:scale window) :opengl)))
       (sdl/swap-buffers! handle))))
 
 (defn- render-frame-metal!
-  "Render a frame using the Metal/Skija layer."
+  "Render a frame using the Metal/Skija layer.
+   Integrates with capture module for screenshots/video recording:
+   1. Flush Skia to Metal
+   2. Capture texture (while still valid, before present)
+   3. Present drawable (texture becomes invalid after)
+   4. Process previously captured frame"
   [^Window window]
   (let [handle (:handle window)
         [pw ph] (sdl/get-window-size-in-pixels handle)]
     ;; Get frame resources from Metal layer
-    (when-let [{:keys [surface canvas flush-fn present-fn]} (layer-metal/frame! pw ph)]
+    (when-let [{:keys [surface canvas texture flush-fn present-fn]} (layer-metal/frame! pw ph)]
       ;; Dispatch frame event to handler
       (when (dispatch-event! window (e/->EventFrameSkija surface canvas))
         ;; Flush Skija commands to Metal
         (flush-fn)
-        ;; Present the drawable
-        (present-fn)))))
+
+        ;; CAPTURE: Issue texture read BEFORE present (texture still valid)
+        ;; This captures the current frame's texture into a buffer
+        (when @capture-active?
+          (when-let [capture-fn (resolve 'lib.window.capture/start-async-capture-metal!)]
+            ;; Note: We pass nil for cmd-buffer since Skia's flushAndSubmit
+            ;; already waits for GPU completion internally
+            (capture-fn texture nil pw ph)))
+
+        ;; Present the drawable (texture becomes invalid after this)
+        (let [cmd-buffer (present-fn)]
+          ;; PROCESS: Handle previously captured frame's pixels
+          ;; This runs AFTER present so it doesn't block the current frame
+          (when @capture-active?
+            (when-let [process-fn (resolve 'lib.window.capture/process-frame!)]
+              (process-fn pw ph @(:scale window) :metal))))))))
 
 (defn- render-frame!
   "Render a frame using the appropriate backend.

@@ -63,13 +63,21 @@
 
 (defn frame!
   "Prepare a frame for rendering at the given physical dimensions.
-   Returns {:surface surface :canvas canvas :flush-fn fn :present-fn fn}
-   or nil if no drawable is available.
+   Returns a map with:
+     :surface    - Skia Surface for drawing
+     :canvas     - Canvas from the surface
+     :drawable   - CAMetalDrawable pointer (for capture)
+     :texture    - MTLTexture pointer (for capture)
+     :flush-fn   - Call after drawing to flush Skia commands
+     :present-fn - Call to display the frame (returns command buffer for sync)
+
+   Returns nil if no drawable is available.
 
    The caller should:
    1. Draw to the canvas
    2. Call flush-fn to flush Skia commands
-   3. Call present-fn to display the frame"
+   3. Optionally capture the texture (for screenshots/video)
+   4. Call present-fn to display the frame"
   [physical-width physical-height]
   (let [{:keys [context metal-layer queue]} @state]
     (when (and context metal-layer (pos? metal-layer))
@@ -98,6 +106,8 @@
                 (when surface
                   {:surface    surface
                    :canvas     (.getCanvas surface)
+                   :drawable   drawable   ; Exposed for capture
+                   :texture    texture    ; Exposed for capture
                    :flush-fn   (fn []
                                  ;; Flush Skia to Metal
                                  (.flushAndSubmit context surface)
@@ -112,7 +122,9 @@
                                      ;; Schedule drawable presentation
                                      (metal/present-drawable-with-command-buffer! cmd-buffer drawable)
                                      ;; Commit the command buffer
-                                     (metal/commit-command-buffer! cmd-buffer))))})))))))))
+                                     (metal/commit-command-buffer! cmd-buffer)
+                                     ;; Return command buffer for caller to wait on if needed
+                                     cmd-buffer)))})))))))))
 
 ;; ============================================================
 ;; Resize Handling

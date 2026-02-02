@@ -268,6 +268,142 @@
              :device-name (get-device-name device)}))))))
 
 ;; ============================================================
+;; MTLBuffer Operations (for frame capture)
+;; ============================================================
+
+;; MTLResourceStorageModeShared = 0 (CPU & GPU accessible)
+(def MTLResourceStorageModeShared 0)
+
+(defn create-buffer
+  "Create MTLBuffer with shared storage for CPU read access.
+   Returns buffer pointer or 0 on failure."
+  [device size]
+  (when (and device (pos? device) (pos? size))
+    (let [sel (get-selector "newBufferWithLength:options:")
+          msg-send (objc-msg-send)]
+      ;; invokePPJJP: ptr(self) ptr(sel) long(size) long(options) -> ptr
+      (JNI/invokePPJJP device sel (long size) (long MTLResourceStorageModeShared) msg-send))))
+
+(defn get-buffer-contents
+  "Get CPU-accessible pointer to buffer contents.
+   Returns pointer that can be read with MemoryUtil."
+  [buffer]
+  (when (and buffer (pos? buffer))
+    (msg-send-p buffer (get-selector "contents"))))
+
+(defn get-buffer-length
+  "Get buffer size in bytes."
+  [buffer]
+  (when (and buffer (pos? buffer))
+    (let [sel (get-selector "length")
+          msg-send (objc-msg-send)]
+      (JNI/invokePPJ buffer sel msg-send))))
+
+;; ============================================================
+;; Blit Command Encoder Operations
+;; ============================================================
+
+(defn create-blit-command-encoder
+  "Create blit encoder from command buffer for copy operations."
+  [command-buffer]
+  (when (and command-buffer (pos? command-buffer))
+    (msg-send-p command-buffer (get-selector "blitCommandEncoder"))))
+
+(defn end-encoding!
+  "End encoding for command encoder."
+  [encoder]
+  (when (and encoder (pos? encoder))
+    (msg-send-v encoder (get-selector "endEncoding"))))
+
+(defn synchronize-resource!
+  "Synchronize a managed resource (texture or buffer) for CPU access.
+   For shared storage mode buffers, this is a no-op but safe to call."
+  [blit-encoder resource]
+  (when (and blit-encoder (pos? blit-encoder)
+             resource (pos? resource))
+    (let [sel (get-selector "synchronizeResource:")
+          msg-send (objc-msg-send)]
+      (JNI/invokePPPV blit-encoder sel resource msg-send))))
+
+;; ============================================================
+;; Direct Texture Read (synchronous fallback)
+;; ============================================================
+
+(defn get-texture-bytes!
+  "Read texture pixels into a pre-allocated buffer.
+   Uses MTLTexture's getBytes:bytesPerRow:fromRegion:mipmapLevel:.
+
+   This is a SYNCHRONOUS operation - GPU must be idle first.
+   Call after waitUntilCompleted on the render command buffer.
+
+   Parameters:
+   - texture: MTLTexture pointer
+   - dest-ptr: Destination memory pointer (from MemoryUtil/memAlloc)
+   - bytes-per-row: Row stride in bytes (typically width * 4 for BGRA)
+   - width, height: Texture dimensions
+
+   Returns true on success."
+  [texture dest-ptr bytes-per-row width height]
+  (when (and texture (pos? texture)
+             dest-ptr (pos? dest-ptr)
+             (pos? bytes-per-row) (pos? width) (pos? height))
+    (let [sel (get-selector "getBytes:bytesPerRow:fromRegion:mipmapLevel:")
+          msg-send (objc-msg-send)]
+      ;; MTLRegion = { MTLOrigin origin; MTLSize size }
+      ;; MTLOrigin = { NSUInteger x, y, z }
+      ;; MTLSize = { NSUInteger width, height, depth }
+      ;; All NSUInteger on 64-bit = 8 bytes each = 48 bytes total for MTLRegion
+      ;;
+      ;; On ARM64 ABI, this struct (>16 bytes) is passed by reference,
+      ;; but objc_msgSend handles the ABI properly when we pass fields inline.
+      ;; Actually for ObjC methods, the struct is passed "by value" which
+      ;; on ARM64 means individual fields in registers and then stack.
+      (try
+        (JNI/invokePPPJJJJJJJJV
+          texture           ; self
+          sel               ; _cmd
+          dest-ptr          ; pixelBytes
+          bytes-per-row     ; bytesPerRow
+          ;; MTLRegion: origin (x,y,z), size (w,h,d)
+          (long 0)          ; origin.x
+          (long 0)          ; origin.y
+          (long 0)          ; origin.z
+          (long width)      ; size.width
+          (long height)     ; size.height
+          (long 1)          ; size.depth
+          (long 0)          ; mipmapLevel
+          msg-send)
+        true
+        (catch Exception _
+          false)))))
+
+;; ============================================================
+;; Command Buffer Status (for polling completion)
+;; ============================================================
+
+;; MTLCommandBufferStatus values
+(def MTLCommandBufferStatusNotEnqueued 0)
+(def MTLCommandBufferStatusEnqueued 1)
+(def MTLCommandBufferStatusCommitted 2)
+(def MTLCommandBufferStatusScheduled 3)
+(def MTLCommandBufferStatusCompleted 4)
+(def MTLCommandBufferStatusError 5)
+
+(defn get-command-buffer-status
+  "Get command buffer status. Returns MTLCommandBufferStatus value."
+  [command-buffer]
+  (when (and command-buffer (pos? command-buffer))
+    (let [sel (get-selector "status")
+          msg-send (objc-msg-send)]
+      (JNI/invokePPJ command-buffer sel msg-send))))
+
+(defn command-buffer-completed?
+  "Check if command buffer has completed execution."
+  [command-buffer]
+  (let [status (get-command-buffer-status command-buffer)]
+    (and status (= status MTLCommandBufferStatusCompleted))))
+
+;; ============================================================
 ;; Cleanup
 ;; ============================================================
 

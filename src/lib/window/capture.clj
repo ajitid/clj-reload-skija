@@ -1,13 +1,15 @@
 (ns lib.window.capture
-  "Frame capture using OpenGL PBO double-buffering.
-   Supports screenshots (PNG/JPEG) and video recording (FFmpeg).
+  "Frame capture using double-buffering for screenshots and video recording.
+   Supports both OpenGL (PBO) and Metal backends.
 
-   PBO double-buffering eliminates GPU stalls by reading the previous
-   frame's data while the current frame is being captured asynchronously.
-   
+   OpenGL uses PBO double-buffering with async glReadPixels.
+   Metal uses synchronous texture reads after GPU completion.
+   Both use double-buffering to process the previous frame while
+   capturing the current frame.
+
    Performance optimizations:
    - Hardware encoder selection (VideoToolbox/VAAPI/NVENC)
-   - glFenceSync for non-blocking PBO reads
+   - glFenceSync for non-blocking PBO reads (OpenGL)
    - Worker thread with bounded queue for FFmpeg writes"
   (:require [clojure.java.shell :as shell]
             [clojure.java.io :as io]
@@ -35,6 +37,7 @@
 
 (defonce capture-state
   (atom {:mode              nil    ; :screenshot | :video | nil
+         :backend           nil    ; :opengl | :metal | nil (auto-detected)
          ;; Screenshot state
          :screenshot-path   nil    ; Output path for screenshot
          :screenshot-format nil    ; :png | :jpeg
@@ -726,13 +729,83 @@
       (println "[capture] Frame dropped (queue full)"))))
 
 ;; ============================================================
-;; Main Frame Processing Hook
+;; Metal Capture Integration
 ;; ============================================================
 
-(defn process-frame!
-  "Process frame capture. Call after flush, before swap.
-   This is the main hook called from the render loop.
-   scale is the display scale factor (e.g. 2.0 on Retina)."
+(defn start-async-capture-metal!
+  "Issue async texture capture for Metal backend.
+   Must be called AFTER Skia flush but BEFORE present (texture still valid).
+
+   Parameters:
+   - texture: MTLTexture pointer from drawable
+   - cmd-buffer: Command buffer used for rendering (to wait on)
+   - width, height: Frame dimensions
+
+   This function captures the texture to the current buffer.
+   Call process-frame-metal! afterward to process previous frame's pixels."
+  [texture cmd-buffer width height]
+  (when-let [capture-fn (resolve 'lib.window.capture-metal/capture-texture!)]
+    (capture-fn texture cmd-buffer width height)
+    ;; Mark primed after first capture
+    (when-let [primed-fn (resolve 'lib.window.capture-metal/mark-primed!)]
+      (primed-fn))))
+
+(defn- process-pixels!
+  "Process captured pixels (screenshot or video frame).
+   Common logic for both OpenGL and Metal backends."
+  [^ByteBuffer pixels width height scale]
+  (let [{:keys [mode]} @capture-state]
+    (case mode
+      :screenshot
+      (let [{:keys [screenshot-path screenshot-format screenshot-opts]} @capture-state]
+        (save-screenshot! pixels width height screenshot-path screenshot-format screenshot-opts scale)
+        (swap! capture-state assoc :mode nil))
+
+      :video
+      (let [{:keys [recording? recording-dims]} @capture-state]
+        (cond
+          ;; First frame: spawn FFmpeg with actual dimensions
+          (not recording?)
+          (if (spawn-ffmpeg-recording! width height)
+            (write-frame-to-ffmpeg! pixels width height)
+            ;; FFmpeg failed to start, free pixels
+            (MemoryUtil/memFree pixels))
+
+          ;; Resize detected: stop recording with warning
+          (not= recording-dims [width height])
+          (do
+            (println "[capture] WARNING: Window resized during recording"
+                     recording-dims "->" [width height])
+            (MemoryUtil/memFree pixels)
+            (stop-recording! "window resized"))
+
+          ;; Normal frame: write to FFmpeg
+          :else
+          (write-frame-to-ffmpeg! pixels width height)))
+
+      nil)))
+
+(defn- process-frame-metal!
+  "Process Metal frame capture. Called AFTER present.
+   Retrieves pixels from the previous frame's buffer and processes them."
+  [width height scale]
+  (let [{:keys [mode]} @capture-state]
+    (when mode
+      ;; Get previous frame's pixels (if available)
+      (when-let [get-prev-fn (resolve 'lib.window.capture-metal/get-previous-frame)]
+        (when-let [pixels (get-prev-fn width height)]
+          ;; Metal uses BGRA format, convert to RGBA for FFmpeg
+          (when-let [convert-fn (resolve 'lib.window.capture-metal/bgra->rgba!)]
+            (convert-fn pixels width height))
+          (process-pixels! pixels width height scale)))
+
+      ;; Flip to other buffer for next frame
+      (when-let [flip-fn (resolve 'lib.window.capture-metal/flip-buffer!)]
+        (flip-fn)))))
+
+(defn- process-frame-opengl!
+  "Process OpenGL frame capture using PBO double-buffering.
+   Called after flush, before swap."
   [width height scale]
   (let [{:keys [mode]} @capture-state]
     (when mode
@@ -742,35 +815,7 @@
       (let [{:keys [primed?]} @pbo-state]
         ;; Get previous frame's pixels (if available)
         (when-let [pixels (get-previous-frame width height)]
-          (case mode
-            :screenshot
-            (let [{:keys [screenshot-path screenshot-format screenshot-opts]} @capture-state]
-              (save-screenshot! pixels width height screenshot-path screenshot-format screenshot-opts scale)
-              (swap! capture-state assoc :mode nil))
-
-            :video
-            (let [{:keys [recording? recording-dims]} @capture-state]
-              (cond
-                ;; First frame: spawn FFmpeg with actual dimensions
-                (not recording?)
-                (if (spawn-ffmpeg-recording! width height)
-                  (write-frame-to-ffmpeg! pixels width height)
-                  ;; FFmpeg failed to start, free pixels
-                  (MemoryUtil/memFree pixels))
-
-                ;; Resize detected: stop recording with warning
-                (not= recording-dims [width height])
-                (do
-                  (println "[capture] WARNING: Window resized during recording"
-                           recording-dims "->" [width height])
-                  (MemoryUtil/memFree pixels)
-                  (stop-recording! "window resized"))
-
-                ;; Normal frame: write to FFmpeg
-                :else
-                (write-frame-to-ffmpeg! pixels width height)))
-
-            nil))
+          (process-pixels! pixels width height scale))
 
         ;; Start async read for current frame
         (start-async-read! width height)
@@ -783,12 +828,41 @@
         (flip-pbo!)))))
 
 ;; ============================================================
+;; Main Frame Processing Hook
+;; ============================================================
+
+(defn process-frame!
+  "Process frame capture. Call after flush, before swap (OpenGL) or after present (Metal).
+   This is the main hook called from the render loop.
+   scale is the display scale factor (e.g. 2.0 on Retina).
+
+   For Metal backend, start-async-capture-metal! must be called first
+   (before present) to capture the texture. This function then processes
+   the previously captured frame.
+
+   backend parameter: :opengl or :metal (auto-detects if nil)"
+  ([width height scale]
+   ;; Auto-detect backend from capture-state or default to OpenGL
+   (let [backend (or (:backend @capture-state) :opengl)]
+     (process-frame! width height scale backend)))
+  ([width height scale backend]
+   (case backend
+     :metal (process-frame-metal! width height scale)
+     :opengl (process-frame-opengl! width height scale)
+     ;; Default to OpenGL for backwards compatibility
+     (process-frame-opengl! width height scale))))
+
+;; ============================================================
 ;; Cleanup
 ;; ============================================================
 
 (defn cleanup!
-  "Clean up all capture resources."
+  "Clean up all capture resources for both backends."
   []
   (stop-recording!)
   (stop-worker!)
-  (destroy-pbos!))
+  ;; OpenGL cleanup
+  (destroy-pbos!)
+  ;; Metal cleanup
+  (when-let [metal-cleanup (resolve 'lib.window.capture-metal/cleanup!)]
+    (metal-cleanup)))
