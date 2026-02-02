@@ -55,13 +55,19 @@
 
 (defn- resolve-platform-binder
   "Resolve the platform-specific frame binder function.
-   Returns nil if not available."
+   Returns nil if not available.
+
+   NOTE: VideoToolbox zero-copy is disabled because macOS requires
+   GL_TEXTURE_RECTANGLE for IOSurface binding, but Skia's OpenGL
+   backend doesn't support rectangle textures properly. The fallback
+   hwaccel decoder (hw decode + CPU copy) is used instead, which is
+   still faster than software decode."
   [decoder-type]
   (case decoder-type
+    ;; VideoToolbox: Disabled - Skia+OpenGL doesn't support GL_TEXTURE_RECTANGLE
+    ;; Requires Metal backend for true zero-copy on macOS
     :videotoolbox
-    (try
-      (requiring-resolve 'lib.video.hwaccel.videotoolbox/bind-hw-frame-to-texture!)
-      (catch Exception _ nil))
+    nil
 
     :vaapi
     (try
