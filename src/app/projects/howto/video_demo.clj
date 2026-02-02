@@ -65,6 +65,24 @@
       (format "%d:%02d" mins secs))))
 
 ;; ============================================================
+;; Layout Helpers
+;; ============================================================
+
+(defn- get-video-layout
+  "Calculate video layout from window dimensions.
+   Returns {:video-x :video-y :video-w :video-h}."
+  [w h]
+  (let [padding 60
+        video-x padding
+        video-y 80
+        video-w (- w (* 2 padding))
+        video-h (- h 200)]
+    {:video-x video-x
+     :video-y video-y
+     :video-w video-w
+     :video-h video-h}))
+
+;; ============================================================
 ;; Seek Bar
 ;; ============================================================
 
@@ -77,11 +95,19 @@
         bar-y (+ video-y 20)]  ; Below video
     [bar-x bar-y bar-w bar-h]))
 
+(defn- get-seek-bar-bounds-from-window
+  "Return seek bar bounds as [x y w h] from window dimensions.
+   Used for gesture hit-testing."
+  [w h]
+  (let [{:keys [video-x video-y video-w video-h]} (get-video-layout w h)]
+    (get-seek-bar-bounds video-x (+ video-y video-h) video-w)))
+
 (defn- seek-from-x
   "Seek video to position based on x coordinate within seek bar."
-  [x video-x video-w]
+  [x w h]
   (when-let [source @video-source]
-    (let [ratio (/ (- x video-x) video-w)
+    (let [{:keys [video-x video-w]} (get-video-layout w h)
+          ratio (/ (- x video-x) video-w)
           ratio (max 0.0 (min 1.0 ratio))
           dur (video/duration source)]
       (video/seek! source (* ratio dur)))))
@@ -202,7 +228,21 @@
         (println "  (Fell back from hardware to software)")))
     (catch Exception e
       (println "Failed to load video:" (.getMessage e))
-      (println "Make sure the video file exists at:" video-file))))
+      (println "Make sure the video file exists at:" video-file)))
+  ;; Register seek bar for click/drag
+  (gesture/register-target!
+    {:id :video-seek-bar
+     :layer :content
+     :z-index 10
+     :bounds-fn (fn [_ctx]
+                  (get-seek-bar-bounds-from-window @window-width @window-height))
+     :gesture-recognizers [:drag]
+     :handlers {:on-pointer-down (fn [event]
+                                   (let [x (get-in event [:pointer :x])]
+                                     (seek-from-x x @window-width @window-height)))
+                :on-drag (fn [event]
+                           (let [x (get-in event [:pointer :x])]
+                             (seek-from-x x @window-width @window-height)))}}))
 
 (defn tick [dt]
   "Called every frame with delta time."
@@ -293,6 +333,7 @@
 
 (defn cleanup []
   "Called when switching away from this example."
+  (gesture/unregister-target! :video-seek-bar)
   (when @video-source
     (video/close! @video-source))
   (reset! video-source nil)
