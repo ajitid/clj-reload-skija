@@ -1,202 +1,207 @@
 (ns lib.window.capture-metal
-  "Metal frame capture using double-buffered texture reads.
-
-   Captures frames from Metal drawable textures for screenshots and video
-   recording. Uses double-buffering to minimize pipeline stalls:
-   - Frame N: Read previous frame's pixels while issuing new capture
-   - Frame N+1: Process captured pixels from frame N
-
-   Unlike the OpenGL PBO path which uses async DMA, Metal capture is
-   semi-synchronous: we wait for GPU completion before reading texture,
-   but the processing of captured pixels happens in parallel with the
-   next frame's rendering.
-
-   IMPORTANT: Metal capture must happen BEFORE present, as the drawable's
-   texture becomes invalid after presentation."
+  "Metal frame capture using double-buffered async GPU blit."
   (:require [lib.window.metal :as metal]
             [lib.window.layer-metal :as layer-metal])
   (:import [org.lwjgl.system MemoryUtil]
            [java.nio ByteBuffer]))
 
-;; ============================================================
-;; State (persists across hot-reloads)
-;; ============================================================
+;; Try to load FFM module - it may not be available on older JDKs
+(def ^:private ffm-ns
+  (try
+    (require 'lib.window.metal-ffm)
+    (find-ns 'lib.window.metal-ffm)
+    (catch Exception e
+      (println "[capture-metal] FFM module not available:" (.getMessage e))
+      nil)))
+
+(defn- ffm-available? []
+  (and ffm-ns
+       (when-let [avail-fn (ns-resolve ffm-ns 'available?)]
+         (avail-fn))))
+
+(defn- ffm-call [fn-name & args]
+  "Call a function in metal-ffm namespace if available."
+  (when ffm-ns
+    (when-let [f (ns-resolve ffm-ns fn-name)]
+      (apply f args))))
 
 (defonce capture-state
-  (atom {:buffers       [nil nil]    ; Two native ByteBuffer pointers
-         :buffer-index  0            ; Current write target (ping-pong)
-         :width         0            ; Captured frame width
-         :height        0            ; Captured frame height
-         :bytes-per-row 0            ; Row stride
-         :initialized?  false
-         :primed?       false        ; At least one frame captured?
-         :ready-flags   [false false] ; Which buffers have valid data?
-         :cmd-buffers   [nil nil]})) ; Command buffers for completion tracking
+  (atom {:mtl-buffers    [nil nil]
+         :cpu-buffers    [nil nil]
+         :cmd-buffers    [nil nil]
+         :buffer-index   0
+         :width          0
+         :height         0
+         :bytes-per-row  0
+         :initialized?   false
+         :primed?        false
+         :ready-flags    [false false]
+         :use-ffm?       nil}))
 
-;; ============================================================
-;; Buffer Management
-;; ============================================================
-
-(defn- buffer-size
-  "Calculate buffer size for BGRA pixels (Metal uses BGRA by default)."
-  [width height]
+(defn- buffer-size [width height]
   (* width height 4))
 
-(defn init-buffers!
-  "Initialize double-buffered native memory for capture."
-  [width height]
+(defn- init-fallback-buffers! [size width height bytes-per-row]
+  (let [cpu-buf-a (MemoryUtil/memAlloc size)
+        cpu-buf-b (MemoryUtil/memAlloc size)]
+    (swap! capture-state assoc
+           :mtl-buffers [nil nil]
+           :cpu-buffers [cpu-buf-a cpu-buf-b]
+           :buffer-index 0
+           :width width
+           :height height
+           :bytes-per-row bytes-per-row
+           :initialized? true
+           :primed? false
+           :ready-flags [false false]
+           :cmd-buffers [nil nil]
+           :use-ffm? false)
+    (println "[capture-metal] Fallback buffers initialized:" width "x" height)))
+
+(defn init-buffers! [width height]
   (when (and (pos? width) (pos? height))
     (let [size (buffer-size width height)
           bytes-per-row (* width 4)
-          ;; Allocate two native buffers
-          buf-a (MemoryUtil/memAlloc size)
-          buf-b (MemoryUtil/memAlloc size)]
-      (swap! capture-state assoc
-             :buffers [buf-a buf-b]
-             :buffer-index 0
-             :width width
-             :height height
-             :bytes-per-row bytes-per-row
-             :initialized? true
-             :primed? false
-             :ready-flags [false false]
-             :cmd-buffers [nil nil])
-      (println "[capture-metal] Buffers initialized:" width "x" height))))
+          device (layer-metal/device)
+          ffm-available? (and device (pos? device) (ffm-available?))]
+      (if ffm-available?
+        (let [mtl-buf-a (metal/create-buffer device size)
+              mtl-buf-b (metal/create-buffer device size)]
+          (if (and mtl-buf-a (pos? mtl-buf-a) mtl-buf-b (pos? mtl-buf-b))
+            (do
+              (swap! capture-state assoc
+                     :mtl-buffers [mtl-buf-a mtl-buf-b]
+                     :cpu-buffers [nil nil]
+                     :buffer-index 0
+                     :width width
+                     :height height
+                     :bytes-per-row bytes-per-row
+                     :initialized? true
+                     :primed? false
+                     :ready-flags [false false]
+                     :cmd-buffers [nil nil]
+                     :use-ffm? true)
+              (println "[capture-metal] FFM async buffers initialized:" width "x" height))
+            (do
+              (when (and mtl-buf-a (pos? mtl-buf-a)) (metal/release! mtl-buf-a))
+              (when (and mtl-buf-b (pos? mtl-buf-b)) (metal/release! mtl-buf-b))
+              (println "[capture-metal] MTLBuffer creation failed, using fallback")
+              (init-fallback-buffers! size width height bytes-per-row))))
+        (init-fallback-buffers! size width height bytes-per-row)))))
 
-(defn destroy-buffers!
-  "Free native buffers and reset state."
-  []
-  (let [{:keys [buffers initialized?]} @capture-state]
+(defn destroy-buffers! []
+  (let [{:keys [mtl-buffers cpu-buffers initialized? use-ffm?]} @capture-state]
     (when initialized?
-      ;; Free native memory
-      (doseq [buf buffers]
-        (when buf
-          (MemoryUtil/memFree buf)))
+      (if use-ffm?
+        (doseq [buf mtl-buffers] (when (and buf (pos? buf)) (metal/release! buf)))
+        (doseq [buf cpu-buffers] (when buf (MemoryUtil/memFree buf))))
       (swap! capture-state assoc
-             :buffers [nil nil]
-             :initialized? false
-             :primed? false
-             :ready-flags [false false]
-             :cmd-buffers [nil nil])
+             :mtl-buffers [nil nil] :cpu-buffers [nil nil]
+             :initialized? false :primed? false
+             :ready-flags [false false] :cmd-buffers [nil nil] :use-ffm? nil)
       (println "[capture-metal] Buffers destroyed"))))
 
-(defn- resize-buffers!
-  "Recreate buffers if dimensions changed."
-  [new-width new-height]
+(defn- resize-buffers! [new-width new-height]
   (let [{:keys [width height initialized?]} @capture-state]
-    (when (and initialized?
-               (or (not= new-width width) (not= new-height height)))
+    (when (and initialized? (or (not= new-width width) (not= new-height height)))
       (destroy-buffers!)
       (init-buffers! new-width new-height))))
 
-(defn- ensure-buffers!
-  "Ensure buffers exist and match dimensions."
-  [width height]
-  (let [{:keys [initialized?]} @capture-state]
-    (if initialized?
-      (resize-buffers! width height)
-      (init-buffers! width height))))
+(defn- ensure-buffers! [width height]
+  (if (:initialized? @capture-state)
+    (resize-buffers! width height)
+    (init-buffers! width height)))
 
-;; ============================================================
-;; Frame Capture
-;; ============================================================
-
-(defn capture-texture!
-  "Capture texture contents to current buffer.
-   Called AFTER Skia flush but BEFORE present (texture still valid).
-
-   Uses synchronous texture read via Metal's getBytes method.
-   GPU must be idle for this to return correct data, so we
-   wait for the render command buffer to complete first.
-
-   Parameters:
-   - texture: MTLTexture pointer from drawable
-   - cmd-buffer: Command buffer that was used for rendering (to wait on)
-   - width, height: Frame dimensions
-
-   Returns true if capture succeeded."
-  [texture cmd-buffer width height]
-  (when (and texture (pos? texture)
-             (pos? width) (pos? height))
+(defn issue-async-blit! [texture width height]
+  (when (and texture (pos? texture) (pos? width) (pos? height))
     (ensure-buffers! width height)
-    (let [{:keys [buffers buffer-index bytes-per-row]} @capture-state
-          current-buf (nth buffers buffer-index)]
-      (when current-buf
-        ;; Wait for GPU to finish rendering
-        (when cmd-buffer
-          (metal/wait-until-completed! cmd-buffer))
-        ;; Read texture pixels into buffer
-        ;; Metal textures are BGRA (we'll convert later if needed)
-        (let [dest-ptr (MemoryUtil/memAddress current-buf)]
-          (when (metal/get-texture-bytes! texture dest-ptr bytes-per-row width height)
-            ;; Mark buffer as having valid data
-            (swap! capture-state assoc-in [:ready-flags buffer-index] true)
-            true))))))
+    (let [{:keys [mtl-buffers buffer-index bytes-per-row use-ffm? initialized?]} @capture-state]
+      (when (and initialized? use-ffm?)
+        (let [current-buf (nth mtl-buffers buffer-index)
+              queue (layer-metal/queue)]
+          (when (and current-buf (pos? current-buf) queue (pos? queue))
+            (let [cmd-buffer (metal/create-command-buffer queue)]
+              (when cmd-buffer
+                (let [blit-encoder (metal/create-blit-command-encoder cmd-buffer)]
+                  (when blit-encoder
+                    (when (ffm-call 'copy-texture-to-buffer!
+                            blit-encoder texture current-buf width height bytes-per-row)
+                      (metal/end-encoding! blit-encoder)
+                      (metal/commit-command-buffer! cmd-buffer)
+                      (swap! capture-state assoc-in [:cmd-buffers buffer-index] cmd-buffer)
+                      (swap! capture-state assoc-in [:ready-flags buffer-index] true)
+                      true)))))))))))
 
-(defn get-previous-frame
-  "Get pixels from previous buffer if ready.
-   Returns ByteBuffer with BGRA pixels or nil. Non-blocking.
+(defn capture-texture! [texture cmd-buffer width height]
+  (when (and texture (pos? texture) (pos? width) (pos? height))
+    (ensure-buffers! width height)
+    (let [{:keys [cpu-buffers buffer-index bytes-per-row use-ffm? initialized?]} @capture-state]
+      (when (and initialized? (not use-ffm?))
+        (let [current-buf (nth cpu-buffers buffer-index)]
+          (when current-buf
+            (when cmd-buffer (metal/wait-until-completed! cmd-buffer))
+            (let [dest-ptr (MemoryUtil/memAddress current-buf)]
+              (when (metal/get-texture-bytes! texture dest-ptr bytes-per-row width height)
+                (swap! capture-state assoc-in [:ready-flags buffer-index] true)
+                true))))))))
 
-   The returned buffer is a COPY that the caller owns and must free
-   with MemoryUtil/memFree when done."
-  [width height]
-  (let [{:keys [buffers buffer-index ready-flags primed?]} @capture-state]
+(defn get-previous-frame [width height]
+  (let [{:keys [mtl-buffers cpu-buffers buffer-index ready-flags cmd-buffers primed? use-ffm?]} @capture-state]
     (when primed?
       (let [prev-index (mod (inc buffer-index) 2)
             prev-ready? (nth ready-flags prev-index)]
         (when prev-ready?
-          (let [prev-buf (nth buffers prev-index)
-                size (buffer-size width height)]
-            (when prev-buf
-              ;; Copy to new buffer so caller can free independently
-              (.rewind ^ByteBuffer prev-buf)
-              (let [result (MemoryUtil/memAlloc size)]
-                (.put ^ByteBuffer result ^ByteBuffer prev-buf)
-                (.flip ^ByteBuffer result)
-                (.rewind ^ByteBuffer prev-buf)
-                result))))))))
+          (let [result
+                (if use-ffm?
+                  ;; FFM path
+                  (let [prev-cmd (nth cmd-buffers prev-index)
+                        prev-buf (nth mtl-buffers prev-index)]
+                    (when (and prev-cmd prev-buf (metal/command-buffer-completed? prev-cmd))
+                      (let [contents-ptr (metal/get-buffer-contents prev-buf)
+                            size (buffer-size width height)]
+                        (when (and contents-ptr (pos? contents-ptr))
+                          (let [result (MemoryUtil/memAlloc size)]
+                            (MemoryUtil/memCopy contents-ptr (MemoryUtil/memAddress result) size)
+                            result)))))
+                  ;; Fallback path
+                  (let [prev-buf (nth cpu-buffers prev-index)
+                        size (buffer-size width height)]
+                    (when prev-buf
+                      (.rewind ^ByteBuffer prev-buf)
+                      (let [result (MemoryUtil/memAlloc size)]
+                        (.put ^ByteBuffer result ^ByteBuffer prev-buf)
+                        (.flip ^ByteBuffer result)
+                        (.rewind ^ByteBuffer prev-buf)
+                        result))))]
+            ;; Reset ready flag after consuming the frame to prevent re-reads
+            ;; and allow the buffer to be reused for new captures
+            (when result
+              (swap! capture-state assoc-in [:ready-flags prev-index] false))
+            result))))))
 
-(defn flip-buffer!
-  "Switch to other buffer for next frame."
-  []
+(defn flip-buffer! []
   (swap! capture-state update :buffer-index #(mod (inc %) 2)))
 
-(defn mark-primed!
-  "Mark that we've issued at least one capture."
-  []
+(defn mark-primed! []
   (swap! capture-state assoc :primed? true))
 
-(defn primed?
-  "Check if at least one frame has been captured."
-  []
+(defn primed? []
   (:primed? @capture-state))
 
-;; ============================================================
-;; Pixel Format Conversion
-;; ============================================================
+(defn using-ffm? []
+  (:use-ffm? @capture-state))
 
-(defn bgra->rgba!
-  "Convert BGRA pixels to RGBA in-place.
-   Metal uses BGRA by default, FFmpeg expects RGBA."
-  [^ByteBuffer pixels width height]
+(defn bgra->rgba! [^ByteBuffer pixels width height]
   (let [num-pixels (* width height)]
     (dotimes [i num-pixels]
       (let [offset (* i 4)
             b (.get pixels (+ offset 0))
-            g (.get pixels (+ offset 1))
-            r (.get pixels (+ offset 2))
-            a (.get pixels (+ offset 3))]
-        ;; Swap B and R
+            r (.get pixels (+ offset 2))]
         (.put pixels (+ offset 0) r)
         (.put pixels (+ offset 2) b)))
     (.rewind pixels)
     pixels))
 
-;; ============================================================
-;; Cleanup
-;; ============================================================
-
-(defn cleanup!
-  "Release all capture resources."
-  []
-  (destroy-buffers!))
+(defn cleanup! []
+  (destroy-buffers!)
+  (try (ffm-call 'cleanup!) (catch Exception _)))

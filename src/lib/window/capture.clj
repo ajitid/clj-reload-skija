@@ -23,6 +23,19 @@
             EncodedImageFormat Data Bitmap]))
 
 ;; ============================================================
+;; Metal Capture Module (optional, loaded if FFM available)
+;; ============================================================
+
+;; Try to load Metal capture module - fails gracefully if FFM not available
+(def ^:private metal-capture-available?
+  (try
+    (require 'lib.window.capture-metal)
+    true
+    (catch Exception e
+      (println "[capture] Metal capture module not available:" (.getMessage e))
+      false)))
+
+;; ============================================================
 ;; PBO State (persists across hot-reloads)
 ;; ============================================================
 
@@ -73,8 +86,8 @@
    This enables the capture hook in the render loop.
    Once enabled, stays enabled (namespace is loaded anyway)."
   []
-  (when-let [flag (resolve 'lib.window.core/capture-active?)]
-    (reset! @flag true)))
+  (when-let [flag-var (resolve 'lib.window.core/capture-active?)]
+    (reset! @flag-var true)))
 
 ;; ============================================================
 ;; PBO Management
@@ -534,15 +547,24 @@
      (println "[capture] WARNING: Cannot take screenshot while recording is in progress")
      (do
        (check-ffmpeg!)
-       ;; Reset primed? to skip stale PBO data on next frame
-       (swap! pbo-state assoc :primed? false)
-       (swap! capture-state assoc
-              :mode :screenshot
-              :screenshot-path path
-              :screenshot-format (or format :png)
-              :screenshot-opts opts)
-       (set-capture-active!)
-       (println "[capture] Screenshot requested:" path)))))
+       ;; Detect backend from window state (stored in app.state.system/window)
+       (let [backend (if-let [window-atom (resolve 'app.state.system/window)]
+                       (or (:backend @(deref window-atom)) :opengl)
+                       :opengl)]
+         ;; Reset primed? to skip stale PBO/Metal buffer data on next frame
+         (swap! pbo-state assoc :primed? false)
+         ;; Reset Metal capture state if using Metal backend
+         (when (= backend :metal)
+           (when-let [metal-state (resolve 'lib.window.capture-metal/capture-state)]
+             (swap! @metal-state assoc :primed? false)))
+         (swap! capture-state assoc
+                :mode :screenshot
+                :backend backend
+                :screenshot-path path
+                :screenshot-format (or format :png)
+                :screenshot-opts opts)
+         (set-capture-active!)
+         (println "[capture] Screenshot requested:" path "(backend:" (name backend) ")"))))))
 
 ;; ============================================================
 ;; Video Recording API
@@ -670,18 +692,23 @@
         (check-ffmpeg!)
         ;; Pre-warm hardware encoder to avoid cold-start frame drops
         (warm-up-encoder!)
-        ;; Just set state - FFmpeg will be spawned on first frame in process-frame!
-        (swap! capture-state assoc
-               :mode :video
-               :recording-path path
-               :recording-fps fps
-               :recording-format format
-               :recording-opts {:width width :height height}
-               :recording-dims nil
-               :recording? false)  ; Not actually recording until FFmpeg starts
-        (set-capture-active!)
-        (println "[capture] Recording requested:" path
-                 "(will start on next frame)")))))
+        ;; Detect backend from window state (stored in app.state.system/window)
+        (let [backend (if-let [window-atom (resolve 'app.state.system/window)]
+                        (or (:backend @(deref window-atom)) :opengl)
+                        :opengl)]
+          ;; Just set state - FFmpeg will be spawned on first frame in process-frame!
+          (swap! capture-state assoc
+                 :mode :video
+                 :backend backend
+                 :recording-path path
+                 :recording-fps fps
+                 :recording-format format
+                 :recording-opts {:width width :height height}
+                 :recording-dims nil
+                 :recording? false)  ; Not actually recording until FFmpeg starts
+          (set-capture-active!)
+          (println "[capture] Recording requested:" path
+                   "(backend:" (name backend) ", will start on next frame)"))))))
 
 (defn stop-recording!
   "Stop video recording."
@@ -741,14 +768,28 @@
    - cmd-buffer: Command buffer used for rendering (to wait on)
    - width, height: Frame dimensions
 
-   This function captures the texture to the current buffer.
-   Call process-frame-metal! afterward to process previous frame's pixels."
+   This function tries FFM async blit first, falls back to synchronous capture
+   if FFM is unavailable. Call process-frame-metal! afterward to process
+   previous frame's pixels."
   [texture cmd-buffer width height]
-  (when-let [capture-fn (resolve 'lib.window.capture-metal/capture-texture!)]
-    (capture-fn texture cmd-buffer width height)
-    ;; Mark primed after first capture
-    (when-let [primed-fn (resolve 'lib.window.capture-metal/mark-primed!)]
-      (primed-fn))))
+  ;; Only capture when there's an active capture mode
+  (when (:mode @capture-state)
+    ;; Try async blit via FFM first (non-blocking GPU copy)
+    (let [async-success? (when-let [async-fn (resolve 'lib.window.capture-metal/issue-async-blit!)]
+                           (async-fn texture width height))]
+      (if async-success?
+        ;; FFM async path succeeded
+        (when-let [primed-fn (resolve 'lib.window.capture-metal/mark-primed!)]
+          (primed-fn))
+        ;; Fallback to synchronous capture
+        (do
+          (println "[capture-metal] FFM async blit failed, trying fallback...")
+          (when-let [capture-fn (resolve 'lib.window.capture-metal/capture-texture!)]
+            (let [result (capture-fn texture cmd-buffer width height)]
+              (if result
+                (when-let [primed-fn (resolve 'lib.window.capture-metal/mark-primed!)]
+                  (primed-fn))
+                (println "[capture-metal] Fallback capture also failed")))))))))
 
 (defn- process-pixels!
   "Process captured pixels (screenshot or video frame).
@@ -793,11 +834,15 @@
     (when mode
       ;; Get previous frame's pixels (if available)
       (when-let [get-prev-fn (resolve 'lib.window.capture-metal/get-previous-frame)]
-        (when-let [pixels (get-prev-fn width height)]
-          ;; Metal uses BGRA format, convert to RGBA for FFmpeg
-          (when-let [convert-fn (resolve 'lib.window.capture-metal/bgra->rgba!)]
-            (convert-fn pixels width height))
-          (process-pixels! pixels width height scale)))
+        (let [pixels (get-prev-fn width height)]
+          (if pixels
+            (do
+              ;; Metal uses BGRA format, convert to RGBA for FFmpeg
+              (when-let [convert-fn (resolve 'lib.window.capture-metal/bgra->rgba!)]
+                (convert-fn pixels width height))
+              (process-pixels! pixels width height scale))
+            ;; No pixels available yet - normal on first frame after capture request
+            nil)))
 
       ;; Flip to other buffer for next frame
       (when-let [flip-fn (resolve 'lib.window.capture-metal/flip-buffer!)]

@@ -276,13 +276,18 @@
 
 (defn create-buffer
   "Create MTLBuffer with shared storage for CPU read access.
-   Returns buffer pointer or 0 on failure."
+   Returns buffer pointer or 0 on failure.
+
+   NOTE: This delegates to metal-ffm because LWJGL JNI doesn't have
+   invokePPJJP (the signature needed for newBufferWithLength:options:)."
   [device size]
   (when (and device (pos? device) (pos? size))
-    (let [sel (get-selector "newBufferWithLength:options:")
-          msg-send (objc-msg-send)]
-      ;; invokePPJJP: ptr(self) ptr(sel) long(size) long(options) -> ptr
-      (JNI/invokePPJJP device sel (long size) (long MTLResourceStorageModeShared) msg-send))))
+    ;; Use FFM implementation - LWJGL JNI doesn't have invokePPJJP
+    (if-let [ffm-create (resolve 'lib.window.metal-ffm/create-buffer)]
+      (ffm-create device size)
+      (do
+        (println "[metal] WARNING: FFM not available for create-buffer")
+        0))))
 
 (defn get-buffer-contents
   "Get CPU-accessible pointer to buffer contents.
@@ -342,40 +347,20 @@
    - bytes-per-row: Row stride in bytes (typically width * 4 for BGRA)
    - width, height: Texture dimensions
 
-   Returns true on success."
+   Returns true on success.
+
+   NOTE: This delegates to metal-ffm because LWJGL JNI doesn't have
+   invokePPPJJJJJJJJV (the signature needed for struct-passing methods)."
   [texture dest-ptr bytes-per-row width height]
   (when (and texture (pos? texture)
              dest-ptr (pos? dest-ptr)
              (pos? bytes-per-row) (pos? width) (pos? height))
-    (let [sel (get-selector "getBytes:bytesPerRow:fromRegion:mipmapLevel:")
-          msg-send (objc-msg-send)]
-      ;; MTLRegion = { MTLOrigin origin; MTLSize size }
-      ;; MTLOrigin = { NSUInteger x, y, z }
-      ;; MTLSize = { NSUInteger width, height, depth }
-      ;; All NSUInteger on 64-bit = 8 bytes each = 48 bytes total for MTLRegion
-      ;;
-      ;; On ARM64 ABI, this struct (>16 bytes) is passed by reference,
-      ;; but objc_msgSend handles the ABI properly when we pass fields inline.
-      ;; Actually for ObjC methods, the struct is passed "by value" which
-      ;; on ARM64 means individual fields in registers and then stack.
-      (try
-        (JNI/invokePPPJJJJJJJJV
-          texture           ; self
-          sel               ; _cmd
-          dest-ptr          ; pixelBytes
-          bytes-per-row     ; bytesPerRow
-          ;; MTLRegion: origin (x,y,z), size (w,h,d)
-          (long 0)          ; origin.x
-          (long 0)          ; origin.y
-          (long 0)          ; origin.z
-          (long width)      ; size.width
-          (long height)     ; size.height
-          (long 1)          ; size.depth
-          (long 0)          ; mipmapLevel
-          msg-send)
-        true
-        (catch Exception _
-          false)))))
+    ;; Use FFM implementation - LWJGL JNI doesn't have the required signature
+    (if-let [ffm-get-bytes (resolve 'lib.window.metal-ffm/get-texture-bytes!)]
+      (ffm-get-bytes texture dest-ptr bytes-per-row width height)
+      (do
+        (println "[metal] WARNING: FFM not available for get-texture-bytes!")
+        false))))
 
 ;; ============================================================
 ;; Command Buffer Status (for polling completion)
