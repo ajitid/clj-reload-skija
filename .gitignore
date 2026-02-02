@@ -7,3 +7,4 @@
 # Build artifacts
 classes/
 native/*.dylib
+.jars/

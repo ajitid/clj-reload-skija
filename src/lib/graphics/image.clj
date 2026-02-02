@@ -379,138 +379,115 @@
    (draw canvas image nil x y opts)))
 
 ;; ============================================================
-;; Batch Drawing (drawTriangles - single draw call)
+;; Batch Drawing (drawAtlas - single draw call)
 ;; ============================================================
-;; High-performance batch rendering using drawTriangles.
+;; High-performance batch rendering using Skia's native drawAtlas.
 ;; Renders N sprites in a SINGLE draw call with one JNI crossing.
 
-(defn- fill-index-buffer!
-  "Pre-fill index buffer for N quads.
-   Pattern per quad: [0,1,2, 2,3,0] (two CCW triangles)."
-  [^shorts indices n]
-  (dotimes [i n]
-    (let [vi (* i 4)   ; vertex base (4 vertices per quad)
-          ii (* i 6)]  ; index base (6 indices per quad)
-      (aset indices ii       (short vi))
-      (aset indices (+ ii 1) (short (+ vi 1)))
-      (aset indices (+ ii 2) (short (+ vi 2)))
-      (aset indices (+ ii 3) (short (+ vi 2)))
-      (aset indices (+ ii 4) (short (+ vi 3)))
-      (aset indices (+ ii 5) (short vi)))))
+(defn- build-atlas-arrays
+  "Build xforms and tex arrays for drawAtlas.
 
-(defn- transform-vertex
-  "Transform a corner point by rotation, scale, and origin.
-   Returns Point at world position."
-  ^Point [cx cy ox oy sx sy cos-r sin-r x y]
-  (let [;; Relative to origin
-        lx (- cx ox)
-        ly (- cy oy)
-        ;; Apply scale
-        slx (* lx sx)
-        sly (* ly sy)
-        ;; Apply rotation
-        rx (- (* slx cos-r) (* sly sin-r))
-        ry (+ (* slx sin-r) (* sly cos-r))]
-    ;; Final position
-    (Point. (float (+ x rx)) (float (+ y ry)))))
+   RSXform format per sprite: [scos, ssin, tx, ty]
+   Tex format per sprite: [left, top, right, bottom]
 
-(defn- build-sprite-geometry
-  "Build position, texcoord, color arrays for all sprites.
-
-   Vertex order per quad (CCW):
-   0=top-left, 1=top-right, 2=bottom-right, 3=bottom-left
-
-   Returns {:positions Point[] :texcoords Point[] :colors int[] :indices short[]}"
+   Returns {:xforms float[] :tex float[] :colors int[] (or nil)}"
   [sprites shared-alpha]
   (let [n (count sprites)
-        positions (make-array Point (* n 4))
-        texcoords (make-array Point (* n 4))
-        colors    (int-array (* n 4))
-        indices   (short-array (* n 6))]
-    ;; Fill indices once
-    (fill-index-buffer! indices n)
+        xforms (float-array (* n 4))
+        tex    (float-array (* n 4))
+        ;; Only allocate colors if any sprite has tint or alpha != 1
+        needs-colors? (or (< shared-alpha 1.0)
+                          (some (fn [sprite]
+                                  (let [opts (if (= 4 (count sprite)) (sprite 3) {})]
+                                    (or (:tint opts)
+                                        (and (:alpha opts) (< (:alpha opts) 1.0)))))
+                                sprites))
+        colors (when needs-colors? (int-array n))]
 
-    ;; Process each sprite
-    (dotimes [sprite-idx n]
-      (let [sprite (nth sprites sprite-idx)
+    (dotimes [i n]
+      (let [sprite (nth sprites i)
             [quad dest-x dest-y opts] (if (= 3 (count sprite))
                                         [(sprite 0) (sprite 1) (sprite 2) {}]
                                         sprite)
-            ;; Extract quad dimensions
+            ;; Extract quad
             qx (float (:x quad))
             qy (float (:y quad))
             w  (float (:w quad))
             h  (float (:h quad))
-            x  (float dest-x)
-            y  (float dest-y)
 
-            ;; Parse transform options - color is [r g b a] floats
+            ;; Parse transform options
             {:keys [rotation scale origin flip-x flip-y alpha tint]
              :or {rotation 0.0 scale 1.0 origin [0 0] alpha 1.0 tint [1 1 1 1]}} (or opts {})
             [ox oy] origin
             [sx sy] (if (vector? scale) scale [scale scale])
             sx (float (if flip-x (- sx) sx))
             sy (float (if flip-y (- sy) sy))
-            rotation (float rotation)
 
-            ;; Precompute trig
+            ;; Compute RSXform components
+            ;; scos = scale * cos(rotation), ssin = scale * sin(rotation)
             cos-r (Math/cos rotation)
             sin-r (Math/sin rotation)
+            ;; For non-uniform scale, we need to handle flip via tex coords
+            ;; RSXform only supports uniform scale, so we use abs(sx) as scale
+            ;; and flip via tex coordinates
+            uniform-scale (Math/abs (float sx))
+            scos (float (* uniform-scale cos-r))
+            ssin (float (* uniform-scale sin-r))
 
-            ;; Combined alpha
-            final-alpha (float (* shared-alpha alpha))
+            ;; Compute translation that accounts for anchor point
+            ;; RSXform tx/ty is where the sprite origin lands
+            ;; We need: position + rotation around anchor
+            ax (float ox)
+            ay (float oy)
+            ;; The transform places the top-left at (tx, ty) after rotation/scale
+            ;; To rotate around anchor, we compute:
+            ;; tx = destX - (ax * scos - ay * ssin)
+            ;; ty = destY - (ax * ssin + ay * scos)
+            tx (float (- dest-x (- (* ax scos) (* ay ssin))))
+            ty (float (- dest-y (+ (* ax ssin) (* ay scos))))
 
-            ;; Build ARGB color with alpha from [r g b a] floats
-            [tr tg tb ta] tint
-            a (int (* 255.0 final-alpha (or ta 1.0)))
-            r (int (* 255.0 tr))
-            g (int (* 255.0 tg))
-            b (int (* 255.0 tb))
-            argb (unchecked-int (bit-or (bit-shift-left a 24)
-                                         (bit-shift-left r 16)
-                                         (bit-shift-left g 8)
-                                         b))
+            ;; Array offsets
+            xi (* i 4)
+            ti (* i 4)
 
-            ;; Texture coords (apply flip)
-            tx0 (float (if flip-x (+ qx w) qx))
-            tx1 (float (if flip-x qx (+ qx w)))
-            ty0 (float (if flip-y (+ qy h) qy))
-            ty1 (float (if flip-y qy (+ qy h)))
+            ;; Tex coords (apply flip)
+            left   (float (if flip-x (+ qx w) qx))
+            right  (float (if flip-x qx (+ qx w)))
+            top    (float (if flip-y (+ qy h) qy))
+            bottom (float (if flip-y qy (+ qy h)))]
 
-            ;; Vertex base index
-            vi (* sprite-idx 4)
+        ;; Write RSXform
+        (aset xforms xi       scos)
+        (aset xforms (+ xi 1) ssin)
+        (aset xforms (+ xi 2) tx)
+        (aset xforms (+ xi 3) ty)
 
-            ;; Transform 4 corners: [0,0], [w,0], [w,h], [0,h]
-            p0 (transform-vertex 0 0 ox oy sx sy cos-r sin-r x y)
-            p1 (transform-vertex w 0 ox oy sx sy cos-r sin-r x y)
-            p2 (transform-vertex w h ox oy sx sy cos-r sin-r x y)
-            p3 (transform-vertex 0 h ox oy sx sy cos-r sin-r x y)]
+        ;; Write tex rect
+        (aset tex ti       left)
+        (aset tex (+ ti 1) top)
+        (aset tex (+ ti 2) right)
+        (aset tex (+ ti 3) bottom)
 
-        ;; Write positions
-        (aset positions vi       p0)
-        (aset positions (+ vi 1) p1)
-        (aset positions (+ vi 2) p2)
-        (aset positions (+ vi 3) p3)
+        ;; Write color if needed
+        (when colors
+          (let [[tr tg tb ta] tint
+                final-alpha (float (* shared-alpha alpha))
+                a (int (* 255.0 final-alpha (or ta 1.0)))
+                r (int (* 255.0 tr))
+                g (int (* 255.0 tg))
+                b (int (* 255.0 tb))
+                argb (unchecked-int (bit-or (bit-shift-left a 24)
+                                            (bit-shift-left r 16)
+                                            (bit-shift-left g 8)
+                                            b))]
+            (aset colors i argb)))))
 
-        ;; Write texcoords (pixel coordinates for shader)
-        (aset texcoords vi       (Point. tx0 ty0))
-        (aset texcoords (+ vi 1) (Point. tx1 ty0))
-        (aset texcoords (+ vi 2) (Point. tx1 ty1))
-        (aset texcoords (+ vi 3) (Point. tx0 ty1))
-
-        ;; Write colors (same for all 4 vertices)
-        (aset colors vi       argb)
-        (aset colors (+ vi 1) argb)
-        (aset colors (+ vi 2) argb)
-        (aset colors (+ vi 3) argb)))
-
-    {:positions positions
-     :texcoords texcoords
-     :colors    colors
-     :indices   indices}))
+    {:xforms xforms
+     :tex    tex
+     :colors colors}))
 
 (defn draw-batch
-  "Draw N sprites in ONE draw call using drawTriangles.
+  "Draw N sprites in ONE draw call using Skia's native drawAtlas.
 
    This is dramatically more efficient than drawing sprites individually,
    especially for particle systems, tilemaps, and bullet hell games.
@@ -547,225 +524,29 @@
   ([^Canvas canvas ^Image image sprites opts]
    (when (seq sprites)
      (let [sprites-vec (vec sprites)
+           n (count sprites-vec)
            {:keys [alpha filter] :or {alpha 1.0 filter :linear}} opts
 
-           ;; Build geometry
-           {:keys [positions texcoords colors indices]}
-           (build-sprite-geometry sprites-vec (float alpha))
+           ;; Build atlas arrays
+           {:keys [^floats xforms ^floats tex ^ints colors]}
+           (build-atlas-arrays sprites-vec (float alpha))
 
-           ;; Create image shader with sampling mode
+           ;; Sampling mode
            sampling (case filter
                       :nearest SamplingMode/DEFAULT
                       :linear SamplingMode/LINEAR
-                      SamplingMode/LINEAR)
-           shader (.makeShader image FilterTileMode/CLAMP FilterTileMode/CLAMP
-                               sampling nil)]
+                      SamplingMode/LINEAR)]
 
-       (gfx/with-paint [paint {:shader shader}]
-         (.drawTriangles canvas
-                         positions
-                         colors
-                         texcoords
-                         indices
-                         BlendMode/MODULATE
-                         paint))))))
-
-;; ============================================================
-;; Zero-Allocation Batch Mode
-;; ============================================================
-
-(defrecord BatchBuffers [positions texcoords ^ints colors ^shorts indices ^int max-sprites])
-
-(defn make-batch-buffers
-  "Pre-allocate reusable buffers for zero-allocation batch drawing.
-
-   Use this for particle systems and other scenarios where you need
-   maximum performance with no GC pressure.
-
-   Args:
-     max-sprites - maximum number of sprites these buffers can hold
-
-   Returns:
-     BatchBuffers record with pre-allocated arrays
-
-   Example:
-     (def buffers (make-batch-buffers 1000))
-
-     ;; In render loop:
-     (draw-batch! canvas sheet buffers sprites)"
-  [max-sprites]
-  (let [n max-sprites
-        ;; Pre-allocate Point arrays (typed arrays for JNI)
-        positions (make-array Point (* n 4))
-        texcoords (make-array Point (* n 4))
-        colors    (int-array (* n 4))
-        indices   (short-array (* n 6))]
-    ;; Initialize all Point slots (so we can reuse them)
-    (dotimes [i (* n 4)]
-      (aset ^"[Lio.github.humbleui.types.Point;" positions i (Point. 0 0))
-      (aset ^"[Lio.github.humbleui.types.Point;" texcoords i (Point. 0 0)))
-    ;; Pre-fill index buffer (never changes)
-    (fill-index-buffer! indices n)
-    (->BatchBuffers positions texcoords colors indices n)))
-
-(defn- update-sprite-geometry!
-  "Update pre-allocated buffers with sprite geometry.
-   Mutates Point objects in-place for zero allocation.
-   Returns number of sprites processed."
-  [^"[Lio.github.humbleui.types.Point;" positions
-   ^"[Lio.github.humbleui.types.Point;" texcoords
-   ^ints colors
-   sprites shared-alpha]
-  (let [n (count sprites)]
-    (dotimes [sprite-idx n]
-      (let [sprite (nth sprites sprite-idx)
-            [quad x y opts] (if (= 3 (count sprite))
-                              [(sprite 0) (sprite 1) (sprite 2) {}]
-                              sprite)
-            qx (float (:x quad))
-            qy (float (:y quad))
-            w  (float (:w quad))
-            h  (float (:h quad))
-
-            ;; Parse transform options - tint is [r g b a] floats
-            {:keys [rotation scale origin flip-x flip-y alpha tint]
-             :or {rotation 0.0 scale 1.0 origin [0 0] alpha 1.0 tint [1 1 1 1]}} (or opts {})
-            [ox oy] origin
-            [sx sy] (if (vector? scale) scale [scale scale])
-            sx (float (if flip-x (- sx) sx))
-            sy (float (if flip-y (- sy) sy))
-            rotation (float rotation)
-
-            ;; Precompute trig
-            cos-r (Math/cos rotation)
-            sin-r (Math/sin rotation)
-
-            ;; Combined alpha
-            final-alpha (float (* shared-alpha alpha))
-
-            ;; Build ARGB color with alpha from [r g b a] floats
-            [tr tg tb ta] tint
-            a (int (* 255.0 final-alpha (or ta 1.0)))
-            r (int (* 255.0 tr))
-            g (int (* 255.0 tg))
-            b (int (* 255.0 tb))
-            argb (unchecked-int (bit-or (bit-shift-left a 24)
-                                         (bit-shift-left r 16)
-                                         (bit-shift-left g 8)
-                                         b))
-
-            ;; Texture coords (apply flip)
-            tx0 (float (if flip-x (+ qx w) qx))
-            tx1 (float (if flip-x qx (+ qx w)))
-            ty0 (float (if flip-y (+ qy h) qy))
-            ty1 (float (if flip-y qy (+ qy h)))
-
-            ;; Vertex base index
-            vi (* sprite-idx 4)]
-
-        ;; Transform 4 corners and update Point objects in-place
-        ;; Corner 0: top-left [0,0]
-        (let [lx (- 0 ox) ly (- 0 oy)
-              slx (* lx sx) sly (* ly sy)
-              rx (- (* slx cos-r) (* sly sin-r))
-              ry (+ (* slx sin-r) (* sly cos-r))]
-          (aset positions vi (Point. (float (+ x rx)) (float (+ y ry)))))
-
-        ;; Corner 1: top-right [w,0]
-        (let [lx (- w ox) ly (- 0 oy)
-              slx (* lx sx) sly (* ly sy)
-              rx (- (* slx cos-r) (* sly sin-r))
-              ry (+ (* slx sin-r) (* sly cos-r))]
-          (aset positions (+ vi 1) (Point. (float (+ x rx)) (float (+ y ry)))))
-
-        ;; Corner 2: bottom-right [w,h]
-        (let [lx (- w ox) ly (- h oy)
-              slx (* lx sx) sly (* ly sy)
-              rx (- (* slx cos-r) (* sly sin-r))
-              ry (+ (* slx sin-r) (* sly cos-r))]
-          (aset positions (+ vi 2) (Point. (float (+ x rx)) (float (+ y ry)))))
-
-        ;; Corner 3: bottom-left [0,h]
-        (let [lx (- 0 ox) ly (- h oy)
-              slx (* lx sx) sly (* ly sy)
-              rx (- (* slx cos-r) (* sly sin-r))
-              ry (+ (* slx sin-r) (* sly cos-r))]
-          (aset positions (+ vi 3) (Point. (float (+ x rx)) (float (+ y ry)))))
-
-        ;; Update texcoords
-        (aset texcoords vi       (Point. tx0 ty0))
-        (aset texcoords (+ vi 1) (Point. tx1 ty0))
-        (aset texcoords (+ vi 2) (Point. tx1 ty1))
-        (aset texcoords (+ vi 3) (Point. tx0 ty1))
-
-        ;; Update colors
-        (aset colors vi       argb)
-        (aset colors (+ vi 1) argb)
-        (aset colors (+ vi 2) argb)
-        (aset colors (+ vi 3) argb)))
-    n))
-
-(defn draw-batch!
-  "Render using pre-allocated buffers for zero GC pressure.
-
-   This is the fastest path for high-frequency rendering like particle
-   systems. The buffers are reused each frame, eliminating allocations.
-
-   Args:
-     canvas  - drawing canvas
-     image   - source Image (sprite sheet)
-     buffers - BatchBuffers from make-batch-buffers
-     sprites - sequence of sprite specs (max buffers.max-sprites)
-     opts    - optional shared options (same as draw-batch)
-
-   Example:
-     (def buffers (make-batch-buffers 1000))
-
-     (defn render [canvas]
-       (draw-batch! canvas sheet buffers particles))"
-  ([^Canvas canvas ^Image image ^BatchBuffers buffers sprites]
-   (draw-batch! canvas image buffers sprites {}))
-  ([^Canvas canvas ^Image image ^BatchBuffers buffers sprites opts]
-   (when (seq sprites)
-     (let [sprites-vec (vec sprites)
-           n (min (count sprites-vec) (:max-sprites buffers))
-           {:keys [alpha filter] :or {alpha 1.0 filter :linear}} opts
-
-           ;; Reuse pre-allocated buffers
-           {:keys [positions texcoords ^ints colors ^shorts indices]} buffers
-
-           ;; Build geometry into existing buffers
-           actual-count (update-sprite-geometry! positions texcoords colors
-                                                  (take n sprites-vec) (float alpha))]
-
-       (when (> actual-count 0)
-         ;; Create trimmed arrays for the actual count
-         ;; (drawTriangles needs exact-size arrays)
-         (let [used-positions (make-array Point (* actual-count 4))
-               used-texcoords (make-array Point (* actual-count 4))
-               used-colors    (int-array (* actual-count 4))
-               used-indices   (short-array (* actual-count 6))
-               ;; Create shader
-               sampling (case filter
-                          :nearest SamplingMode/DEFAULT
-                          :linear SamplingMode/LINEAR
-                          SamplingMode/LINEAR)
-               shader (.makeShader image FilterTileMode/CLAMP FilterTileMode/CLAMP
-                                   sampling nil)]
-           ;; Copy only the used portion
-           (System/arraycopy positions 0 used-positions 0 (* actual-count 4))
-           (System/arraycopy texcoords 0 used-texcoords 0 (* actual-count 4))
-           (System/arraycopy colors 0 used-colors 0 (* actual-count 4))
-           (System/arraycopy indices 0 used-indices 0 (* actual-count 6))
-
-           (gfx/with-paint [paint {:shader shader}]
-             (.drawTriangles canvas
-                             used-positions
-                             used-colors
-                             used-texcoords
-                             used-indices
-                             BlendMode/MODULATE
-                             paint))))))))
+       (.drawAtlas canvas
+                   image
+                   xforms
+                   tex
+                   colors
+                   n
+                   BlendMode/MODULATE
+                   sampling
+                   nil    ; no cull rect
+                   nil))))) ; no paint
 
 ;; ============================================================
 ;; Animation Helpers

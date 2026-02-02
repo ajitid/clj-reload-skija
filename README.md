@@ -309,10 +309,35 @@ The event listener uses `requiring-resolve` for ALL callbacks, allowing every na
 
 ## Custom Skija Build
 
-This project uses a custom Skija build with additional features for GPU-accelerated video playback:
+This project uses a custom Skija build with additional features:
 - `Image.adoptMetalTextureFrom()` - Adopt Metal textures as Skia Images
 - `Image.convertYUVToRGBA()` - GPU-based NV12→BGRA conversion via Metal compute shader
 - `Image.releaseMetalTexture()` - Release Metal textures
+- `Canvas.drawAtlas()` - Native sprite batch rendering
+
+### Quick Start (Recommended)
+
+The easiest way to build Skija is using the included build script:
+
+```bash
+# 1. Clone Skija as a sibling directory
+cd ..
+git clone https://github.com/HumbleUI/Skija.git
+
+# 2. Run the build script (from this project)
+cd clj-reload-skija
+bb scripts/build-skija.clj
+```
+
+The script will:
+- Check prerequisites (JAVA_HOME, Python 3, Skia binaries)
+- Build Skija native library and Java classes
+- Package JARs and copy them to `.jars/`
+
+After building, you can run:
+```bash
+clj -A:dev:macos-arm64  # or your platform
+```
 
 ### Why a Custom Build?
 
@@ -320,13 +345,20 @@ The standard Skija release doesn't support adopting CVMetalTexture-backed textur
 
 ### Skija Source Location
 
-Clone Skija and place it alongside this project (or anywhere you prefer):
+Skija should be placed as a sibling directory:
 
-```bash
-git clone https://github.com/HumbleUI/Skija.git
+```
+parent/
+├── clj-reload-skija/    # This project
+└── Skija/               # Skija source
 ```
 
-The examples below assume Skija is at `/path/to/Skija` - adjust paths accordingly.
+If you haven't cloned it yet:
+
+```bash
+cd ..
+git clone https://github.com/HumbleUI/Skija.git
+```
 
 ### Build Requirements
 
@@ -433,34 +465,29 @@ python script/package_platform.py
 
 Output: `skija-windows-x64-0.0.0-SNAPSHOT.jar`
 
-### Referencing Local Skija in deps.edn
+### Local JARs Location
 
-After building, update `deps.edn` to use your local JARs:
+When using `bb scripts/build-skija.clj`, JARs are automatically copied to `.jars/`:
+
+```
+.jars/
+├── skija-shared.jar        # Java classes (all platforms)
+└── skija-macos-arm64.jar   # Native library (platform-specific)
+```
+
+The `deps.edn` is already configured to use these paths:
 
 ```clojure
 {:deps
- {;; Skija shared Java classes (local build)
-  io.github.humbleui/skija-shared
-  {:local/root "/path/to/Skija-master/target/skija-shared-0.0.0-SNAPSHOT.jar"}}
+ {io.github.humbleui/skija-shared {:local/root ".jars/skija-shared.jar"}}
 
  :aliases
  {:macos-arm64
   {:extra-deps
-   {io.github.humbleui/skija-macos-arm64
-    {:local/root "/path/to/Skija-master/target/skija-macos-arm64-0.0.0-SNAPSHOT.jar"}}}
-
-  :macos-x64
-  {:extra-deps
-   {io.github.humbleui/skija-macos-x64
-    {:local/root "/path/to/Skija-master/target/skija-macos-x64-0.0.0-SNAPSHOT.jar"}}}
-
-  :windows
-  {:extra-deps
-   {io.github.humbleui/skija-windows-x64
-    {:local/root "C:/path/to/Skija-master/target/skija-windows-x64-0.0.0-SNAPSHOT.jar"}}}}}
+   {io.github.humbleui/skija-macos-arm64 {:local/root ".jars/skija-macos-arm64.jar"}}}}}
 ```
 
-**Important:** Use absolute paths. On Windows, use forward slashes in paths.
+The `.jars/` directory is gitignored - each developer builds locally.
 
 ### Reverting to Official Skija
 
