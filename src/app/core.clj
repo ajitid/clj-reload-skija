@@ -138,21 +138,35 @@
 ;; Game loop infrastructure
 ;; ============================================================
 
+(defn- call-example-cleanup!
+  "Call the active example's cleanup function.
+   Returns its return value (truthy = abort quit)."
+  []
+  (when-let [example-fn (requiring-resolve 'app.shell.core/example-fn)]
+    (when-let [cleanup-fn (example-fn "cleanup")]
+      (cleanup-fn))))
+
+(defn- do-sys-cleanup!
+  "System-level cleanup: stop recording, set running? false, close window."
+  [win]
+  (when @sys/recording?
+    (when-let [stop-recording! (requiring-resolve 'lib.window.capture/stop-recording!)]
+      (stop-recording!))
+    (reset! sys/recording? false))
+  (reset! sys/running? false)
+  (window/close! win))
+
 (defn create-event-handler
   "Create an event handler for the window."
   [win]
   (let [last-time (atom (System/nanoTime))]
     (fn [event]
       (cond
-        ;; Close event
+        ;; Close event - like Love2D, cleanup can return true to abort
         (instance? EventClose event)
-        (do
-          (when @sys/recording?
-            (when-let [stop-recording! (requiring-resolve 'lib.window.capture/stop-recording!)]
-              (stop-recording!))
-            (reset! sys/recording? false))
-          (reset! sys/running? false)
-          (window/close! win))
+        (let [abort? (call-example-cleanup!)]
+          (when-not abort?
+            (do-sys-cleanup! win)))
 
         ;; Frame event
         (instance? EventFrameSkija event)
@@ -363,7 +377,8 @@
    4. Apply post-creation properties (bordered, fullscreen, etc.)
    5. Initialize shell (time source)
    6. Initialize example (calls init)
-   7. Start event loop"
+   7. Register shutdown hook for Ctrl+C handling
+   8. Start event loop"
   [example-key]
   (reset! sys/running? true)
 
@@ -415,7 +430,14 @@
       (when-let [init-example-fn (requiring-resolve 'app.shell.core/init-example!)]
         (init-example-fn))
 
-      ;; 7. Start event loop
+      ;; 7. Register shutdown hook for Ctrl+C / SIGTERM
+      (.addShutdownHook (Runtime/getRuntime)
+                        (Thread. (fn []
+                                   (when @sys/running?
+                                     (call-example-cleanup!)
+                                     (do-sys-cleanup! win)))))
+
+      ;; 8. Start event loop
       (window/set-event-handler! win (create-event-handler win))
       (window/request-frame! win)
       (window/run! win))))

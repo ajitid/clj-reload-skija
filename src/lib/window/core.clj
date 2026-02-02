@@ -68,15 +68,15 @@
         (when-not (layer-metal/init! handle)
           (throw (ex-info "Failed to initialize Metal layer" {:backend :metal})))
         (map->Window
-          {:handle           handle
-           :gl-context       0      ; No GL context for Metal
-           :event-handler    (atom nil)
-           :frame-requested? (atom false)
-           :running?         (atom false)
-           :width            (atom w)
-           :height           (atom h)
-           :scale            (atom scale)
-           :backend          :metal}))
+         {:handle           handle
+          :gl-context       0      ; No GL context for Metal
+          :event-handler    (atom nil)
+          :frame-requested? (atom false)
+          :running?         (atom false)
+          :width            (atom w)
+          :height           (atom h)
+          :scale            (atom scale)
+          :backend          :metal}))
 
       ;; Default: OpenGL
       (do
@@ -86,15 +86,15 @@
               scale (sdl/get-window-scale handle)
               [w h] (sdl/get-window-size handle)]
           (map->Window
-            {:handle           handle
-             :gl-context       gl-ctx
-             :event-handler    (atom nil)
-             :frame-requested? (atom false)
-             :running?         (atom false)
-             :width            (atom w)
-             :height           (atom h)
-             :scale            (atom scale)
-             :backend          :opengl}))))))
+           {:handle           handle
+            :gl-context       gl-ctx
+            :event-handler    (atom nil)
+            :frame-requested? (atom false)
+            :running?         (atom false)
+            :width            (atom w)
+            :height           (atom h)
+            :scale            (atom scale)
+            :backend          :opengl}))))))
 
 (defn set-event-handler!
   "Set the event handler function.
@@ -197,22 +197,22 @@
         last-render-size (atom [0 0])
         ;; Set up live resize rendering callback
         _ (sdl/set-resize-render-fn!
-            (fn []
-              ;; Get current pixel size
-              (let [[pw ph] (sdl/get-window-size-in-pixels handle)]
-                ;; Only render if size actually changed
-                (when (not= @last-render-size [pw ph])
-                  (reset! last-render-size [pw ph])
-                  ;; Update logical dimensions and dispatch resize event
-                  (let [[w h] (sdl/get-window-size handle)
-                        scale (sdl/get-window-scale handle)]
-                    (reset! (:width window) w)
-                    (reset! (:height window) h)
-                    (reset! (:scale window) scale)
-                    ;; Dispatch resize event so app state gets updated
-                    (dispatch-event! window (e/->EventResize w h scale)))
-                  ;; Render at new size
-                  (render-frame! window)))))
+           (fn []
+             ;; Get current pixel size
+             (let [[pw ph] (sdl/get-window-size-in-pixels handle)]
+               ;; Only render if size actually changed
+               (when (not= @last-render-size [pw ph])
+                 (reset! last-render-size [pw ph])
+                 ;; Update logical dimensions and dispatch resize event
+                 (let [[w h] (sdl/get-window-size handle)
+                       scale (sdl/get-window-scale handle)]
+                   (reset! (:width window) w)
+                   (reset! (:height window) h)
+                   (reset! (:scale window) scale)
+                   ;; Dispatch resize event so app state gets updated
+                   (dispatch-event! window (e/->EventResize w h scale)))
+                 ;; Render at new size
+                 (render-frame! window)))))
         ;; Add event watcher for live resize
         watcher (sdl/add-event-watcher!)]
     (try
@@ -223,9 +223,15 @@
                                        @(:height window))]
           (doseq [ev events]
             (cond
-              ;; Close event
+              ;; Close event - dispatch to handler (handler decides whether to close).
+              ;; Like Love2D's love.quit, handler can abort by returning truthy.
+              ;; 
+              ;; SDL can send both SDL_QUIT and WINDOW_CLOSE in the same poll batch.
+              ;; The first dispatch calls do-sys-cleanup! which sets running? to false,
+              ;; so the guard prevents dispatching a second close on an already-closed window.
               (instance? EventClose ev)
-              (close! window)
+              (when @(:running? window)
+                (dispatch-event! window ev))
 
               ;; Resize event - update dimensions and invalidate surface
               (instance? EventResize ev)
