@@ -66,7 +66,7 @@
 ;; ============================================================
 
 (defn get-scroll
-  "Get current scroll offset for container."
+  "Get current scroll offset for container as {:x :y} map."
   [id]
   (if-let [state (get @scroll-states id)]
     {:x @(:scroll-x state) :y @(:scroll-y state)}

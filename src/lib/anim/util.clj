@@ -1,5 +1,6 @@
 (ns lib.anim.util
-  "Shared utilities for animation library.")
+  "Shared utilities for animation library."
+  (:require [fastmath.vector :as v]))
 
 ;; ============================================================
 ;; Loop Iteration Helpers
@@ -26,12 +27,12 @@
 (defn combine-2d-states
   "Combine two 1D animation states into a 2D state.
 
-   Vector fields: :value, :velocity become [x y]
+   Vector fields: :value, :velocity become Vec2
    Boolean AND fields: :actual-at-rest?, :at-rest?, :done?
    Pass-through from x: :in-delay?, :iteration, :direction, :phase"
   [state-x state-y]
-  {:value [(:value state-x) (:value state-y)]
-   :velocity [(:velocity state-x) (:velocity state-y)]
+  {:value (v/vec2 (:value state-x) (:value state-y))
+   :velocity (v/vec2 (:velocity state-x) (:velocity state-y))
    :actual-at-rest? (and (:actual-at-rest? state-x) (:actual-at-rest? state-y))
    :at-rest? (and (:at-rest? state-x) (:at-rest? state-y))
    :in-delay? (:in-delay? state-x)

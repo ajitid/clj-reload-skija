@@ -4,7 +4,8 @@
    All functions in this namespace are pure - data in, data out.
    No atom access, no side effects."
   (:require [lib.gesture.recognizers :as recognizers]
-            [lib.gesture.hit-test :as hit-test]))
+            [lib.gesture.hit-test :as hit-test]
+            [fastmath.vector :as v]))
 
 (defn active-recognizers
   "Filter to recognizers that can still win."
@@ -111,10 +112,11 @@
    Returns {:arena new-arena :effects [...]} or nil if no target hit."
   [arena px py ctx targets time]
   (let [blocked (:blocked-layers arena)
-        hits (hit-test/hit-test px py ctx targets blocked)]
+        hits (hit-test/hit-test px py ctx targets blocked)
+        pos (v/vec2 px py)]
     (when (seq hits)
       (let [target (:target (first hits))
-            recs (recognizers/create-recognizers-for-target target [px py] time)]
+            recs (recognizers/create-recognizers-for-target target pos time)]
         (when (seq recs)
           (let [new-arena (assoc arena
                                  :pointer-id 0
@@ -124,7 +126,7 @@
                 ;; Emit immediate pointer-down effect for the hit target
                 pointer-down-effect {:type :deliver-pointer-down
                                      :target target
-                                     :pos [px py]
+                                     :pos pos
                                      :time time}
                 {:keys [arena effects]} (maybe-resolve new-arena)]
             {:arena arena
@@ -132,6 +134,7 @@
 
 (defn arena-on-pointer-move
   "Pure: process pointer move event.
+   pos should be Vec2.
 
    Returns {:arena new-arena :effects [...]}."
   [arena pos time]
@@ -163,6 +166,7 @@
 
 (defn arena-on-pointer-up
   "Pure: process pointer up event.
+   pos should be Vec2.
 
    Returns {:arena new-arena :effects [...]}."
   [arena pos time]

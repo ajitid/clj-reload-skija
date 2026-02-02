@@ -2,11 +2,11 @@
   "2D decay animation - wraps 1D decay for X/Y coordinates.
 
    Usage:
-     (def d (decay-2d {:from [400 300] :velocity [1000 -500]}))
-     (decay-2d-now d)  ;; => {:value [580.0 200.0] :velocity [135.0 -67.5] :at-rest? false ...}
+     (def d (decay-2d {:from (v/vec2 400 300) :velocity (v/vec2 1000 -500)}))
+     (decay-2d-now d)  ;; => {:value Vec2[580.0 200.0] :velocity Vec2[135.0 -67.5] :at-rest? false ...}
 
    With options:
-     (decay-2d {:from [400 300] :velocity [1000 -500]
+     (decay-2d {:from (v/vec2 400 300) :velocity (v/vec2 1000 -500)
                 :delay 0.5
                 :loop 3
                 :alternate true})
@@ -16,7 +16,8 @@
      (decay-2d-restart d)
      (decay-2d-reverse d)"
   (:require [lib.anim.decay :as decay]
-            [lib.anim.util :as util]))
+            [lib.anim.util :as util]
+            [fastmath.vector :as v]))
 
 ;; ============================================================
 ;; Public API
@@ -24,11 +25,11 @@
 
 (defn decay-2d
   "Create a 2D decay animation with the given config.
-   :from and :velocity should be [x y] vectors.
+   :from and :velocity should be Vec2.
 
    Options:
-     :from      - starting position [x y] (default [0 0])
-     :velocity  - initial velocity [vx vy] (default [0 0])
+     :from      - starting position Vec2 (default (v/vec2 0 0))
+     :velocity  - initial velocity Vec2 (default (v/vec2 0 0))
      :rate      - deceleration rate, keyword or number (default :normal)
      :delay     - seconds to wait before starting (default 0)
      :loop      - false (no loop), true (infinite), or number of iterations
@@ -37,12 +38,12 @@
      :reversed  - start with negative velocity (default false)
 
    Example:
-     (decay-2d {:from [400 300] :velocity [1000 -500]})
-     (decay-2d {:from [400 300] :velocity [1000 -500] :rate :fast})
-     (decay-2d {:from [400 300] :velocity [1000 -500] :loop 3 :alternate true})"
+     (decay-2d {:from (v/vec2 400 300) :velocity (v/vec2 1000 -500)})
+     (decay-2d {:from (v/vec2 400 300) :velocity (v/vec2 1000 -500) :rate :fast})
+     (decay-2d {:from (v/vec2 400 300) :velocity (v/vec2 1000 -500) :loop 3 :alternate true})"
   [{:keys [from velocity rate delay loop loop-delay alternate reversed start-time]
-    :or {from [0.0 0.0]
-         velocity [0.0 0.0]}}]
+    :or {from (v/vec2 0.0 0.0)
+         velocity (v/vec2 0.0 0.0)}}]
   (let [[fx fy] from
         [vx vy] velocity
         base-config (cond-> {}
@@ -58,14 +59,14 @@
 
 (defn decay-2d-at
   "Get 2D decay state at a specific time. Pure function.
-   Returns {:value [x y] :velocity [vx vy] :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
+   Returns {:value Vec2 :velocity Vec2 :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
   [{:keys [decay-x decay-y]} t]
   (util/combine-2d-states (decay/decay-at decay-x t)
                           (decay/decay-at decay-y t)))
 
 (defn decay-2d-now
   "Get 2D decay state at current time.
-   Returns {:value [x y] :velocity [vx vy] :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
+   Returns {:value Vec2 :velocity Vec2 :actual-at-rest? :at-rest? :in-delay? :iteration :direction :phase :done?}"
   [{:keys [decay-x decay-y]}]
   (util/combine-2d-states (decay/decay-now decay-x)
                           (decay/decay-now decay-y)))

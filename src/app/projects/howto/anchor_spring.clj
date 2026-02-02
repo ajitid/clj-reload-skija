@@ -2,17 +2,19 @@
   "Anchor spring demo - drag a ball, release to spring back to center.
 
    Demonstrates:
-   - Spring physics animation (lib.anim.spring)
+   - 2D spring physics animation (lib.anim.spring-2d)
    - Animation registry (lib.anim.registry)
    - Velocity tracking from drag for natural momentum
+   - Vec2 usage for position/velocity state
    - Gesture handling (drag recognizer)"
   (:require [lib.color.core :as color]
             [lib.color.open-color :as oc]
             [app.state.system :as sys]
             [lib.flex.core :as flex]
             [lib.graphics.shapes :as shapes]
-            [lib.anim.spring :as spring]
-            [lib.text.core :as text])
+            [lib.anim.spring-2d :as spring-2d]
+            [lib.text.core :as text]
+            [fastmath.vector :as v])
   (:import [io.github.humbleui.skija Canvas]))
 
 ;; ============================================================
@@ -28,35 +30,29 @@
 ;; State (persists across hot-reloads)
 ;; ============================================================
 
-;; Ball position
-(defonce circle-x (atom 400.0))
-(defonce circle-y (atom 300.0))
+;; Ball position (Vec2)
+(defonce circle-pos (atom (v/vec2 400.0 300.0)))
 
-;; Anchor position (window center)
-(defonce anchor-x (atom 400.0))
-(defonce anchor-y (atom 300.0))
+;; Anchor position (window center, Vec2)
+(defonce anchor-pos (atom (v/vec2 400.0 300.0)))
 
 ;; Drag state
 (flex/defsource dragging? false)
-(defonce drag-offset-x (atom 0.0))
-(defonce drag-offset-y (atom 0.0))
+(defonce drag-offset (atom (v/vec2 0.0 0.0)))
 
-;; Velocity tracking
-(defonce velocity-x (atom 0.0))
-(defonce velocity-y (atom 0.0))
+;; Velocity tracking (Vec2)
+(defonce velocity (atom (v/vec2 0.0 0.0)))
 (defonce position-history (atom []))
 
-;; Spring refs for debug display (stored on drag-end, queryable after registry removes them)
-(defonce spring-x-ref (atom nil))
-(defonce spring-y-ref (atom nil))
+;; Spring ref for debug display (stored on drag-end, queryable after registry removes it)
+(defonce spring-ref (atom nil))
 
 ;; ============================================================
 ;; Gesture handlers
 ;; ============================================================
 
 (defn circle-bounds-fn [_ctx]
-  (let [cx @circle-x
-        cy @circle-y
+  (let [[cx cy] @circle-pos
         r circle-radius]
     [(- cx r) (- cy r) (* 2 r) (* 2 r)]))
 
@@ -64,54 +60,44 @@
   {:on-drag-start
    (fn [event]
      (let [mx (get-in event [:pointer :x])
-           my (get-in event [:pointer :y])]
+           my (get-in event [:pointer :y])
+           pos @circle-pos
+           [px py] pos]
        (dragging? true)
-       ;; Cancel any running spring animations
+       ;; Cancel any running spring animation
        (when-let [cancel! (requiring-resolve 'lib.anim.registry/cancel!)]
-         (cancel! :anchor-spring-x)
-         (cancel! :anchor-spring-y))
-       ;; Clear spring refs for debug display
-       (reset! spring-x-ref nil)
-       (reset! spring-y-ref nil)
+         (cancel! :anchor-spring))
+       ;; Clear spring ref for debug display
+       (reset! spring-ref nil)
        ;; Record offset so ball doesn't jump to cursor
-       (reset! drag-offset-x (- @circle-x mx))
-       (reset! drag-offset-y (- @circle-y my))
+       (reset! drag-offset (v/vec2 (- px mx) (- py my)))
        ;; Initialize position history for velocity tracking
        (reset! position-history
-               [{:x @circle-x :y @circle-y :t @sys/game-time}])
-       (reset! velocity-x 0.0)
-       (reset! velocity-y 0.0)))
+               [{:pos pos :t @sys/game-time}])
+       (reset! velocity (v/vec2 0.0 0.0))))
 
    :on-drag
    (fn [event]
      (let [mx (get-in event [:pointer :x])
-           my (get-in event [:pointer :y])]
-       (reset! circle-x (+ mx @drag-offset-x))
-       (reset! circle-y (+ my @drag-offset-y))))
+           my (get-in event [:pointer :y])
+           [ox oy] @drag-offset]
+       (reset! circle-pos (v/vec2 (+ mx ox) (+ my oy)))))
 
    :on-drag-end
    (fn [_]
      (dragging? false)
-     ;; Launch spring animations back to anchor with tracked velocity
-     (when-let [spring-fn (requiring-resolve 'lib.anim.spring/spring)]
-       (when-let [animate! (requiring-resolve 'lib.anim.registry/animate!)]
-         (let [cx @circle-x
-               cy @circle-y
-               ax @anchor-x
-               ay @anchor-y
-               vx @velocity-x
-               vy @velocity-y
-               sx (spring-fn {:from cx :to ax
-                               :velocity vx
-                               :stiffness 180 :damping 12})
-               sy (spring-fn {:from cy :to ay
-                               :velocity vy
-                               :stiffness 180 :damping 12})]
-           ;; Store spring refs for debug display
-           (reset! spring-x-ref sx)
-           (reset! spring-y-ref sy)
-           (animate! :anchor-spring-x sx {:target circle-x})
-           (animate! :anchor-spring-y sy {:target circle-y})))))})
+     ;; Launch 2D spring animation back to anchor with tracked velocity
+     (when-let [animate! (requiring-resolve 'lib.anim.registry/animate!)]
+       (let [pos @circle-pos
+             anchor @anchor-pos
+             vel @velocity
+             s (spring-2d/spring-2d {:from pos
+                                      :to anchor
+                                      :velocity vel
+                                      :stiffness 180 :damping 12})]
+         ;; Store spring ref for debug display
+         (reset! spring-ref s)
+         (animate! :anchor-spring s {:target circle-pos}))))})
 
 (defn register-gestures! []
   (when-let [register! (requiring-resolve 'lib.gesture.api/register-target!)]
@@ -130,21 +116,19 @@
 ;; ============================================================
 
 (defn draw-anchor [^Canvas canvas]
-  (let [ax @anchor-x
-        ay @anchor-y]
+  (let [[ax ay] @anchor-pos]
     (shapes/circle canvas ax ay circle-radius
                    {:color anchor-color
                     :mode :stroke
                     :stroke-width 2.0})))
 
 (defn draw-connection-line [^Canvas canvas]
-  (let [cx @circle-x
-        cy @circle-y
-        ax @anchor-x
-        ay @anchor-y
-        dx (- cx ax)
-        dy (- cy ay)
-        dist (Math/sqrt (+ (* dx dx) (* dy dy)))]
+  (let [pos @circle-pos
+        anchor @anchor-pos
+        [cx cy] pos
+        [ax ay] anchor
+        diff (v/sub pos anchor)
+        dist (v/mag diff)]
     ;; Only draw line when ball is away from anchor
     (when (> dist 2.0)
       (shapes/line canvas ax ay cx cy
@@ -152,39 +136,33 @@
                     :stroke-width 1.5}))))
 
 (defn draw-ball [^Canvas canvas]
-  (let [cx @circle-x
-        cy @circle-y]
+  (let [[cx cy] @circle-pos]
     (shapes/circle canvas cx cy circle-radius
                    {:color circle-color})))
 
 (defn draw-debug [^Canvas canvas width height]
-  (let [sx @spring-x-ref
-        sy @spring-y-ref
+  (let [s @spring-ref
         font-size 13
         line-h 18
         pad 12
         base-y (- height pad)]
-    (if (or sx sy)
-      (let [state-x (when sx (spring/spring-now sx))
-            state-y (when sy (spring/spring-now sy))
-            ;; Format a line for one axis
-            fmt (fn [label state]
-                  (when state
-                    (format "%s: at-rest=%-5s  vel=%7.1f  dist=%6.1f  phase=%s"
-                            label
-                            (str (:at-rest? state))
-                            (double (:velocity state))
-                            (double (Math/abs (- (:value state) (if (= label "X") @anchor-x @anchor-y))))
-                            (name (:phase state)))))
-            line-y (fmt "Y" state-y)
-            line-x (fmt "X" state-x)]
-        (when line-y
-          (text/text canvas line-y pad base-y
-                     {:size font-size :color (color/with-alpha color/white 0.6) :features "tnum"}))
-        (when line-x
-          (text/text canvas line-x pad (- base-y line-h)
-                     {:size font-size :color (color/with-alpha color/white 0.6) :features "tnum"})))
-      ;; No springs active
+    (if s
+      (let [state (spring-2d/spring-2d-now s)
+            anchor @anchor-pos
+            ;; state has :value as Vec2, :velocity as Vec2
+            pos (:value state)
+            vel (:velocity state)
+            diff (v/sub pos anchor)
+            dist (v/mag diff)
+            speed (v/mag vel)
+            line (format "at-rest=%-5s  speed=%7.1f  dist=%6.1f  phase=%s"
+                         (str (:at-rest? state))
+                         (double speed)
+                         (double dist)
+                         (name (:phase state)))]
+        (text/text canvas line pad base-y
+                   {:size font-size :color (color/with-alpha color/white 0.6) :features "tnum"}))
+      ;; No spring active
       (text/text canvas "No spring active (drag and release ball)"
                  pad base-y
                  {:size font-size :color (color/with-alpha color/white 0.33)}))))
@@ -204,11 +182,10 @@
   ;; Track velocity during drag using position history
   (when @dragging?
     (let [history @position-history
-          current-x @circle-x
-          current-y @circle-y
+          current-pos @circle-pos
           current-t @sys/game-time
           new-history (-> history
-                          (conj {:x current-x :y current-y :t current-t})
+                          (conj {:pos current-pos :t current-t})
                           (->> (take-last 3))
                           vec)]
       (reset! position-history new-history)
@@ -217,14 +194,13 @@
               newest (last new-history)
               dt-hist (- (:t newest) (:t oldest))]
           (when (pos? dt-hist)
-            (reset! velocity-x (/ (- (:x newest) (:x oldest)) dt-hist))
-            (reset! velocity-y (/ (- (:y newest) (:y oldest)) dt-hist))))))))
+            (let [diff (v/sub (:pos newest) (:pos oldest))]
+              (reset! velocity (v/div diff dt-hist)))))))))
 
 (defn draw [^Canvas canvas width height]
   "Called every frame for rendering."
   ;; Update anchor to window center
-  (reset! anchor-x (/ width 2.0))
-  (reset! anchor-y (/ height 2.0))
+  (reset! anchor-pos (v/vec2 (/ width 2.0) (/ height 2.0)))
   ;; Draw
   (draw-anchor canvas)
   (draw-connection-line canvas)
@@ -235,7 +211,6 @@
 (defn cleanup []
   "Called when switching away from this example."
   (println "Anchor spring demo cleanup")
-  ;; Cancel any running spring animations
+  ;; Cancel any running spring animation
   (when-let [cancel! (requiring-resolve 'lib.anim.registry/cancel!)]
-    (cancel! :anchor-spring-x)
-    (cancel! :anchor-spring-y)))
+    (cancel! :anchor-spring)))

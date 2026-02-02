@@ -9,7 +9,8 @@
             [lib.gesture.arena :as arena]
             [lib.gesture.hit-test :as hit-test]
             [lib.layout.scroll :as scroll]
-            [lib.window.events :as e]))
+            [lib.window.events :as e]
+            [fastmath.vector :as v]))
 
 ;; -----------------------------------------------------------------------------
 ;; Target Registration
@@ -64,7 +65,8 @@
 ;; -----------------------------------------------------------------------------
 
 (defn- make-gesture-event
-  "Create a gesture event map to pass to handlers."
+  "Create a gesture event map to pass to handlers.
+   Converts Vec2 positions from recognizer to {:x :y} maps for API stability."
   [recognizer event-type time]
   (let [{:keys [target-id target start-pos current-pos start-time]} recognizer
         [sx sy] start-pos
@@ -90,7 +92,8 @@
     nil))
 
 (defn- make-pointer-event
-  "Create a pointer event map for pointer-down/up handlers."
+  "Create a pointer event map for pointer-down/up handlers.
+   Converts Vec2 position to {:x :y} map for API stability."
   [target pos time]
   (let [[px py] pos]
     {:type :pointer
@@ -150,7 +153,7 @@
   "Handle pointer move event. Thin shell over pure arena-on-pointer-move."
   [px py time]
   (let [{:keys [arena effects]}
-        (arena/arena-on-pointer-move @state/arena [px py] time)]
+        (arena/arena-on-pointer-move @state/arena (v/vec2 px py) time)]
     (reset! state/arena arena)
     (execute-effects! effects time)))
 
@@ -158,7 +161,7 @@
   "Handle pointer up event. Thin shell over pure arena-on-pointer-up."
   [px py time]
   (let [{:keys [arena effects]}
-        (arena/arena-on-pointer-up @state/arena [px py] time)]
+        (arena/arena-on-pointer-up @state/arena (v/vec2 px py) time)]
     (reset! state/arena arena)
     (execute-effects! effects time)))
 

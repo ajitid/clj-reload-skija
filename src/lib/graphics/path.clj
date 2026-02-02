@@ -35,6 +35,7 @@
    (def region (path/make-hit-region my-path))
    (path/region-contains? region x y)
    ```"
+  (:require [fastmath.vector :as v])
   (:import [io.github.humbleui.skija Path PathBuilder PathOp PathMeasure Matrix33 Region
                                      Paint PaintMode PaintStrokeCap PaintStrokeJoin]
            [io.github.humbleui.types Rect RRect IRect]))
@@ -71,6 +72,7 @@
    Points can be:
      - Flat list: [x1 y1 x2 y2 ...]
      - Nested pairs: [[x1 y1] [x2 y2] ...]
+     - Vec2 list: [(v/vec2 x1 y1) (v/vec2 x2 y2) ...]
 
    Args:
      points  - list of coordinates
@@ -78,10 +80,17 @@
   ([points]
    (polygon points true))
   ([points closed?]
-   (let [flat (if (vector? (first points)) (flatten points) points)
-         pairs (partition 2 flat)
+   (let [first-pt (first points)
+         ;; Check if points are nested/Vec2 (seqable with 2 elements) or flat
+         ;; Both Clojure vectors and fastmath Vec2 are sequential
+         nested? (and (some? first-pt)
+                      (sequential? first-pt))
+         pairs (if nested?
+                 points
+                 (partition 2 points))
          pb (PathBuilder.)]
      (when (seq pairs)
+       ;; Both Vec2 and Clojure vectors support destructuring
        (let [[x y] (first pairs)]
          (.moveTo pb (float x) (float y)))
        (doseq [[x y] (rest pairs)]

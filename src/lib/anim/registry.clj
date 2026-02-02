@@ -10,7 +10,9 @@
      (cancel-scope! :card-5)  ;; cancels all with scope :card-5
      (tick-all!)              ;; call once per frame"
   (:require [lib.anim.spring :as spring]
+            [lib.anim.spring-2d :as spring-2d]
             [lib.anim.decay :as decay]
+            [lib.anim.decay-2d :as decay-2d]
             [lib.anim.tween :as tween]))
 
 ;; ============================================================
@@ -31,21 +33,27 @@
 
 (defn- get-type [anim]
   (cond
+    (:spring-x anim) :spring-2d  ;; 2D spring has {:spring-x :spring-y}
+    (:decay-x anim) :decay-2d    ;; 2D decay has {:decay-x :decay-y}
     (:stiffness anim) :spring
-    (:rate anim) :decay        ;; decay uses :rate for deceleration
+    (:rate anim) :decay          ;; decay uses :rate for deceleration
     (:duration anim) :tween
     :else (throw (ex-info "Unknown animation type" {:anim anim}))))
 
 (defn- now-fn [type]
   (case type
     :spring spring/spring-now
+    :spring-2d spring-2d/spring-2d-now
     :decay decay/decay-now
+    :decay-2d decay-2d/decay-2d-now
     :tween tween/tween-now))
 
 (defn- update-fn [type]
   (case type
     :spring spring/spring-update
+    :spring-2d spring-2d/spring-2d-update
     :decay decay/decay-update
+    :decay-2d decay-2d/decay-2d-update
     :tween tween/tween-update))
 
 (defn- reloading? []

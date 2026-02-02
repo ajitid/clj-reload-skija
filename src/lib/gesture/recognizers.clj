@@ -1,13 +1,8 @@
 (ns lib.gesture.recognizers
   "Gesture recognizer implementations.
    Each recognizer tracks pointer events and decides if its gesture occurred."
-  (:require [lib.gesture.state :as state]))
-
-(defn distance
-  "Euclidean distance between two points."
-  [[x1 y1] [x2 y2]]
-  (Math/sqrt (+ (Math/pow (- x2 x1) 2)
-                (Math/pow (- y2 y1) 2))))
+  (:require [lib.gesture.state :as state]
+            [fastmath.vector :as v]))
 
 (defn now-ms
   "Current time in milliseconds."
@@ -74,7 +69,7 @@
   [recognizer pos time]
   (let [{:keys [start-pos config state]} recognizer
         {:keys [min-distance]} config
-        dist (distance start-pos pos)]
+        dist (v/dist start-pos pos)]
     (-> recognizer
         (assoc :current-pos pos)
         (cond->
@@ -112,7 +107,7 @@
   [recognizer pos time]
   (let [{:keys [start-pos start-time config]} recognizer
         {:keys [max-distance max-duration]} config
-        dist (distance start-pos pos)
+        dist (v/dist start-pos pos)
         elapsed (- time start-time)
         ;; nil max-duration = no limit (iOS behavior)
         duration-exceeded? (and max-duration (> elapsed max-duration))]
@@ -128,7 +123,7 @@
   [recognizer pos time]
   (let [{:keys [start-pos start-time config state]} recognizer
         {:keys [max-distance max-duration]} config
-        dist (distance start-pos pos)
+        dist (v/dist start-pos pos)
         elapsed (- time start-time)
         ;; nil max-duration = no limit (iOS behavior)
         within-duration? (or (nil? max-duration) (<= elapsed max-duration))]
@@ -167,7 +162,7 @@
   [recognizer pos _time]
   (let [{:keys [start-pos config state]} recognizer
         {:keys [max-distance]} config
-        dist (distance start-pos pos)]
+        dist (v/dist start-pos pos)]
     (-> recognizer
         (assoc :current-pos pos)
         (cond->

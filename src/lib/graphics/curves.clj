@@ -8,13 +8,14 @@
    ```clojure
    (require '[lib.graphics.curves :as curves])
 
-   ;; All take [[x y] ...] (min 2 points), return Skija Path
+   ;; All take [[x y] ...] or [Vec2 ...] (min 2 points), return Skija Path
    (curves/natural-cubic-spline points)         ;; C2 continuous
    (curves/hobby-curve points)                   ;; G1, METAFONT-style
    (curves/hobby-curve points {:omega 0.0})      ;; with endpoint curl
    (curves/catmull-rom points)                   ;; C1 centripetal
    (curves/catmull-rom points {:alpha 0.5})      ;; with options
    ```"
+  (:require [fastmath.vector :as v])
   (:import [io.github.humbleui.skija PathBuilder]))
 
 ;; ============================================================
@@ -22,13 +23,6 @@
 ;; ============================================================
 
 (def ^:private EPSILON 1.0e-6)
-
-(defn- dist
-  "Euclidean distance between two points."
-  ^double [[^double x1 ^double y1] [^double x2 ^double y2]]
-  (let [dx (- x2 x1)
-        dy (- y2 y1)]
-    (Math/sqrt (+ (* dx dx) (* dy dy)))))
 
 (defn- build-path
   "Build a Skija Path from a sequence of cubic Bezier segments.
@@ -364,9 +358,9 @@
              ;; Extended point array: [ghost, p0, p1, ..., pn-1, ghost]
              ext (vec (concat [ghost-start] points [ghost-end]))
 
-             ;; Knot parameterization: t[i+1] = t[i] + dist(p[i], p[i+1])^alpha
-             knot-t (fn ^double [[^double x1 ^double y1] [^double x2 ^double y2]]
-                      (let [d (dist [x1 y1] [x2 y2])]
+             ;; Knot parameterization: t[i+1] = t[i] + v/dist(p[i], p[i+1])^alpha
+             knot-t (fn ^double [p1 p2]
+                      (let [d (v/dist p1 p2)]
                         (Math/pow (max d EPSILON) (double alpha))))
 
              ;; For each segment (p[i] to p[i+1]), use surrounding 4 points
