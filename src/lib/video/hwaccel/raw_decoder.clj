@@ -187,7 +187,7 @@
       "avformat_open_input")
     (let [fmt-ctx (AVFormatContext. (.get fmt-ctx-ptr 0))]
       (check-error!
-        (avformat/avformat_find_stream_info fmt-ctx (PointerPointer. nil))
+        (avformat/avformat_find_stream_info fmt-ctx nil)
         "avformat_find_stream_info")
       fmt-ctx)))
 
@@ -251,7 +251,7 @@
 
       ;; Open codec
       (check-error!
-        (avcodec/avcodec_open2 codec-ctx codec (PointerPointer. nil))
+        (avcodec/avcodec_open2 codec-ctx codec nil)
         "avcodec_open2")
 
       (debug-log "Codec opened successfully, pix_fmt:" (.pix_fmt codec-ctx))
