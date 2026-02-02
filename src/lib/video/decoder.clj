@@ -171,7 +171,9 @@
   (advance-frame!* [this dt]
     (when (= @state-atom :playing)
       ;; Get timing source - audio position if syncing, otherwise advance by dt
-      (let [audio-pos (when (and use-audio-sync? audio-track)
+      ;; Don't use audio position while seeking (it may be stale)
+      (let [audio-pos (when (and use-audio-sync? audio-track
+                                 (not (audio/seeking? audio-track)))
                         (audio/tell audio-track))
             ;; Use audio position if available, otherwise advance by dt
             effective-pts (if audio-pos
