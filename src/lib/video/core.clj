@@ -4,17 +4,22 @@
    Provides GPU-accelerated video playback with Skia effects:
    - (from-file \"video.mp4\") -> Source
    - (from-file \"video.mp4\" {:hw-accel? true}) -> Try hardware decode
+   - (from-file \"video.mp4\" {:zero-copy? true}) -> Try zero-copy decode
    - (play! source), (stop! source), (pause! source)
    - (seek! source time-seconds)
    - (current-frame source direct-context) -> Skia Image
    - (close! source)
 
-   Hardware Acceleration:
-   - macOS: VideoToolbox (H.264, HEVC) - automatic
-   - Linux Intel/AMD: VAAPI
-   - Linux NVIDIA: NVDEC/CUDA
-   - Windows: D3D11VA
-   - Automatic fallback to software decode if hwaccel unavailable
+   Decoder Modes (in order of efficiency):
+   1. Zero-copy HW decode: GPU -> GL texture (no CPU involvement)
+      - macOS: VideoToolbox -> IOSurface -> CGLTexImageIOSurface2D
+      - Linux Intel/AMD: VAAPI -> DMA-BUF -> EGLImage
+      - Linux NVIDIA: NVDEC -> CUDA -> GL interop (GPU-to-GPU copy)
+      - Windows: D3D11VA -> WGL_NV_DX_interop
+   2. HW decode + CPU copy: GPU decode -> CPU -> GL texture
+      (still faster than software for decode-heavy workloads)
+   3. Software decode: CPU decode -> CPU -> GL texture
+      (fallback when no hardware available)
 
    Designed for real-time rendering:
    - Call (advance-frame! source dt) each frame to update playback
@@ -58,18 +63,36 @@
 ;; Loading
 ;; ============================================================
 
+(defn- try-create-zero-copy-decoder
+  "Try to create a zero-copy decoder. Returns result map or nil on failure."
+  [path opts]
+  (try
+    (let [create-fn (requiring-resolve 'lib.video.hwaccel.zero-copy/create-zero-copy-decoder)]
+      (create-fn path opts))
+    (catch Exception e
+      (when (:debug? opts)
+        (println "[video] Zero-copy decoder failed:" (.getMessage e)))
+      nil)))
+
 (defn from-file
   "Load video source from file (MP4/WebM/MOV/etc).
 
    Options:
-     :hw-accel? - Try hardware acceleration (default true)
-                  - macOS: VideoToolbox
-                  - Linux Intel/AMD: VAAPI
-                  - Linux NVIDIA: NVDEC/CUDA
-                  - Windows: D3D11VA
-                  Falls back to software decode if unavailable.
-     :decoder   - Force specific decoder (:videotoolbox, :vaapi, :nvdec-cuda, :d3d11va, :software)
-     :debug?    - Enable debug logging for decoder
+     :zero-copy? - Try zero-copy decoding (default true)
+                   Decoded frames stay GPU-resident, no CPU involvement.
+                   Falls back to hw-accel if zero-copy unavailable.
+     :hw-accel?  - Try hardware acceleration (default true)
+                   GPU decodes but transfers to CPU before texture upload.
+                   Falls back to software decode if unavailable.
+     :decoder    - Force specific decoder (:videotoolbox, :vaapi, :nvdec-cuda, :d3d11va, :software)
+     :debug?     - Enable debug logging for decoder
+     :audio?     - Enable audio playback (default true)
+     :audio-sync? - Sync video to audio clock (default true)
+
+   Decoder selection cascade:
+   1. If :zero-copy? true (default): Try zero-copy HW decode
+   2. If zero-copy fails or :zero-copy? false: Try HW decode with CPU copy
+   3. If HW decode fails or :hw-accel? false: Fall back to software decode
 
    Returns a Source handle. Resources are automatically released when
    the Source is garbage collected.
@@ -85,21 +108,39 @@
    (from-file path {}))
   ([path opts]
    (let [id (swap! state/source-counter inc)
-         ;; Default to hardware acceleration
+         ;; Options with defaults
+         try-zero-copy? (get opts :zero-copy? true)
          use-hwaccel? (get opts :hw-accel? true)
-         ;; Create decoder - try hwaccel if requested
-         {:keys [decoder hwaccel-type fallback?]}
-         (if use-hwaccel?
-           (hwdecoder/create-hwaccel-decoder path opts)
+
+         ;; Try decoder cascade: zero-copy -> hwaccel -> software
+         {:keys [decoder hwaccel-type fallback? zero-copy?]}
+         (or
+           ;; 1. Try zero-copy if enabled
+           (when try-zero-copy?
+             (try-create-zero-copy-decoder path opts))
+
+           ;; 2. Try hwaccel with CPU copy
+           (when use-hwaccel?
+             (try
+               (hwdecoder/create-hwaccel-decoder path opts)
+               (catch Exception e
+                 (when (:debug? opts)
+                   (println "[video] HW decoder failed:" (.getMessage e)))
+                 nil)))
+
+           ;; 3. Software fallback
            {:decoder (decoder/create-software-decoder path opts)
             :hwaccel-type nil
-            :fallback? false})
+            :fallback? true
+            :zero-copy? false})
+
          source (->Source id hwaccel-type)]
      ;; Store decoder implementation
      (swap! state/sources assoc id decoder)
      ;; Store metadata
      (swap! state/source-meta assoc id {:hwaccel-type hwaccel-type
                                          :fallback? fallback?
+                                         :zero-copy? (boolean zero-copy?)
                                          :path path})
      ;; Register automatic cleanup when Source is GC'd
      (.register cleaner source
@@ -249,15 +290,27 @@
 
 (defn decoder-info
   "Get detailed decoder information for a source.
-   Returns {:hwaccel-type :fallback? :path}."
+   Returns {:hwaccel-type :fallback? :zero-copy? :path}."
   [source]
   (get-source-meta source))
+
+(defn zero-copy?
+  "Check if this source is using zero-copy decoding.
+   Zero-copy means decoded frames stay GPU-resident."
+  [source]
+  (:zero-copy? (get-source-meta source)))
 
 (defn system-info
   "Get system hardware acceleration capabilities.
    Returns {:platform :arch :gpu-vendor :decoder :available}."
   []
   (detect/decoder-info))
+
+(defn zero-copy-info
+  "Get detailed zero-copy capability information for current system.
+   Returns {:platform :gpu-vendor :decoder :zero-copy-available :requirements :checks}."
+  []
+  (detect/zero-copy-info))
 
 ;; ============================================================
 ;; Audio Control

@@ -9,10 +9,11 @@
    The zero-copy path avoids GPU->CPU->GPU copies, keeping the decoded
    frame in GPU memory throughout.
 
-   NOTE: This requires accessing the hardware frame data from FFmpeg,
-   which JavaCV abstracts away. For full zero-copy, we need raw FFmpeg API.
-   This module provides the infrastructure; full integration is WIP."
-  (:require [lib.video.hwaccel.detect :as detect])
+   The key function for the zero-copy decoder is `bind-hw-frame-to-texture!`
+   which takes the raw hardware frame pointer (CVPixelBufferRef from
+   AVFrame.data[3]) and binds it directly to a GL texture."
+  (:require [lib.video.hwaccel.detect :as detect]
+            [lib.video.hwaccel.hw-protocol :as hw-proto])
   (:import [com.sun.jna Library Native Pointer NativeLong]
            [com.sun.jna.ptr PointerByReference IntByReference]
            [org.lwjgl.opengl GL11]))
@@ -222,6 +223,107 @@
     (let [fmt (.CVPixelBufferGetPixelFormatType CoreVideo cv-pixel-buffer)]
       {:format-type fmt
        :format-name (pixel-format-name fmt)})))
+
+;; ============================================================
+;; Debug Logging
+;; ============================================================
+
+(defonce ^:private debug-enabled (atom false))
+
+(defn enable-debug!
+  "Enable debug logging for VideoToolbox."
+  []
+  (reset! debug-enabled true))
+
+(defn- debug-log
+  "Log message if debug is enabled."
+  [& args]
+  (when @debug-enabled
+    (apply println "[videotoolbox]" args)))
+
+;; ============================================================
+;; Zero-Copy Frame Binding (called by zero_copy.clj)
+;; ============================================================
+
+(defn bind-hw-frame-to-texture!
+  "Bind a hardware frame to an OpenGL texture (zero-copy).
+
+   hw-data-ptr: Pointer from AVFrame.data[3] - this is a CVPixelBufferRef
+   texture-info: Map with :texture-id, :texture-type, :width, :height
+
+   This is the main entry point called by the zero-copy decoder.
+   It extracts the IOSurface from the CVPixelBuffer and binds it
+   directly to the GL texture using CGLTexImageIOSurface2D.
+
+   Returns true on success, false on failure."
+  [^org.bytedeco.javacpp.Pointer hw-data-ptr texture-info]
+  (when (and (available?) hw-data-ptr (not (.isNull hw-data-ptr)))
+    (let [{:keys [texture-id texture-type width height]} texture-info]
+      (debug-log "Binding hw frame to texture" texture-id
+                 "type:" texture-type "dims:" width "x" height)
+
+      ;; The hw-data-ptr is a CVPixelBufferRef pointer
+      ;; Convert JavaCPP Pointer to JNA Pointer for our native calls
+      (let [hw-address (.address hw-data-ptr)
+            cv-pixel-buffer (when (pos? hw-address)
+                              (Pointer. hw-address))]
+
+        (when cv-pixel-buffer
+          ;; Get IOSurface from CVPixelBuffer
+          (let [io-surface (get-iosurface-from-cvpixelbuffer cv-pixel-buffer)]
+            (if (and io-surface (not (.equals io-surface Pointer/NULL)))
+              (do
+                (debug-log "Got IOSurface, dimensions:"
+                           (get-iosurface-dimensions io-surface))
+                ;; Bind IOSurface to texture
+                (let [success? (bind-iosurface-to-texture!
+                                 texture-id io-surface width height)]
+                  (debug-log "IOSurface bind result:" success?)
+                  success?))
+              (do
+                (debug-log "Failed to get IOSurface from CVPixelBuffer")
+                false))))))))
+
+;; ============================================================
+;; HardwareFrame Implementation
+;; ============================================================
+
+(defrecord VideoToolboxFrame [cv-pixel-buffer io-surface width height released?]
+  hw-proto/HardwareFrame
+
+  (bind-to-texture! [_frame texture-info]
+    (when (and io-surface (not @released?))
+      (bind-iosurface-to-texture!
+        (:texture-id texture-info)
+        io-surface
+        width
+        height)))
+
+  (get-dimensions [_frame]
+    [width height])
+
+  (get-pixel-format [_frame]
+    (if cv-pixel-buffer
+      (let [{:keys [format-name]} (get-cvpixelbuffer-format cv-pixel-buffer)]
+        (keyword (clojure.string/lower-case (first (clojure.string/split format-name #" ")))))
+      :unknown))
+
+  (release! [_frame]
+    (reset! released? true)
+    ;; CVPixelBuffer is managed by FFmpeg/AVFrame, we don't release it
+    nil))
+
+(defn create-vt-frame
+  "Create a VideoToolboxFrame from a CVPixelBuffer pointer.
+
+   The cv-pixel-buffer-ptr should be the value from AVFrame.data[3]
+   when using VideoToolbox hardware decoding."
+  [^Pointer cv-pixel-buffer-ptr]
+  (when (and cv-pixel-buffer-ptr (not (.equals cv-pixel-buffer-ptr Pointer/NULL)))
+    (let [io-surface (get-iosurface-from-cvpixelbuffer cv-pixel-buffer-ptr)
+          [w h] (get-iosurface-dimensions io-surface)]
+      (when (and io-surface w h)
+        (->VideoToolboxFrame cv-pixel-buffer-ptr io-surface w h (atom false))))))
 
 ;; ============================================================
 ;; Integration Notes

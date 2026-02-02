@@ -223,6 +223,7 @@
       (println (format "  Duration: %s" (format-time (video/duration source))))
       (println (format "  FPS: %.2f" (double (video/fps source))))
       (println (format "  Decoder: %s" (if hwaccel (name hwaccel) "software")))
+      (println (format "  Zero-copy: %s" (if (:zero-copy? info) "yes (GPU-resident frames)" "no")))
       (println (format "  Audio: %s" (if has-audio "yes (A/V sync enabled)" "no")))
       (when (:fallback? info)
         (println "  (Fell back from hardware to software)")))

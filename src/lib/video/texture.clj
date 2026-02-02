@@ -1,6 +1,9 @@
 (ns lib.video.texture
   "OpenGL texture management for video frames.
-   Handles CPU→GPU upload and Skia Image wrapping."
+   Handles CPU→GPU upload and Skia Image wrapping.
+
+   Supports both GL_TEXTURE_2D (standard) and GL_TEXTURE_RECTANGLE
+   (used for macOS IOSurface zero-copy path)."
   (:import [org.lwjgl.opengl GL11 GL12]
            [io.github.humbleui.skija ColorType Image SurfaceOrigin]
            [java.nio ByteBuffer]))
@@ -8,6 +11,9 @@
 ;; GL format constants
 (def ^:private GL_RGBA8 0x8058)
 (def ^:private GL_UNPACK_ROW_LENGTH 0x0CF2)
+(def ^:private GL_TEXTURE_RECTANGLE 0x84F5)
+(def ^:private GL_BGRA 0x80E1)
+(def ^:private GL_UNSIGNED_INT_8_8_8_8_REV 0x8367)
 
 (defn create-texture
   "Create an OpenGL texture suitable for video frames.
@@ -99,6 +105,82 @@
     GL_RGBA8             ; internal format
     SurfaceOrigin/TOP_LEFT  ; Video frames are top-down
     ColorType/RGBA_8888))
+
+;; ============================================================
+;; Rectangle Texture Support (for macOS IOSurface zero-copy)
+;; ============================================================
+
+(defn create-rectangle-texture
+  "Create an OpenGL rectangle texture (GL_TEXTURE_RECTANGLE).
+
+   Used for macOS IOSurface zero-copy path where CGLTexImageIOSurface2D
+   binds the IOSurface directly to a rectangle texture.
+
+   Rectangle textures use pixel coordinates (0..width, 0..height)
+   instead of normalized coordinates (0..1).
+
+   Returns texture ID (int)."
+  [width height]
+  (let [tex-id (GL11/glGenTextures)]
+    (GL11/glBindTexture GL_TEXTURE_RECTANGLE tex-id)
+    ;; Set texture parameters
+    (GL11/glTexParameteri GL_TEXTURE_RECTANGLE GL11/GL_TEXTURE_MIN_FILTER GL11/GL_LINEAR)
+    (GL11/glTexParameteri GL_TEXTURE_RECTANGLE GL11/GL_TEXTURE_MAG_FILTER GL11/GL_LINEAR)
+    (GL11/glTexParameteri GL_TEXTURE_RECTANGLE GL11/GL_TEXTURE_WRAP_S GL11/GL_CLAMP)
+    (GL11/glTexParameteri GL_TEXTURE_RECTANGLE GL11/GL_TEXTURE_WRAP_T GL11/GL_CLAMP)
+    (GL11/glBindTexture GL_TEXTURE_RECTANGLE 0)
+    tex-id))
+
+(defn delete-rectangle-texture!
+  "Delete a rectangle texture."
+  [texture-id]
+  (when (and texture-id (pos? texture-id))
+    (GL11/glDeleteTextures texture-id)))
+
+(defn wrap-rectangle-texture-as-skia-image
+  "Wrap a GL_TEXTURE_RECTANGLE as a Skia Image.
+
+   direct-context: Skia DirectContext (from lib.window.layer/context)
+   texture-id: OpenGL texture ID (GL_TEXTURE_RECTANGLE)
+   width, height: Texture dimensions
+
+   Returns a Skia Image that can be drawn on canvas.
+   Note: The returned Image does NOT own the texture - caller manages lifecycle."
+  [direct-context texture-id width height]
+  (GL11/glFlush)
+  (Image/adoptGLTextureFrom
+    direct-context
+    (int texture-id)
+    GL_TEXTURE_RECTANGLE
+    (int width)
+    (int height)
+    GL_RGBA8
+    SurfaceOrigin/TOP_LEFT
+    ColorType/RGBA_8888))
+
+(defn wrap-texture-as-skia-image-generic
+  "Wrap any GL texture as a Skia Image, supporting both 2D and rectangle.
+
+   direct-context: Skia DirectContext
+   texture-id: OpenGL texture ID
+   texture-type: :texture-2d or :texture-rectangle
+   width, height: Texture dimensions
+
+   Returns a Skia Image."
+  [direct-context texture-id texture-type width height]
+  (GL11/glFlush)
+  (let [gl-target (if (= texture-type :texture-rectangle)
+                    GL_TEXTURE_RECTANGLE
+                    GL11/GL_TEXTURE_2D)]
+    (Image/adoptGLTextureFrom
+      direct-context
+      (int texture-id)
+      gl-target
+      (int width)
+      (int height)
+      GL_RGBA8
+      SurfaceOrigin/TOP_LEFT
+      ColorType/RGBA_8888)))
 
 ;; Texture pool for reusing textures across frames
 (defonce ^:private texture-pool (atom {}))
