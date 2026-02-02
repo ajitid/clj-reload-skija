@@ -8,6 +8,9 @@
   ;; Types - core classes shared by Skija
   io.github.humbleui/types {:mvn/version "0.2.0"}
 
+  ;; Skija shared Java classes (local build with adoptMetalTextureFrom)
+  io.github.humbleui/skija-shared {:local/root "/Users/as186073/Downloads/Skija-master/target/skija-shared-0.0.0-SNAPSHOT.jar"}
+
   ;; Color - color space conversions (OKLCH, etc.)
   clojure2d/clojure2d {:mvn/version "1.4.5"}
 
@@ -34,7 +37,8 @@
  {;; Platform-specific Skija + LWJGL natives
   :macos-arm64
   {:extra-deps
-   {io.github.humbleui/skija-macos-arm64 {:mvn/version "0.143.5" :exclusions [io.github.humbleui/types]}
+   {;; Local Skija build with adoptMetalTextureFrom for zero-copy Metal video
+    io.github.humbleui/skija-macos-arm64 {:local/root "/Users/as186073/Downloads/Skija-master/target/skija-macos-arm64-0.0.0-SNAPSHOT.jar"}
     org.lwjgl/lwjgl$natives-macos-arm64 {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-sdl$natives-macos-arm64 {:mvn/version "3.4.0"}
     org.lwjgl/lwjgl-opengl$natives-macos-arm64 {:mvn/version "3.4.0"}

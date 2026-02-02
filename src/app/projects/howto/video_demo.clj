@@ -21,6 +21,7 @@
   (:require [lib.color.open-color :as oc]
             [lib.video.core :as video]
             [lib.window.layer :as layer]
+            [lib.window.layer-metal :as layer-metal]
             [lib.graphics.shapes :as shapes]
             [lib.graphics.clip :as clip]
             [lib.text.core :as text]
@@ -117,27 +118,26 @@
 ;; ============================================================
 
 (defn draw-video-frame
-  "Draw the current video frame with rounded corners."
+  "Draw the current video frame with rounded corners.
+   Uses draw-frame! API for backend-agnostic rendering (Metal + OpenGL)."
   [^Canvas canvas source x y w h corner-radius]
-  (let [ctx (layer/context)]
-    ;; Ensure first frame is decoded for preview
-    (video/ensure-first-frame! source)
-    (when-let [frame (video/current-frame source ctx)]
-      ;; Calculate scaling to fit video in bounds while maintaining aspect ratio
-      (let [video-w (video/width source)
-            video-h (video/height source)
-            scale-x (/ w video-w)
-            scale-y (/ h video-h)
-            scale (min scale-x scale-y)
-            scaled-w (* video-w scale)
-            scaled-h (* video-h scale)
-            offset-x (+ x (/ (- w scaled-w) 2))
-            offset-y (+ y (/ (- h scaled-h) 2))]
-        ;; Draw with rounded corners using clip
-        (clip/with-clip [canvas [offset-x offset-y scaled-w scaled-h corner-radius]]
-          (let [src-rect (Rect/makeXYWH 0 0 video-w video-h)
-                dst-rect (Rect/makeXYWH offset-x offset-y scaled-w scaled-h)]
-            (.drawImageRect canvas frame src-rect dst-rect)))))))
+  ;; Get context from the active backend (Metal or OpenGL)
+  (let [ctx (or (layer-metal/context) (layer/context))
+        video-w (video/width source)
+        video-h (video/height source)
+        ;; Calculate scaling to fit video in bounds while maintaining aspect ratio
+        scale-x (/ w video-w)
+        scale-y (/ h video-h)
+        scale (min scale-x scale-y)
+        scaled-w (* video-w scale)
+        scaled-h (* video-h scale)
+        offset-x (+ x (/ (- w scaled-w) 2))
+        offset-y (+ y (/ (- h scaled-h) 2))]
+    ;; Use draw-frame! which handles both Metal and OpenGL paths
+    ;; Note: Rounded corners clip only works for OpenGL path.
+    ;; For Metal, the blit bypasses Skia so clip has no effect.
+    (clip/with-clip [canvas [offset-x offset-y scaled-w scaled-h corner-radius]]
+      (video/draw-frame! source canvas ctx offset-x offset-y scaled-w scaled-h))))
 
 (defn draw-controls
   "Draw playback controls and seek bar."
@@ -213,7 +213,7 @@
   (reset! muted? false)
   (reset! last-volume 1.0)
   (try
-    (reset! video-source (video/from-file video-file {:hw-accel? true :debug? true}))
+    (reset! video-source (video/from-file video-file {:hw-accel? true}))
     (let [source @video-source
           hwaccel (video/hwaccel-type source)
           info (video/decoder-info source)

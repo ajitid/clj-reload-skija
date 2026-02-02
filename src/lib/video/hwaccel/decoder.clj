@@ -6,6 +6,9 @@
    GPU to decode video frames. The frames are then transferred to CPU memory
    by JavaCV, and uploaded to an OpenGL texture for Skia rendering.
 
+   For Metal backend (macOS), frames are uploaded directly to Skia images
+   without using OpenGL.
+
    For true zero-copy (GPU-resident frames), see videotoolbox.clj (macOS).
 
    Supports audio sync when audio track is available."
@@ -15,7 +18,8 @@
             [lib.video.audio :as audio]
             [lib.video.sync :as sync])
   (:import [org.bytedeco.javacv FFmpegFrameGrabber Frame]
-           [java.nio ByteBuffer]))
+           [java.nio ByteBuffer]
+           [io.github.humbleui.skija Image ImageInfo ColorType ColorAlphaType Bitmap]))
 
 (defonce ^:private debug-enabled (atom false))
 
@@ -29,6 +33,30 @@
   [& args]
   (when @debug-enabled
     (apply println "[hwaccel]" args)))
+
+(defn- metal-backend-active?
+  "Check if Metal backend is active (macOS with Metal layer)."
+  []
+  (when-let [device-fn (try
+                         (requiring-resolve 'lib.window.layer-metal/device)
+                         (catch Exception _ nil))]
+    (some? (device-fn))))
+
+(defn- frame-to-skia-image
+  "Create a Skia Image directly from frame pixel data.
+   Used when Metal backend is active (no OpenGL context available)."
+  [^ByteBuffer buffer width height stride]
+  (let [;; Copy buffer to byte array
+        byte-count (* height stride)
+        bytes (byte-array byte-count)
+        _ (.get buffer bytes)
+        _ (.rewind buffer)
+        ;; Create ImageInfo - assuming RGBA pixel format
+        info (ImageInfo. width height ColorType/RGBA_8888 ColorAlphaType/UNPREMUL)
+        bitmap (Bitmap.)]
+    (.allocPixels bitmap info)
+    (.installPixels bitmap info bytes stride)
+    (Image/makeFromBitmap (.setImmutable bitmap))))
 
 (defn- get-frame-info
   "Extract frame info including stride for proper texture upload.
@@ -216,10 +244,17 @@
       (when-let [frame (.grabImage grabber)]
         (when-let [{:keys [buffer stride channels]} (get-frame-info frame)]
           (when (= channels 4)
-            (when-not @texture-id
-              (reset! texture-id (tex/create-texture width height)))
-            (tex/update-texture-with-stride! @texture-id width height buffer stride channels)
-            (reset! has-first-frame? true))
+            (if (metal-backend-active?)
+              ;; Metal backend: create Skia image directly (no OpenGL)
+              (let [img (frame-to-skia-image buffer width height stride)]
+                (reset! skia-image img)
+                (reset! has-first-frame? true))
+              ;; OpenGL backend: use texture
+              (do
+                (when-not @texture-id
+                  (reset! texture-id (tex/create-texture width height)))
+                (tex/update-texture-with-stride! @texture-id width height buffer stride channels)
+                (reset! has-first-frame? true))))
           ;; Reset to beginning for playback
           (.setTimestamp grabber 0))))
     this)
@@ -250,10 +285,20 @@
             (when-let [frame (.grabImage grabber)]
               (when-let [{:keys [buffer stride channels]} (get-frame-info frame)]
                 (when (= channels 4)
-                  (when-not @texture-id
-                    (reset! texture-id (tex/create-texture width height)))
-                  (tex/update-texture-with-stride! @texture-id width height buffer stride channels)
-                  (reset! has-first-frame? true))
+                  (if (metal-backend-active?)
+                    ;; Metal backend: create Skia image directly (no OpenGL)
+                    (let [;; Close previous image
+                          _ (when-let [old-img @skia-image]
+                              (.close old-img))
+                          img (frame-to-skia-image buffer width height stride)]
+                      (reset! skia-image img)
+                      (reset! has-first-frame? true))
+                    ;; OpenGL backend: use texture
+                    (do
+                      (when-not @texture-id
+                        (reset! texture-id (tex/create-texture width height)))
+                      (tex/update-texture-with-stride! @texture-id width height buffer stride channels)
+                      (reset! has-first-frame? true))))
                 ;; Update frame tracking - use audio position if available for smoother sync
                 (let [frame-pts (if audio-pos audio-pos (calculate-pts frame))]
                   (reset! last-frame-pts frame-pts))
@@ -267,11 +312,16 @@
     this)
 
   (current-frame* [this direct-context]
-    (when (and @texture-id @has-first-frame?)
-      (or @skia-image
-          (let [img (tex/wrap-as-skia-image direct-context @texture-id width height)]
-            (reset! skia-image img)
-            img))))
+    (when @has-first-frame?
+      (if (metal-backend-active?)
+        ;; Metal backend: return the pre-created Skia image
+        @skia-image
+        ;; OpenGL backend: wrap texture as Skia image
+        (when @texture-id
+          (or @skia-image
+              (let [img (tex/wrap-as-skia-image direct-context @texture-id width height)]
+                (reset! skia-image img)
+                img))))))
 
   (close* [this]
     ;; Close audio track
@@ -281,9 +331,9 @@
     (when-let [img @skia-image]
       (.close img)
       (reset! skia-image nil))
-    ;; Delete texture
-    (when-let [tex @texture-id]
-      (tex/delete-texture! tex)
+    ;; Delete texture (OpenGL only - not used on Metal)
+    (when (and @texture-id (not (metal-backend-active?)))
+      (tex/delete-texture! @texture-id)
       (reset! texture-id nil))
     ;; Close grabber
     (try

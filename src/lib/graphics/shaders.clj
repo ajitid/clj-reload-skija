@@ -610,3 +610,68 @@
         :uAngle1    (double angle1)
         :uAngle2    (double angle2)
         :uColor     (color->premul-float4 color)}))))
+
+;; ============================================================
+;; YUV to RGB Conversion Shader (Video NV12 Support)
+;; ============================================================
+
+(def ^:private yuv-to-rgb-sksl
+  "SkSL shader for converting NV12 Y+UV planes to RGB.
+   Uses BT.709 color matrix (HD video standard).
+
+   Child shaders:
+   - y_plane: R8 texture containing luma (Y) values
+   - uv_plane: RG8 texture containing chroma (U, V) values at half resolution
+
+   The shader handles coordinate scaling for the UV plane internally."
+  "uniform shader y_plane;
+   uniform shader uv_plane;
+   uniform float2 uv_scale;  // scale factor from full res to UV res
+
+   half4 main(float2 coord) {
+     // Sample Y (full resolution) - stored in R channel
+     float y = y_plane.eval(coord).r;
+
+     // Sample UV (half resolution) - U in R, V in G
+     // Scale coordinates to match UV texture size
+     float2 uv_coord = coord * uv_scale;
+     float2 uv = uv_plane.eval(uv_coord).rg;
+
+     // Convert from [0,1] to [-0.5, 0.5] for U and V
+     float u = uv.r - 0.5;
+     float v = uv.g - 0.5;
+
+     // BT.709 YUV to RGB conversion (HD video standard)
+     // Y is already in [0,1] range (video range scaled)
+     float r = y + 1.5748 * v;
+     float g = y - 0.1873 * u - 0.4681 * v;
+     float b = y + 1.8556 * u;
+
+     return half4(clamp(r, 0.0, 1.0),
+                  clamp(g, 0.0, 1.0),
+                  clamp(b, 0.0, 1.0),
+                  1.0);
+   }")
+
+(def ^:private yuv-to-rgb-effect
+  "Compiled RuntimeEffect for YUV to RGB conversion.
+   Lazily compiled on first use."
+  (delay (RuntimeEffect/makeForShader yuv-to-rgb-sksl)))
+
+(defn yuv-shader
+  "Create a shader that converts NV12 Y and UV plane textures to RGB.
+
+   Args:
+     y-shader  - Skia Shader wrapping the Y plane texture (R8)
+     uv-shader - Skia Shader wrapping the UV plane texture (RG8)
+     uv-scale  - [scale-x scale-y] to convert from full resolution to UV resolution
+                 Typically [0.5 0.5] for standard NV12
+
+   Returns a Shader that outputs RGB color when evaluated.
+
+   Example:
+     (yuv-shader y-image-shader uv-image-shader [0.5 0.5])"
+  [y-shader uv-shader uv-scale]
+  (make-shader @yuv-to-rgb-effect
+               {:uv_scale uv-scale}
+               [y-shader uv-shader]))

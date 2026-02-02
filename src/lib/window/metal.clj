@@ -389,6 +389,32 @@
     (and status (= status MTLCommandBufferStatusCompleted))))
 
 ;; ============================================================
+;; Texture-to-Texture Blit (for video rendering)
+;; ============================================================
+
+(defn blit-texture-to-texture!
+  "Copy a region from source texture to destination texture.
+   Uses MTLBlitCommandEncoder for GPU-side copy.
+
+   blit-encoder: MTLBlitCommandEncoder pointer (from create-blit-command-encoder)
+   src-texture: Source MTLTexture pointer
+   dst-texture: Destination MTLTexture pointer
+   src-x, src-y: Source region origin
+   dst-x, dst-y: Destination region origin
+   width, height: Region size to copy
+
+   Returns true on success. Call end-encoding! after all blits."
+  [blit-encoder src-texture dst-texture src-x src-y dst-x dst-y width height]
+  (when (and (pos? blit-encoder) (pos? src-texture) (pos? dst-texture)
+             (pos? width) (pos? height))
+    ;; Use FFM implementation for struct-passing
+    (if-let [ffm-blit (resolve 'lib.window.metal-ffm/copy-texture-to-texture!)]
+      (ffm-blit blit-encoder src-texture dst-texture src-x src-y dst-x dst-y width height)
+      (do
+        (println "[metal] WARNING: FFM not available for blit-texture-to-texture!")
+        false))))
+
+;; ============================================================
 ;; Cleanup
 ;; ============================================================
 

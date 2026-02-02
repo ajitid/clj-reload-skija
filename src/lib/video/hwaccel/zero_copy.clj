@@ -22,13 +22,14 @@
             [lib.video.hwaccel.hw-protocol :as hw-proto]
             [lib.video.audio :as audio]
             [lib.video.sync :as sync])
-  (:import [org.lwjgl.opengl GL11]))
+  (:import [org.lwjgl.opengl GL11]
+           [io.github.humbleui.skija Surface]))
 
 ;; ============================================================
 ;; Debug Logging
 ;; ============================================================
 
-(defonce ^:private debug-enabled (atom false))
+(defonce ^:private debug-enabled (atom false))  ;; Set to true for debugging
 
 (defn enable-debug!
   "Enable debug logging for zero-copy decoder."
@@ -120,11 +121,19 @@
 (defn- create-zero-copy-texture
   "Create a texture suitable for zero-copy binding.
 
-   On macOS (VideoToolbox), creates GL_TEXTURE_RECTANGLE.
-   On other platforms, creates GL_TEXTURE_2D."
+   For Metal backend: Returns nil (Metal uses its own texture path).
+   For OpenGL backend with VideoToolbox: Creates GL_TEXTURE_RECTANGLE.
+   For OpenGL backend with other decoders: Creates GL_TEXTURE_2D."
   [width height decoder-type]
-  (if (= decoder-type :videotoolbox)
-    ;; macOS uses rectangle textures for IOSurface
+  (cond
+    ;; Metal backend - don't create OpenGL textures
+    (metal-backend-active?)
+    (do
+      (debug-log "Metal backend active, skipping OpenGL texture creation")
+      nil)
+
+    ;; OpenGL + VideoToolbox - uses rectangle textures for IOSurface
+    (= decoder-type :videotoolbox)
     (let [tex-id (GL11/glGenTextures)
           GL_TEXTURE_RECTANGLE 0x84F5]
       (GL11/glBindTexture GL_TEXTURE_RECTANGLE tex-id)
@@ -137,16 +146,18 @@
        :texture-type :texture-rectangle
        :width width
        :height height})
-    ;; Other platforms use regular 2D textures
+
+    ;; OpenGL + other platforms - regular 2D textures
+    :else
     {:texture-id (tex/create-texture width height)
      :texture-type :texture-2d
      :width width
      :height height}))
 
 (defn- delete-zero-copy-texture!
-  "Delete a zero-copy texture."
+  "Delete a zero-copy texture. No-op for Metal backend (texture-info is nil)."
   [{:keys [texture-id texture-type]}]
-  (when texture-id
+  (when (and texture-id (not (metal-backend-active?)))
     (let [target (if (= texture-type :texture-rectangle)
                    0x84F5  ; GL_TEXTURE_RECTANGLE
                    GL11/GL_TEXTURE_2D)]
@@ -158,24 +169,128 @@
 
 (def ^:private GL_RGBA8 0x8058)
 
-(defn- wrap-texture-as-skia-image
+(defn- wrap-gl-texture-as-skia-image
   "Wrap a GL texture as a Skia Image.
 
-   Handles both GL_TEXTURE_2D and GL_TEXTURE_RECTANGLE."
-  [direct-context {:keys [texture-id texture-type width height]}]
-  (GL11/glFlush)
-  (let [gl-target (if (= texture-type :texture-rectangle)
-                    0x84F5  ; GL_TEXTURE_RECTANGLE
-                    GL11/GL_TEXTURE_2D)]
-    (io.github.humbleui.skija.Image/adoptGLTextureFrom
-      direct-context
-      (int texture-id)
-      gl-target
-      (int width)
-      (int height)
-      GL_RGBA8
-      io.github.humbleui.skija.SurfaceOrigin/TOP_LEFT
-      io.github.humbleui.skija.ColorType/RGBA_8888)))
+   Handles both GL_TEXTURE_2D and GL_TEXTURE_RECTANGLE.
+   Returns nil if texture-info is nil."
+  [direct-context {:keys [texture-id texture-type width height] :as texture-info}]
+  (when (and texture-info texture-id)
+    (GL11/glFlush)
+    (let [gl-target (if (= texture-type :texture-rectangle)
+                      0x84F5  ; GL_TEXTURE_RECTANGLE
+                      GL11/GL_TEXTURE_2D)]
+      (io.github.humbleui.skija.Image/adoptGLTextureFrom
+        direct-context
+        (int texture-id)
+        gl-target
+        (int width)
+        (int height)
+        GL_RGBA8
+        io.github.humbleui.skija.SurfaceOrigin/TOP_LEFT
+        io.github.humbleui.skija.ColorType/RGBA_8888))))
+
+(defn- adopt-metal-texture
+  "Adopt a Metal texture as a Skia Image with specified color type.
+   Returns Image or nil on failure."
+  [direct-context mtl-texture width height color-type]
+  (when (and mtl-texture (pos? mtl-texture))
+    (try
+      (io.github.humbleui.skija.Image/adoptMetalTextureFrom
+        direct-context
+        (long mtl-texture)
+        (int width)
+        (int height)
+        io.github.humbleui.skija.SurfaceOrigin/TOP_LEFT
+        color-type)
+      (catch Exception e
+        (debug-log "Failed to adopt Metal texture:" mtl-texture "as" color-type "-" (.getMessage e))
+        nil))))
+
+(defn- wrap-nv12-texture
+  "Convert NV12 Y+UV Metal textures to BGRA via Metal compute shader.
+
+   Uses the new Image.convertYUVToRGBA function added to Skija that:
+   1. Takes Y (R8Unorm) and UV (RG8Unorm) textures
+   2. Runs a Metal compute shader to convert NV12 to BGRA
+   3. Returns a new BGRA8Unorm texture that Skia can adopt
+
+   This is true GPU zero-copy - no CPU involvement.
+
+   texture-info should be {:format :nv12 :y-texture :uv-texture :width :height ...}"
+  [direct-context {:keys [y-texture uv-texture width height] :as texture-info}]
+  (when (and y-texture uv-texture (pos? y-texture) (pos? uv-texture))
+    (try
+      ;; Get Metal device and queue from layer
+      (let [device-fn (requiring-resolve 'lib.window.layer-metal/device)
+            queue-fn (requiring-resolve 'lib.window.layer-metal/queue)]
+        (when (and device-fn queue-fn)
+          (let [device (device-fn)
+                queue (queue-fn)]
+            (when (and device queue (pos? device) (pos? queue))
+              ;; Convert NV12 to BGRA using Metal compute shader
+              (let [bgra-texture (io.github.humbleui.skija.Image/convertYUVToRGBA
+                                   device queue y-texture uv-texture width height)]
+                (when (pos? bgra-texture)
+                  ;; Adopt the BGRA texture as a Skia Image
+                  (try
+                    (io.github.humbleui.skija.Image/adoptMetalTextureFrom
+                      direct-context
+                      (long bgra-texture)
+                      (int width)
+                      (int height)
+                      io.github.humbleui.skija.SurfaceOrigin/TOP_LEFT
+                      io.github.humbleui.skija.ColorType/BGRA_8888)
+                    (finally
+                      ;; Release the intermediate BGRA texture
+                      (io.github.humbleui.skija.Image/releaseMetalTexture bgra-texture)))))))))
+      (catch Exception e
+        (debug-log "NV12 conversion failed:" (.getMessage e))
+        nil))))
+
+(defn- wrap-bgra-texture
+  "Wrap a BGRA Metal texture as a Skia Image.
+   texture-info should be {:format :bgra :mtl-texture :width :height}"
+  [direct-context {:keys [mtl-texture width height]}]
+  (adopt-metal-texture direct-context mtl-texture width height
+                       io.github.humbleui.skija.ColorType/BGRA_8888))
+
+(defn- wrap-metal-texture-as-skia-image
+  "Wrap a Metal texture as a Skia Image using adoptMetalTextureFrom.
+
+   Dispatches based on texture format:
+   - :bgra -> Direct adoption as BGRA_8888
+   - :nv12 -> YUV shader conversion
+
+   texture-info should be a map with :format and format-specific keys.
+   Returns a Skia Image or nil on failure."
+  [direct-context {:keys [format] :as texture-info}]
+  (case format
+    :bgra (wrap-bgra-texture direct-context texture-info)
+    :nv12 (wrap-nv12-texture direct-context texture-info)
+    ;; Legacy format (no :format key, has :mtl-texture)
+    (when-let [mtl-texture (:mtl-texture texture-info)]
+      (wrap-bgra-texture direct-context (assoc texture-info :format :bgra)))))
+
+(defn- wrap-texture-as-skia-image
+  "Wrap a texture as a Skia Image.
+
+   Dispatches to Metal or GL wrapping based on backend."
+  [direct-context texture-info]
+  (cond
+    ;; Metal NV12 texture (has :y-texture and :uv-texture keys)
+    (and (:y-texture texture-info) (:uv-texture texture-info))
+    (wrap-metal-texture-as-skia-image direct-context texture-info)
+
+    ;; Metal BGRA texture (has :mtl-texture key)
+    (:mtl-texture texture-info)
+    (wrap-metal-texture-as-skia-image direct-context texture-info)
+
+    ;; GL texture (has :texture-id key)
+    (:texture-id texture-info)
+    (wrap-gl-texture-as-skia-image direct-context texture-info)
+
+    :else nil))
 
 ;; ============================================================
 ;; Zero-Copy Decoder Record
@@ -266,21 +381,30 @@
       (sync/reset-sync-to! sync-state seconds))
     ;; Immediately decode frame at new position
     (when-let [frame-data (raw/decode-next-frame! raw-decoder)]
-      (let [{:keys [hw-data-ptr pts is-hw-frame?]} frame-data]
+      (let [{:keys [hw-data-ptr pts is-hw-frame?]} frame-data
+            metal-active? (metal-backend-active?)]
         (reset! last-hw-frame-atom frame-data)
         ;; Try zero-copy bind
-        (when-let [tex-info @texture-info-atom]
-          (let [bound? (and is-hw-frame?
-                            (not @zero-copy-failed?-atom)
-                            platform-binder
-                            (try
-                              (platform-binder hw-data-ptr tex-info)
-                              (catch Exception e
-                                (debug-log "Zero-copy bind failed:" (.getMessage e))
-                                (reset! zero-copy-failed?-atom true)
-                                false)))]
-            (when bound?
-              (debug-log "Frame bound via zero-copy at pts:" pts))))
+        (let [tex-info @texture-info-atom
+              binder-result (and is-hw-frame?
+                                 (not @zero-copy-failed?-atom)
+                                 platform-binder
+                                 (try
+                                   (platform-binder hw-data-ptr tex-info)
+                                   (catch Exception e
+                                     (debug-log "Zero-copy bind failed:" (.getMessage e))
+                                     (reset! zero-copy-failed?-atom true)
+                                     nil)))
+              bound? (some? binder-result)]
+          ;; For Metal, store the texture info from the binder result
+          (when (and bound? metal-active? (map? binder-result))
+            ;; Close old Skia image before updating texture (texture ptr changed)
+            (when-let [old-img @skia-image-atom]
+              (.close old-img)
+              (reset! skia-image-atom nil))
+            (reset! texture-info-atom binder-result))
+          (when bound?
+            (debug-log "Frame bound via zero-copy at pts:" pts)))
         (reset! has-first-frame?-atom true)
         (reset! last-frame-pts-atom seconds)))
     (reset! needs-decode?-atom false)
@@ -310,28 +434,33 @@
   (ensure-first-frame!* [this]
     ;; Decode first frame if not already done
     (when-not @has-first-frame?-atom
-      ;; Ensure texture exists
-      (when-not @texture-info-atom
-        (reset! texture-info-atom (create-zero-copy-texture width height decoder-type)))
+      (let [metal-active? (metal-backend-active?)]
+        ;; Ensure texture exists for OpenGL (not needed for Metal - binder creates it)
+        (when (and (not metal-active?) (not @texture-info-atom))
+          (reset! texture-info-atom (create-zero-copy-texture width height decoder-type)))
 
-      (when-let [frame-data (raw/decode-next-frame! raw-decoder)]
-        (let [{:keys [hw-data-ptr is-hw-frame?]} frame-data
-              tex-info @texture-info-atom]
-          (reset! last-hw-frame-atom frame-data)
-          ;; Try zero-copy bind
-          (let [bound? (and is-hw-frame?
-                            platform-binder
-                            (try
-                              (platform-binder hw-data-ptr tex-info)
-                              (catch Exception e
-                                (debug-log "Zero-copy bind failed on first frame:" (.getMessage e))
-                                (reset! zero-copy-failed?-atom true)
-                                false)))]
-            (when-not bound?
-              (debug-log "First frame: zero-copy unavailable, will use fallback")))
-          (reset! has-first-frame?-atom true))
-        ;; Reset to beginning for playback
-        (raw/seek! raw-decoder 0)))
+        (when-let [frame-data (raw/decode-next-frame! raw-decoder)]
+          (let [{:keys [hw-data-ptr is-hw-frame?]} frame-data
+                tex-info @texture-info-atom]
+            (reset! last-hw-frame-atom frame-data)
+            ;; Try zero-copy bind
+            (let [binder-result (and is-hw-frame?
+                                     platform-binder
+                                     (try
+                                       (platform-binder hw-data-ptr tex-info)
+                                       (catch Exception e
+                                         (debug-log "Zero-copy bind failed on first frame:" (.getMessage e))
+                                         (reset! zero-copy-failed?-atom true)
+                                         nil)))
+                  bound? (some? binder-result)]
+              ;; For Metal, store the texture info from the binder result
+              (when (and bound? metal-active? (map? binder-result))
+                (reset! texture-info-atom binder-result))
+              (when-not bound?
+                (debug-log "First frame: zero-copy unavailable, will use fallback")))
+            (reset! has-first-frame?-atom true))
+          ;; Reset to beginning for playback
+          (raw/seek! raw-decoder 0))))
     this)
 
   (advance-frame!* [this dt]
@@ -362,19 +491,28 @@
             ;; Decode next frame
             (when-let [frame-data (raw/decode-next-frame! raw-decoder)]
               (let [{:keys [hw-data-ptr pts is-hw-frame?]} frame-data
-                    tex-info @texture-info-atom]
+                    tex-info @texture-info-atom
+                    metal-active? (metal-backend-active?)]
                 (reset! last-hw-frame-atom frame-data)
 
                 ;; Try zero-copy bind
-                (let [bound? (and is-hw-frame?
-                                  (not @zero-copy-failed?-atom)
-                                  platform-binder
-                                  (try
-                                    (platform-binder hw-data-ptr tex-info)
-                                    (catch Exception e
-                                      (debug-log "Zero-copy bind failed:" (.getMessage e))
-                                      (reset! zero-copy-failed?-atom true)
-                                      false)))]
+                (let [binder-result (and is-hw-frame?
+                                         (not @zero-copy-failed?-atom)
+                                         platform-binder
+                                         (try
+                                           (platform-binder hw-data-ptr tex-info)
+                                           (catch Exception e
+                                             (debug-log "Zero-copy bind failed:" (.getMessage e))
+                                             (reset! zero-copy-failed?-atom true)
+                                             nil)))
+                      bound? (some? binder-result)]
+                  ;; For Metal, store the texture info from the binder result
+                  (when (and bound? metal-active? (map? binder-result))
+                    ;; Close old Skia image before updating texture (texture ptr changed)
+                    (when-let [old-img @skia-image-atom]
+                      (.close old-img)
+                      (reset! skia-image-atom nil))
+                    (reset! texture-info-atom binder-result))
                   (when-not bound?
                     ;; TODO: Fallback to CPU copy path
                     ;; For now, just log
@@ -396,15 +534,38 @@
 
   (current-frame* [this direct-context]
     (when @has-first-frame?-atom
-      ;; Ensure texture exists
-      (when-not @texture-info-atom
-        (reset! texture-info-atom (create-zero-copy-texture width height decoder-type)))
+      (let [tex-info @texture-info-atom]
+        ;; Always wrap texture as Skia Image (Metal or OpenGL)
+        ;; This enables full Skia compositing support (clips, effects, etc.)
+        (cond
+          ;; Metal backend with NV12 format (has :y-texture and :uv-texture)
+          (and (map? tex-info) (= :nv12 (:format tex-info)) (:y-texture tex-info))
+          (or @skia-image-atom
+              (let [img (wrap-metal-texture-as-skia-image direct-context tex-info)]
+                (reset! skia-image-atom img)
+                img))
 
-      (or @skia-image-atom
-          (when-let [tex-info @texture-info-atom]
-            (let [img (wrap-texture-as-skia-image direct-context tex-info)]
-              (reset! skia-image-atom img)
-              img)))))
+          ;; Metal backend with BGRA format (has :mtl-texture)
+          (and (map? tex-info) (:mtl-texture tex-info))
+          (or @skia-image-atom
+              (let [img (wrap-metal-texture-as-skia-image direct-context tex-info)]
+                (reset! skia-image-atom img)
+                img))
+
+          ;; OpenGL backend: wrap as Skia Image
+          (:texture-id tex-info)
+          (or @skia-image-atom
+              (let [img (wrap-gl-texture-as-skia-image direct-context tex-info)]
+                (reset! skia-image-atom img)
+                img))
+
+          ;; No texture yet, try to create one (OpenGL only)
+          (not (metal-backend-active?))
+          (do
+            (reset! texture-info-atom (create-zero-copy-texture width height decoder-type))
+            nil)
+
+          :else nil))))
 
   (close* [this]
     ;; Close audio track
@@ -460,10 +621,11 @@
      :audio-sync?   - Sync video to audio clock (default true when audio present)
 
    Returns {:decoder ZeroCopyDecoder :hwaccel-type keyword :zero-copy? boolean}
-   Throws if decoder creation fails."
+   Throws if decoder creation fails or zero-copy is not actually supported."
   ([path]
    (create-zero-copy-decoder path {}))
   ([path opts]
+   ;; Metal backend now uses blit path (no Skia Image wrapping needed)
    (when (:debug? opts)
      (enable-debug!))
 
@@ -474,55 +636,90 @@
 
          ;; Try to resolve platform-specific binder
          platform-binder (resolve-platform-binder decoder-type)
-         zero-copy-available? (some? platform-binder)
+         zero-copy-available? (some? platform-binder)]
 
-         _ (debug-log "Decoder type:" decoder-type
-                      "zero-copy available:" zero-copy-available?)
+     (debug-log "Decoder type:" decoder-type
+                "zero-copy available:" zero-copy-available?)
 
-         ;; Create audio track if enabled
-         enable-audio? (get opts :audio? true)
-         audio-track (when enable-audio?
-                       (try
-                         (audio/create-audio-track path)
-                         (catch Exception e
-                           (debug-log "No audio track:" (.getMessage e))
-                           nil)))
+     ;; Test first frame to verify zero-copy actually works
+     ;; This catches cases like NV12 format which has a binder but can't be adopted by Skia
+     (when (and zero-copy-available? (= decoder-type :videotoolbox))
+       (debug-log "Testing first frame pixel format for zero-copy compatibility...")
+       ;; Try to decode a few frames (decoder might need multiple packets)
+       (let [test-frame (loop [attempts 0]
+                          (if (< attempts 10)
+                            (if-let [frame (raw/decode-next-frame! raw-decoder)]
+                              frame
+                              (do
+                                (Thread/sleep 10)
+                                (recur (inc attempts))))
+                            nil))]
+         (if test-frame
+           (let [{:keys [hw-data-ptr is-hw-frame?]} test-frame]
+             (debug-log "Test frame: is-hw-frame?" is-hw-frame? "hw-data-ptr:" (when hw-data-ptr (.address hw-data-ptr)))
+             ;; Check pixel format - try even if is-hw-frame? is false
+             (let [check-format-fn (try
+                                     (requiring-resolve 'lib.video.hwaccel.videotoolbox-metal/check-pixel-format)
+                                     (catch Exception e
+                                       (debug-log "Failed to resolve check-pixel-format:" (.getMessage e))
+                                       nil))
+                   pixel-format (when (and check-format-fn hw-data-ptr)
+                                  (try
+                                    (check-format-fn hw-data-ptr)
+                                    (catch Exception e
+                                      (debug-log "check-pixel-format threw:" (.getMessage e))
+                                      nil)))]
+               (debug-log "Detected pixel format:" pixel-format)
+               (when (= pixel-format :nv12)
+                 (debug-log "NV12 format detected - will use Metal compute shader for GPU conversion")))
+             ;; Seek back to beginning for actual playback
+             (raw/seek! raw-decoder 0))
+           (debug-log "No test frame available after retries"))))
 
-         ;; Enable audio sync if we have audio
-         use-audio-sync? (and audio-track
-                              (get opts :audio-sync? true))
-         sync-state (when use-audio-sync?
-                      (sync/create-sync-state))
+     (let [;; Create audio track if enabled
+           enable-audio? (get opts :audio? true)
+           audio-track (when enable-audio?
+                         (try
+                           (audio/create-audio-track path)
+                           (catch Exception e
+                             (debug-log "No audio track:" (.getMessage e))
+                             nil)))
 
-         decoder (->ZeroCopyDecoder
-                   raw-decoder
-                   path
-                   decoder-type
-                   (:width info)
-                   (:height info)
-                   (:fps info)
-                   (:duration info)
-                   platform-binder
-                   (atom :stopped)
-                   (atom 0.0)
-                   (atom -1.0)
-                   (atom nil)   ; texture-info
-                   (atom nil)   ; skia-image
-                   (atom true)  ; needs-decode?
-                   (atom false) ; has-first-frame?
-                   (atom (not zero-copy-available?)) ; zero-copy-failed?
-                   (atom nil)   ; last-hw-frame
-                   audio-track
-                   sync-state
-                   use-audio-sync?)]
+           ;; Enable audio sync if we have audio
+           use-audio-sync? (and audio-track
+                                (get opts :audio-sync? true))
+           sync-state (when use-audio-sync?
+                        (sync/create-sync-state))
 
-     (debug-log "Video:" (:width info) "x" (:height info)
-                "@" (:fps info) "fps, duration:" (:duration info) "s")
+           decoder (->ZeroCopyDecoder
+                     raw-decoder
+                     path
+                     decoder-type
+                     (:width info)
+                     (:height info)
+                     (:fps info)
+                     (:duration info)
+                     platform-binder
+                     (atom :stopped)
+                     (atom 0.0)
+                     (atom -1.0)
+                     (atom nil)   ; texture-info
+                     (atom nil)   ; skia-image
+                     (atom true)  ; needs-decode?
+                     (atom false) ; has-first-frame?
+                     (atom (not zero-copy-available?)) ; zero-copy-failed?
+                     (atom nil)   ; last-hw-frame
+                     audio-track
+                     sync-state
+                     use-audio-sync?)]
 
-     {:decoder decoder
-      :hwaccel-type decoder-type
-      :zero-copy? zero-copy-available?
-      :fallback? false})))
+       (debug-log "Video:" (:width info) "x" (:height info)
+                  "@" (:fps info) "fps, duration:" (:duration info) "s")
+
+       {:decoder decoder
+        :hwaccel-type decoder-type
+        :zero-copy? zero-copy-available?
+        :fallback? false}))))
 
 ;; ============================================================
 ;; Check Zero-Copy Availability

@@ -119,6 +119,35 @@
        MTL-SIZE-LAYOUT         ; region.size (struct by value)
        ValueLayout/JAVA_LONG]))) ; mipmapLevel
 
+;; copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:
+;;     toTexture:destinationSlice:destinationLevel:destinationOrigin:
+;;
+;; Method signature:
+;;   void (id<MTLBlitCommandEncoder> self, SEL _cmd,
+;;         id<MTLTexture> sourceTexture,
+;;         NSUInteger sourceSlice,
+;;         NSUInteger sourceLevel,
+;;         MTLOrigin sourceOrigin,      <- struct by value (24 bytes)
+;;         MTLSize sourceSize,          <- struct by value (24 bytes)
+;;         id<MTLTexture> destinationTexture,
+;;         NSUInteger destinationSlice,
+;;         NSUInteger destinationLevel,
+;;         MTLOrigin destinationOrigin) <- struct by value (24 bytes)
+(def ^:private BLIT-TEX-TO-TEX-DESCRIPTOR
+  (FunctionDescriptor/ofVoid
+    (into-array MemoryLayout
+      [ValueLayout/ADDRESS     ; self (blit encoder)
+       ValueLayout/ADDRESS     ; _cmd (selector)
+       ValueLayout/ADDRESS     ; sourceTexture
+       ValueLayout/JAVA_LONG   ; sourceSlice
+       ValueLayout/JAVA_LONG   ; sourceLevel
+       MTL-ORIGIN-LAYOUT       ; sourceOrigin (struct by value)
+       MTL-SIZE-LAYOUT         ; sourceSize (struct by value)
+       ValueLayout/ADDRESS     ; destinationTexture
+       ValueLayout/JAVA_LONG   ; destinationSlice
+       ValueLayout/JAVA_LONG   ; destinationLevel
+       MTL-ORIGIN-LAYOUT])))   ; destinationOrigin (struct by value)
+
 ;; ============================================================
 ;; FFM State (cached handles)
 ;; ============================================================
@@ -135,6 +164,8 @@
          :buffer-create-sel   nil
          :get-bytes-handle    nil
          :get-bytes-sel       nil
+         :blit-tex-to-tex-handle nil
+         :blit-tex-to-tex-sel nil
          :arena               nil}))
 
 ;; ============================================================
@@ -163,7 +194,7 @@
             get-bytes-handle (.downcallHandle linker objc-msg-send-addr GET-BYTES-DESCRIPTOR no-opts)
 
             ;; Pre-register selectors
-            ;; Blit copy selector
+            ;; Blit copy selector (texture to buffer)
             blit-sel-name "copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toBuffer:destinationOffset:destinationBytesPerRow:destinationBytesPerImage:"
             blit-sel-segment (.allocateFrom arena blit-sel-name)
             blit-copy-sel (.invokeWithArguments sel-register-handle [blit-sel-segment])
@@ -176,7 +207,13 @@
             ;; Get bytes selector (for synchronous texture read)
             get-bytes-sel-name "getBytes:bytesPerRow:fromRegion:mipmapLevel:"
             get-bytes-sel-segment (.allocateFrom arena get-bytes-sel-name)
-            get-bytes-sel (.invokeWithArguments sel-register-handle [get-bytes-sel-segment])]
+            get-bytes-sel (.invokeWithArguments sel-register-handle [get-bytes-sel-segment])
+
+            ;; Blit texture-to-texture selector (for video rendering)
+            blit-tex-to-tex-sel-name "copyFromTexture:sourceSlice:sourceLevel:sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:"
+            blit-tex-to-tex-sel-segment (.allocateFrom arena blit-tex-to-tex-sel-name)
+            blit-tex-to-tex-sel (.invokeWithArguments sel-register-handle [blit-tex-to-tex-sel-segment])
+            blit-tex-to-tex-handle (.downcallHandle linker objc-msg-send-addr BLIT-TEX-TO-TEX-DESCRIPTOR no-opts)]
         (swap! ffm-state assoc
                :initialized? true
                :linker linker
@@ -189,6 +226,8 @@
                :buffer-create-sel buffer-create-sel
                :get-bytes-handle get-bytes-handle
                :get-bytes-sel get-bytes-sel
+               :blit-tex-to-tex-handle blit-tex-to-tex-handle
+               :blit-tex-to-tex-sel blit-tex-to-tex-sel
                :arena arena)
         (println "[metal-ffm] FFM initialized successfully"))
       (catch Exception e
@@ -386,6 +425,71 @@
 ;; Cleanup
 ;; ============================================================
 
+(defn copy-texture-to-texture!
+  "Issue async GPU blit copy from source texture to destination texture via FFM.
+
+   This calls MTLBlitCommandEncoder's copyFromTexture:sourceSlice:sourceLevel:
+   sourceOrigin:sourceSize:toTexture:destinationSlice:destinationLevel:
+   destinationOrigin: method using FFM to pass structs by value.
+
+   Returns immediately - GPU copy runs asynchronously.
+
+   Parameters:
+   - blit-encoder: MTLBlitCommandEncoder pointer (long)
+   - src-texture: Source MTLTexture pointer (long)
+   - dst-texture: Destination MTLTexture pointer (long)
+   - src-x, src-y: Source region origin
+   - dst-x, dst-y: Destination region origin
+   - width, height: Region size to copy
+
+   Returns true if the call succeeded, false otherwise."
+  [blit-encoder src-texture dst-texture src-x src-y dst-x dst-y width height]
+  (if-not (ensure-initialized!)
+    (do
+      (println "[metal-ffm] copy-texture-to-texture! skipped - FFM not initialized")
+      false)
+    (let [{:keys [^java.lang.invoke.MethodHandle blit-tex-to-tex-handle
+                  ^MemorySegment blit-tex-to-tex-sel]} @ffm-state]
+      (if-not (and blit-tex-to-tex-handle blit-tex-to-tex-sel
+                   (pos? blit-encoder) (pos? src-texture) (pos? dst-texture))
+        (do
+          (println "[metal-ffm] copy-texture-to-texture! skipped - invalid params:"
+                   "handle?" (boolean blit-tex-to-tex-handle)
+                   "sel?" (boolean blit-tex-to-tex-sel)
+                   "encoder?" (pos? blit-encoder)
+                   "src-tex?" (pos? src-texture)
+                   "dst-tex?" (pos? dst-texture))
+          false)
+        (try
+          ;; Use confined arena for temporary struct allocations
+          (with-open [temp-arena (Arena/ofConfined)]
+            (let [;; Create struct segments for origin and size
+                  src-origin (alloc-origin temp-arena src-x src-y 0)
+                  size (alloc-size temp-arena width height 1)
+                  dst-origin (alloc-origin temp-arena dst-x dst-y 0)
+                  ;; Convert pointers to MemorySegment
+                  encoder-seg (ptr->segment blit-encoder)
+                  src-tex-seg (ptr->segment src-texture)
+                  dst-tex-seg (ptr->segment dst-texture)]
+              ;; Call the method via objc_msgSend with FFM
+              (.invokeWithArguments blit-tex-to-tex-handle
+                [encoder-seg         ; self
+                 blit-tex-to-tex-sel ; _cmd
+                 src-tex-seg         ; sourceTexture
+                 (long 0)            ; sourceSlice
+                 (long 0)            ; sourceLevel
+                 src-origin          ; sourceOrigin (struct)
+                 size                ; sourceSize (struct)
+                 dst-tex-seg         ; destinationTexture
+                 (long 0)            ; destinationSlice
+                 (long 0)            ; destinationLevel
+                 dst-origin])        ; destinationOrigin (struct)
+              true))
+          (catch Exception e
+            (println "[metal-ffm] Texture-to-texture blit failed:" (.getMessage e))
+            (.printStackTrace e)
+            false))))))
+
 (defn cleanup!
   "Release FFM resources."
   []
@@ -404,4 +508,6 @@
                      :buffer-create-sel nil
                      :get-bytes-handle nil
                      :get-bytes-sel nil
+                     :blit-tex-to-tex-handle nil
+                     :blit-tex-to-tex-sel nil
                      :arena nil}))

@@ -33,7 +33,9 @@
             [lib.video.decoder :as decoder]
             [lib.video.hwaccel.decoder :as hwdecoder]
             [lib.video.hwaccel.detect :as detect])
-  (:import [java.lang.ref Cleaner]))
+  (:import [java.lang.ref Cleaner]
+           [io.github.humbleui.skija Canvas]
+           [io.github.humbleui.types Rect]))
 
 ;; ============================================================
 ;; Automatic cleanup via JVM Cleaner (Java 9+)
@@ -220,12 +222,44 @@
    direct-context: The Skia DirectContext (from lib.window.layer/context)
 
    Returns a Skia Image backed by GPU texture, ready for drawing.
+   Works with both Metal and OpenGL backends via adoptMetalTextureFrom
+   and adoptGLTextureFrom respectively.
+
+   The image supports full Skia compositing (clips, effects, masks, etc).
    The image is valid until the next frame is decoded.
 
    Returns nil if no frame has been decoded yet."
   [source direct-context]
   (when-let [impl (get-source-data source)]
     (proto/current-frame* impl direct-context)))
+
+(defn draw-frame!
+  "Draw a video frame to the canvas.
+
+   Uses the unified Skia Image path for both Metal and OpenGL backends.
+   Metal textures are wrapped via Image.adoptMetalTextureFrom for full
+   Skia compositing support (clips, effects, etc).
+
+   Parameters:
+   - source: Video source
+   - canvas: Skia Canvas to draw on
+   - direct-context: Skia DirectContext
+   - x, y: Position to draw
+   - width, height: Target size (video is scaled to fit)
+
+   Returns true if frame was drawn, false otherwise."
+  [source canvas direct-context x y width height]
+  (when-let [impl (get-source-data source)]
+    ;; Ensure first frame is decoded
+    (proto/ensure-first-frame!* impl)
+    (when-let [frame (proto/current-frame* impl direct-context)]
+      ;; Frame is always a Skia Image (Metal or OpenGL)
+      (let [video-w (proto/width* impl)
+            video-h (proto/height* impl)
+            src-rect (Rect/makeXYWH 0 0 video-w video-h)
+            dst-rect (Rect/makeXYWH x y width height)]
+        (.drawImageRect ^Canvas canvas frame src-rect dst-rect)
+        true))))
 
 ;; ============================================================
 ;; Query
