@@ -307,6 +307,195 @@ config/shadow-dx
 
 The event listener uses `requiring-resolve` for ALL callbacks, allowing every namespace to reload.
 
+## Custom Skija Build
+
+This project uses a custom Skija build with additional features for GPU-accelerated video playback:
+- `Image.adoptMetalTextureFrom()` - Adopt Metal textures as Skia Images
+- `Image.convertYUVToRGBA()` - GPU-based NV12→BGRA conversion via Metal compute shader
+- `Image.releaseMetalTexture()` - Release Metal textures
+
+### Why a Custom Build?
+
+The standard Skija release doesn't support adopting CVMetalTexture-backed textures from VideoToolbox (NV12 format). Our custom build adds a Metal compute shader that converts NV12 to BGRA entirely on the GPU, enabling true zero-copy video playback.
+
+### Skija Source Location
+
+Clone Skija and place it alongside this project (or anywhere you prefer):
+
+```bash
+git clone https://github.com/HumbleUI/Skija.git
+```
+
+The examples below assume Skija is at `/path/to/Skija` - adjust paths accordingly.
+
+### Build Requirements
+
+#### macOS
+
+- **Xcode Command Line Tools**
+  ```bash
+  xcode-select --install
+  ```
+  Required components:
+  - **clang++** - compiles C++ (`.cc`) and Objective-C++ (`.mm`) files
+  - **macOS SDK** - provides Metal.h and Foundation.h headers for the Metal compute shader
+
+  Note: Homebrew's LLVM won't work - it lacks the macOS SDK headers.
+- **CMake 3.10+**
+  ```bash
+  brew install cmake ninja
+  ```
+- **Python 3**
+  ```bash
+  brew install python3
+  ```
+- **JDK 11+** with `JAVA_HOME` set
+  ```bash
+  # Find your Java home
+  /usr/libexec/java_home
+
+  # Set it (add to ~/.zshrc or ~/.bashrc)
+  export JAVA_HOME=$(/usr/libexec/java_home)
+  ```
+
+#### Windows
+
+- **Visual Studio 2019+** with "Desktop development with C++" workload
+  - Includes MSVC compiler (cl.exe), Windows SDK, and CMake
+- **CMake 3.10+** (included with Visual Studio or install separately)
+- **Ninja** (recommended)
+  ```powershell
+  # With Scoop
+  scoop install ninja
+
+  # Or with Chocolatey
+  choco install ninja
+  ```
+- **Python 3**
+  ```powershell
+  scoop install python
+  ```
+- **JDK 11+** with `JAVA_HOME` set
+  ```powershell
+  # Set in System Environment Variables or PowerShell profile
+  $env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-21.0.1.12-hotspot"
+  ```
+
+### Building Skija
+
+#### macOS (Apple Silicon)
+
+```bash
+cd /path/to/Skija
+
+# JAVA_HOME is required - set it to your JDK location
+export JAVA_HOME=$(/usr/libexec/java_home)
+
+# Build native library and Java classes
+python3 script/build.py
+
+# Package into JARs
+python3 script/package_shared.py
+python3 script/package_platform.py
+```
+
+Output files in `target/`:
+- `skija-shared-0.0.0-SNAPSHOT.jar` - Java classes
+- `skija-macos-arm64-0.0.0-SNAPSHOT.jar` - Native library for Apple Silicon
+
+#### macOS (Intel)
+
+```bash
+cd /path/to/Skija
+export JAVA_HOME=$(/usr/libexec/java_home)
+python3 script/build.py --arch x64
+python3 script/package_shared.py
+python3 script/package_platform.py
+```
+
+Output: `skija-macos-x64-0.0.0-SNAPSHOT.jar`
+
+#### Windows
+
+Open "x64 Native Tools Command Prompt for VS 2022" (or your VS version):
+
+```cmd
+cd C:\path\to\Skija
+
+:: JAVA_HOME is required - set it to your JDK location
+set JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.1.12-hotspot
+
+:: Build
+python script/build.py
+python script/package_shared.py
+python script/package_platform.py
+```
+
+Output: `skija-windows-x64-0.0.0-SNAPSHOT.jar`
+
+### Referencing Local Skija in deps.edn
+
+After building, update `deps.edn` to use your local JARs:
+
+```clojure
+{:deps
+ {;; Skija shared Java classes (local build)
+  io.github.humbleui/skija-shared
+  {:local/root "/path/to/Skija-master/target/skija-shared-0.0.0-SNAPSHOT.jar"}}
+
+ :aliases
+ {:macos-arm64
+  {:extra-deps
+   {io.github.humbleui/skija-macos-arm64
+    {:local/root "/path/to/Skija-master/target/skija-macos-arm64-0.0.0-SNAPSHOT.jar"}}}
+
+  :macos-x64
+  {:extra-deps
+   {io.github.humbleui/skija-macos-x64
+    {:local/root "/path/to/Skija-master/target/skija-macos-x64-0.0.0-SNAPSHOT.jar"}}}
+
+  :windows
+  {:extra-deps
+   {io.github.humbleui/skija-windows-x64
+    {:local/root "C:/path/to/Skija-master/target/skija-windows-x64-0.0.0-SNAPSHOT.jar"}}}}}
+```
+
+**Important:** Use absolute paths. On Windows, use forward slashes in paths.
+
+### Reverting to Official Skija
+
+To use the official Skija release instead of the custom build, replace `:local/root` with `:mvn/version`:
+
+```clojure
+{:deps
+ {io.github.humbleui/skija-shared {:mvn/version "0.143.5"}}
+
+ :aliases
+ {:macos-arm64
+  {:extra-deps
+   {io.github.humbleui/skija-macos-arm64 {:mvn/version "0.143.5"}}}}}
+```
+
+Note: Official Skija won't have the Metal YUV conversion features, so NV12 video will fall back to CPU conversion.
+
+### Rebuilding After Changes
+
+If you modify the Skija source (e.g., `MetalYUVConverter.mm` or `Image.java`):
+
+```bash
+cd /path/to/Skija
+export JAVA_HOME=$(/usr/libexec/java_home)  # macOS
+# set JAVA_HOME=C:\path\to\jdk              # Windows
+
+# Rebuild (incremental - only recompiles changed files)
+python3 script/build.py
+
+# Re-package the platform JAR
+python3 script/package_platform.py
+```
+
+Then restart your Clojure application to load the new JAR.
+
 ## References
 
 - [clj-reload](https://github.com/tonsky/clj-reload)
