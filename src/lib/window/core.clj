@@ -1,9 +1,11 @@
 (ns lib.window.core
   "Public window API - JWM-like interface over SDL3.
-   Provides create-window, set-event-handler!, request-frame!, run-loop!, close!"
+   Provides create-window, set-event-handler!, request-frame!, run-loop!, close!
+   Supports both OpenGL and Metal (macOS) backends."
   (:refer-clojure :exclude [run!])
   (:require [lib.window.internal :as sdl]
             [lib.window.layer :as layer]
+            [lib.window.layer-metal :as layer-metal]
             [lib.window.events :as e])
   (:import [org.lwjgl.sdl SDL_Event]
            [org.lwjgl.opengl GL11]
@@ -14,9 +16,19 @@
 (defonce capture-active? (atom false))
 
 ;; Window record holds SDL handles (long pointers) and state atoms
+;; backend is :opengl or :metal
 (defrecord Window [^long handle ^long gl-context event-handler
                    frame-requested? running?
-                   width height scale])
+                   width height scale backend])
+
+(defn- detect-backend
+  "Detect the best backend for the current platform.
+   Prefers Metal on macOS, OpenGL elsewhere."
+  []
+  (let [os-name (System/getProperty "os.name")]
+    (if (and os-name (.toLowerCase os-name) (.contains (.toLowerCase os-name) "mac"))
+      :metal
+      :opengl)))
 
 (defn create-window
   "Create a window with the given options.
@@ -30,30 +42,59 @@
      :high-dpi?      - Enable high DPI (default true)
      :always-on-top? - Keep window above others (default false)
      :display        - Display index (0-based) to open on (default: primary)
+     :backend        - Graphics backend :opengl, :metal, or :auto (default)
+                       :auto uses Metal on macOS, OpenGL elsewhere
    Position precedence: explicit :x/:y > :display (centered) > default
    Returns a Window record."
-  [{:keys [title width height x y resizable? high-dpi? always-on-top? display]
-    :or {title "Window" width 800 height 600 resizable? true high-dpi? true}
+  [{:keys [title width height x y resizable? high-dpi? always-on-top? display backend]
+    :or {title "Window" width 800 height 600 resizable? true high-dpi? true backend :auto}
     :as opts}]
-  ;; Initialize SDL
-  (sdl/init-sdl!)
-  (sdl/set-gl-attributes!)
+  ;; Resolve :auto to actual backend
+  (let [effective-backend (if (= backend :auto)
+                            (detect-backend)
+                            backend)
+        opts-with-backend (assoc opts :backend effective-backend)]
+    ;; Initialize SDL
+    (sdl/init-sdl!)
 
-  ;; Create window and GL context
-  (let [handle (sdl/create-window! opts)
-        gl-ctx (sdl/create-gl-context! handle)
-        scale (sdl/get-window-scale handle)
-        [pw ph] (sdl/get-window-size-in-pixels handle)
-        [w h] (sdl/get-window-size handle)]
-    (map->Window
-      {:handle           handle
-       :gl-context       gl-ctx
-       :event-handler    (atom nil)
-       :frame-requested? (atom false)
-       :running?         (atom false)
-       :width            (atom w)
-       :height           (atom h)
-       :scale            (atom scale)})))
+    ;; Backend-specific setup
+    (case effective-backend
+      :metal
+      (let [;; Create Metal window (no GL attributes needed)
+            handle (sdl/create-window! opts-with-backend)
+            scale (sdl/get-window-scale handle)
+            [w h] (sdl/get-window-size handle)]
+        ;; Initialize Metal layer
+        (when-not (layer-metal/init! handle)
+          (throw (ex-info "Failed to initialize Metal layer" {:backend :metal})))
+        (map->Window
+          {:handle           handle
+           :gl-context       0      ; No GL context for Metal
+           :event-handler    (atom nil)
+           :frame-requested? (atom false)
+           :running?         (atom false)
+           :width            (atom w)
+           :height           (atom h)
+           :scale            (atom scale)
+           :backend          :metal}))
+
+      ;; Default: OpenGL
+      (do
+        (sdl/set-gl-attributes!)
+        (let [handle (sdl/create-window! (assoc opts-with-backend :backend :opengl))
+              gl-ctx (sdl/create-gl-context! handle)
+              scale (sdl/get-window-scale handle)
+              [w h] (sdl/get-window-size handle)]
+          (map->Window
+            {:handle           handle
+             :gl-context       gl-ctx
+             :event-handler    (atom nil)
+             :frame-requested? (atom false)
+             :running?         (atom false)
+             :width            (atom w)
+             :height           (atom h)
+             :scale            (atom scale)
+             :backend          :opengl}))))))
 
 (defn set-event-handler!
   "Set the event handler function.
@@ -81,10 +122,8 @@
       (catch Exception ex
         (println "Event handler error:" (.getMessage ex))))))
 
-(defn- render-frame!
-  "Render a frame using the Skija layer.
-   Handler should return truthy if it drew content, falsy to skip buffer swap
-   (preserves previous frame - useful for hot-reload without flicker)."
+(defn- render-frame-opengl!
+  "Render a frame using the OpenGL/Skija layer."
   [^Window window]
   (let [handle (:handle window)
         [pw ph] (sdl/get-window-size-in-pixels handle)
@@ -94,19 +133,40 @@
     ;; Clear with white (or could be transparent)
     (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_STENCIL_BUFFER_BIT))
     ;; Dispatch frame event to handler
-    ;; Note: Skija Canvas API uses top-left origin (Y=0 at top, Y increases down)
-    ;; Skija internally handles transformation to OpenGL's BOTTOM_LEFT framebuffer
-    ;; SkSL shaders receive fragCoord in BOTTOM_LEFT coordinates (Y=0 at bottom)
     ;; Handler returns truthy if it drew, falsy to skip swap (preserve previous frame)
     (when (dispatch-event! window (e/->EventFrameSkija surface canvas))
       ;; Flush Skija and swap buffers only if handler drew something
       (flush-fn)
       ;; Process frame capture (PBO async read) - only if capture is active
-      ;; Zero overhead when not capturing (just an atom deref)
       (when @capture-active?
         (when-let [capture-fn (resolve 'lib.window.capture/process-frame!)]
           (capture-fn pw ph @(:scale window))))
       (sdl/swap-buffers! handle))))
+
+(defn- render-frame-metal!
+  "Render a frame using the Metal/Skija layer."
+  [^Window window]
+  (let [handle (:handle window)
+        [pw ph] (sdl/get-window-size-in-pixels handle)]
+    ;; Get frame resources from Metal layer
+    (when-let [{:keys [surface canvas flush-fn present-fn]} (layer-metal/frame! pw ph)]
+      ;; Dispatch frame event to handler
+      (when (dispatch-event! window (e/->EventFrameSkija surface canvas))
+        ;; Flush Skija commands to Metal
+        (flush-fn)
+        ;; Present the drawable
+        (present-fn)))))
+
+(defn- render-frame!
+  "Render a frame using the appropriate backend.
+   Handler should return truthy if it drew content, falsy to skip buffer swap
+   (preserves previous frame - useful for hot-reload without flicker)."
+  [^Window window]
+  (case (:backend window)
+    :metal (render-frame-metal! window)
+    :opengl (render-frame-opengl! window)
+    ;; Fallback to OpenGL
+    (render-frame-opengl! window)))
 
 (defn run!
   "Run the event loop. Blocks until window closes."
@@ -154,7 +214,11 @@
                 (reset! (:width window) (:width ev))
                 (reset! (:height window) (:height ev))
                 (reset! (:scale window) (:scale ev))
-                (layer/resize!)
+                ;; Backend-specific resize handling
+                (case (:backend window)
+                  :metal (layer-metal/resize!)
+                  :opengl (layer/resize!)
+                  (layer/resize!))
                 (dispatch-event! window ev))
 
               ;; Exposed event - handled by event watcher
@@ -180,7 +244,11 @@
         ;; Cleanup audio resources (only if namespace was loaded)
         (when-let [audio-cleanup-fn (resolve 'lib.audio.core/cleanup!)]
           (audio-cleanup-fn))
-        (layer/cleanup!)
+        ;; Backend-specific cleanup
+        (case (:backend window)
+          :metal (layer-metal/cleanup!)
+          :opengl (layer/cleanup!)
+          (layer/cleanup!))
         (sdl/cleanup! (:gl-context window) handle)))))
 
 ;; ============================================================
@@ -248,6 +316,34 @@
    Returns [width height]."
   [^Window window]
   [@(:width window) @(:height window)])
+
+(defn get-backend
+  "Get the graphics backend being used (:metal or :opengl)."
+  [^Window window]
+  (:backend window))
+
+(defn get-direct-context
+  "Get the Skija DirectContext for the current backend.
+   Useful for creating textures, images, etc."
+  [^Window window]
+  (case (:backend window)
+    :metal (layer-metal/context)
+    :opengl (layer/context)
+    (layer/context)))
+
+(defn get-metal-device
+  "Get the Metal device pointer (macOS only).
+   Returns nil if not using Metal backend."
+  [^Window window]
+  (when (= :metal (:backend window))
+    (layer-metal/device)))
+
+(defn get-metal-queue
+  "Get the Metal command queue pointer (macOS only).
+   Returns nil if not using Metal backend."
+  [^Window window]
+  (when (= :metal (:backend window))
+    (layer-metal/queue)))
 
 ;; Display/monitor functions (re-exported from internal)
 (defn get-displays

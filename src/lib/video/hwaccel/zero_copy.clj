@@ -53,21 +53,48 @@
 ;; These functions are implemented in platform-specific modules.
 ;; We use requiring-resolve for lazy loading and hot-reload compatibility.
 
+;; ============================================================
+;; Metal Backend Detection
+;; ============================================================
+
+(defn- metal-backend-active?
+  "Check if the Metal backend is currently active.
+   Returns true if layer-metal has been initialized with a device."
+  []
+  (try
+    (when-let [device-fn (requiring-resolve 'lib.window.layer-metal/device)]
+      (let [device (device-fn)]
+        (and device (pos? device))))
+    (catch Exception _ false)))
+
+(defn- get-metal-device
+  "Get the current Metal device from the layer, if available."
+  []
+  (try
+    (when-let [device-fn (requiring-resolve 'lib.window.layer-metal/device)]
+      (device-fn))
+    (catch Exception _ nil)))
+
 (defn- resolve-platform-binder
   "Resolve the platform-specific frame binder function.
-   Returns nil if not available.
+   Returns a function (fn [hw-data-ptr tex-info] -> bool) or nil if not available.
 
-   NOTE: VideoToolbox zero-copy is disabled because macOS requires
-   GL_TEXTURE_RECTANGLE for IOSurface binding, but Skia's OpenGL
-   backend doesn't support rectangle textures properly. The fallback
-   hwaccel decoder (hw decode + CPU copy) is used instead, which is
-   still faster than software decode."
+   For VideoToolbox on macOS:
+   - With Metal backend: Uses videotoolbox_metal for true zero-copy
+   - With OpenGL backend: Returns nil (GL_TEXTURE_RECTANGLE not supported by Skia)"
   [decoder-type]
   (case decoder-type
-    ;; VideoToolbox: Disabled - Skia+OpenGL doesn't support GL_TEXTURE_RECTANGLE
-    ;; Requires Metal backend for true zero-copy on macOS
     :videotoolbox
-    nil
+    (when (metal-backend-active?)
+      ;; Metal backend available - create a wrapper that includes the Metal device
+      (when-let [bind-fn (try
+                           (requiring-resolve 'lib.video.hwaccel.videotoolbox-metal/bind-hw-frame-to-texture!)
+                           (catch Exception _ nil))]
+        ;; Return a wrapper that fetches the Metal device and passes it
+        (fn [hw-data-ptr tex-info]
+          (let [device (get-metal-device)]
+            (when device
+              (bind-fn hw-data-ptr tex-info device))))))
 
     :vaapi
     (try
@@ -513,11 +540,15 @@
   []
   (let [platform-info (detect/decoder-info)
         decoder-type (:decoder platform-info)
-        binder (resolve-platform-binder decoder-type)]
+        binder (resolve-platform-binder decoder-type)
+        metal-active? (metal-backend-active?)]
     (assoc platform-info
            :zero-copy-available? (some? binder)
+           :backend (if metal-active? :metal :opengl)
            :zero-copy-path (case decoder-type
-                             :videotoolbox "CVPixelBuffer -> IOSurface -> CGLTexImageIOSurface2D"
+                             :videotoolbox (if metal-active?
+                                             "CVPixelBuffer -> CVMetalTextureCache -> MTLTexture (Metal)"
+                                             "N/A (requires Metal backend)")
                              :vaapi        "VASurface -> DMA-BUF -> EGLImage -> glEGLImageTargetTexture2DOES"
                              (:cuda :nvdec-cuda) "CUDA buffer -> cuGraphicsGLRegisterImage -> GL texture"
                              (:d3d11 :d3d11va)   "D3D11 texture -> WGL_NV_DX_interop -> GL texture"

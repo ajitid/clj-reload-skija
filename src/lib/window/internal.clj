@@ -10,6 +10,7 @@
 
 ;; SDL window flags (from SDLVideo)
 (def ^:private WINDOW_OPENGL             SDLVideo/SDL_WINDOW_OPENGL)
+(def ^:private WINDOW_METAL              SDLVideo/SDL_WINDOW_METAL)
 (def ^:private WINDOW_RESIZABLE          SDLVideo/SDL_WINDOW_RESIZABLE)
 (def ^:private WINDOW_HIGH_PIXEL_DENSITY SDLVideo/SDL_WINDOW_HIGH_PIXEL_DENSITY)
 (def ^:private WINDOW_ALWAYS_ON_TOP      SDLVideo/SDL_WINDOW_ALWAYS_ON_TOP)
@@ -129,17 +130,22 @@
      :high-dpi?    - Enable high DPI (default true)
      :always-on-top? - Keep window above others (default false)
      :display      - Display index (0-based) or display ID to open on (default: primary)
+     :backend      - Graphics backend :opengl (default) or :metal (macOS only)
    Position precedence: explicit :x/:y > :display (centered) > default (primary, centered)
    Returns the window handle (long pointer)."
-  [{:keys [title width height x y resizable? high-dpi? always-on-top? display]
-    :or {title "Window" width 800 height 600 resizable? true high-dpi? true always-on-top? false}}]
-  (let [flags (cond-> WINDOW_OPENGL
+  [{:keys [title width height x y resizable? high-dpi? always-on-top? display backend]
+    :or {title "Window" width 800 height 600 resizable? true high-dpi? true always-on-top? false backend :opengl}}]
+  (let [graphics-flag (case backend
+                        :metal WINDOW_METAL
+                        :opengl WINDOW_OPENGL
+                        WINDOW_OPENGL)
+        flags (cond-> graphics-flag
                 resizable?     (bit-or WINDOW_RESIZABLE)
                 high-dpi?      (bit-or WINDOW_HIGH_PIXEL_DENSITY)
                 always-on-top? (bit-or WINDOW_ALWAYS_ON_TOP))
         window (SDLVideo/SDL_CreateWindow title width height flags)]
     (when (zero? window)
-      (throw (ex-info "Failed to create window" {})))
+      (throw (ex-info "Failed to create window" {:backend backend})))
     ;; Position window: explicit x/y takes precedence, then display, then default
     (cond
       ;; Explicit position
