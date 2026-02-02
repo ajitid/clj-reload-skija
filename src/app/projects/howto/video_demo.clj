@@ -1,16 +1,20 @@
 (ns app.projects.howto.video-demo
-  "Video Demo - GPU-accelerated video playback with Skia effects.
+  "Video Demo - GPU-accelerated video playback with Skia effects and audio sync.
 
    Demonstrates:
    - Loading video with (video/from-file)
    - Play, pause, stop controls
    - Seek via progress bar
    - Skia effects on video (rounded corners)
+   - Audio playback with A/V sync
+   - Volume control
 
    Controls:
    - SPACE: Play/Pause toggle
    - S: Stop (reset to beginning)
    - LEFT/RIGHT: Seek backward/forward 5s
+   - UP/DOWN: Volume up/down
+   - M: Mute/unmute toggle
 
    Note: Requires a video file. Place 'sample.mp4' in resources/videos/
    or change the video-file path below."
@@ -40,6 +44,10 @@
 ;; Window dimensions (updated each frame for gesture handlers)
 (defonce window-width (atom 800))
 (defonce window-height (atom 600))
+
+;; Volume state (for mute toggle)
+(defonce last-volume (atom 1.0))
+(defonce muted? (atom false))
 
 ;; ============================================================
 ;; Drawing Helpers
@@ -111,12 +119,14 @@
   (let [source @video-source
         is-playing (and source (video/playing? source))
         is-paused (and source (video/paused? source))
+        has-audio (and source (video/has-audio? source))
         status-color (cond
                        is-playing playing-color
                        is-paused paused-color
                        :else stopped-color)
         current-pos (when source (video/tell source))
         total-dur (when source (video/duration source))
+        volume (when source (video/get-volume source))
         time-text (str (format-time current-pos) " / " (format-time total-dur))
         ;; Seek bar below video
         [bar-x bar-y bar-w bar-h] (get-seek-bar-bounds video-x (+ video-y video-h) video-w)
@@ -126,6 +136,17 @@
     ;; Time display
     (text/text canvas time-text (+ video-x (/ video-w 2)) (+ bar-y 30)
                {:size 18 :color text-color :align :center})
+    ;; Volume display (if audio available)
+    (when has-audio
+      (let [vol-text (if @muted?
+                       "MUTED"
+                       (format "Vol: %d%%" (int (* (or volume 1.0) 100))))]
+        (text/text canvas vol-text (+ video-x video-w -10) (+ bar-y 30)
+                   {:size 14 :color (if @muted? oc/red-7 text-color) :align :right})))
+    ;; Audio sync indicator
+    (when has-audio
+      (text/text canvas "[Audio Sync]" (+ video-x 10) (+ bar-y 30)
+                 {:size 14 :color oc/cyan-7 :align :left}))
     ;; Seek bar background
     (shapes/rounded-rect canvas bar-x bar-y bar-w bar-h 4
                          {:color [0.267 0.267 0.267 1.0]})
@@ -134,8 +155,11 @@
       (shapes/rounded-rect canvas bar-x bar-y (* bar-w progress) bar-h 4
                            {:color status-color}))
     ;; Controls help
-    (let [help-y (+ bar-y 60)]
-      (text/text canvas "SPACE: Play/Pause   S: Stop   LEFT/RIGHT: Seek"
+    (let [help-y (+ bar-y 60)
+          help-text (if has-audio
+                      "SPACE: Play/Pause   S: Stop   LEFT/RIGHT: Seek   UP/DOWN: Volume   M: Mute"
+                      "SPACE: Play/Pause   S: Stop   LEFT/RIGHT: Seek")]
+      (text/text canvas help-text
                  (+ video-x (/ video-w 2)) help-y
                  {:size 14 :color [0.533 0.533 0.533 1.0] :align :center}))))
 
@@ -159,16 +183,21 @@
                           (map key)
                           (map name)
                           (clojure.string/join ", ")))))
+  ;; Reset audio state
+  (reset! muted? false)
+  (reset! last-volume 1.0)
   (try
     (reset! video-source (video/from-file video-file {:hw-accel? true :debug? true}))
     (let [source @video-source
           hwaccel (video/hwaccel-type source)
-          info (video/decoder-info source)]
+          info (video/decoder-info source)
+          has-audio (video/has-audio? source)]
       (println "Video loaded successfully.")
       (println (format "  Resolution: %dx%d" (video/width source) (video/height source)))
       (println (format "  Duration: %s" (format-time (video/duration source))))
       (println (format "  FPS: %.2f" (double (video/fps source))))
       (println (format "  Decoder: %s" (if hwaccel (name hwaccel) "software")))
+      (println (format "  Audio: %s" (if has-audio "yes (A/V sync enabled)" "no")))
       (when (:fallback? info)
         (println "  (Fell back from hardware to software)")))
     (catch Exception e
@@ -205,7 +234,36 @@
       ;; LEFT - Seek backward 5s
       (= key 0x40000050)
       (let [pos (video/tell source)]
-        (video/seek! source (max 0 (- pos 5)))))))
+        (video/seek! source (max 0 (- pos 5))))
+
+      ;; UP - Volume up
+      (= key 0x40000052)
+      (when (video/has-audio? source)
+        (let [vol (or (video/get-volume source) 1.0)
+              new-vol (min 1.0 (+ vol 0.1))]
+          (video/set-volume! source new-vol)
+          (reset! muted? false)))
+
+      ;; DOWN - Volume down
+      (= key 0x40000051)
+      (when (video/has-audio? source)
+        (let [vol (or (video/get-volume source) 1.0)
+              new-vol (max 0.0 (- vol 0.1))]
+          (video/set-volume! source new-vol)))
+
+      ;; M - Mute toggle
+      (= key 0x6D)
+      (when (video/has-audio? source)
+        (if @muted?
+          ;; Unmute - restore last volume
+          (do
+            (video/set-volume! source @last-volume)
+            (reset! muted? false))
+          ;; Mute - save current volume and set to 0
+          (do
+            (reset! last-volume (or (video/get-volume source) 1.0))
+            (video/set-volume! source 0.0)
+            (reset! muted? true)))))))
 
 (defn draw [^Canvas canvas w h]
   "Called every frame for rendering."
@@ -238,4 +296,6 @@
   (when @video-source
     (video/close! @video-source))
   (reset! video-source nil)
+  (reset! muted? false)
+  (reset! last-volume 1.0)
   (println "Video Demo cleanup"))

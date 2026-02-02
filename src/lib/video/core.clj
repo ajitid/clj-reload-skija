@@ -260,6 +260,37 @@
   (detect/decoder-info))
 
 ;; ============================================================
+;; Audio Control
+;; ============================================================
+
+(defn has-audio?
+  "Check if the video source has an audio track."
+  [source]
+  (when-let [impl (get-source-data source)]
+    (proto/has-audio?* impl)))
+
+(defn set-volume!
+  "Set audio volume (0.0 = silent, 1.0 = normal)."
+  [source volume]
+  (when-let [impl (get-source-data source)]
+    (proto/set-volume!* impl volume))
+  source)
+
+(defn get-volume
+  "Get current audio volume."
+  [source]
+  (when-let [impl (get-source-data source)]
+    (proto/get-volume* impl)))
+
+(defn audio-position
+  "Get the current audio playback position in seconds.
+   This is the master clock when audio sync is enabled.
+   Returns nil if no audio track."
+  [source]
+  (when-let [impl (get-source-data source)]
+    (proto/audio-position* impl)))
+
+;; ============================================================
 ;; Resource management
 ;; ============================================================
 

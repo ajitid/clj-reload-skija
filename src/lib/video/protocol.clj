@@ -18,4 +18,9 @@
   (ensure-first-frame!* [this] "Decode and upload first frame if not already done")
   (current-frame* [this direct-context] "Get current frame as Skia Image (GPU-backed)")
   (advance-frame!* [this dt] "Advance playback by dt seconds, decode next frame if needed")
-  (close* [this] "Release all resources"))
+  (close* [this] "Release all resources")
+  ;; Audio sync methods
+  (has-audio?* [this] "Check if source has audio track")
+  (set-volume!* [this volume] "Set audio volume 0.0-1.0")
+  (get-volume* [this] "Get current audio volume")
+  (audio-position* [this] "Get audio playback position (master clock for sync)"))

@@ -6,10 +6,14 @@
    GPU to decode video frames. The frames are then transferred to CPU memory
    by JavaCV, and uploaded to an OpenGL texture for Skia rendering.
 
-   For true zero-copy (GPU-resident frames), see videotoolbox.clj (macOS)."
+   For true zero-copy (GPU-resident frames), see videotoolbox.clj (macOS).
+
+   Supports audio sync when audio track is available."
   (:require [lib.video.protocol :as proto]
             [lib.video.texture :as tex]
-            [lib.video.hwaccel.detect :as detect])
+            [lib.video.hwaccel.detect :as detect]
+            [lib.video.audio :as audio]
+            [lib.video.sync :as sync])
   (:import [org.bytedeco.javacv FFmpegFrameGrabber Frame]
            [java.nio ByteBuffer]))
 
@@ -111,7 +115,11 @@
      texture-id         ; OpenGL texture for current frame
      skia-image         ; Cached Skia Image
      needs-decode?      ; True if we need to decode next frame
-     has-first-frame?]  ; True after first frame decoded
+     has-first-frame?   ; True after first frame decoded
+     ;; Audio sync
+     audio-track        ; AudioTrack for audio playback (nil if no audio)
+     sync-state         ; SyncState for A/V synchronization
+     use-audio-sync?]   ; True to sync video to audio clock
 
   proto/VideoSource
   (play* [this]
@@ -122,7 +130,17 @@
           (.setTimestamp grabber 0)
           (reset! current-pts 0.0)
           (reset! last-frame-pts -1.0)
-          (reset! needs-decode? true))
+          (reset! needs-decode? true)
+          ;; Reset audio sync
+          (when sync-state
+            (sync/reset-sync! sync-state))
+          ;; Start audio if available
+          (when audio-track
+            (audio/play! audio-track)))
+        (when (= state :paused)
+          ;; Resume audio if available
+          (when audio-track
+            (audio/resume! audio-track)))
         (reset! state-atom :playing)))
     this)
 
@@ -132,11 +150,20 @@
     (reset! current-pts 0.0)
     (reset! last-frame-pts -1.0)
     (reset! needs-decode? true)
+    ;; Stop audio
+    (when audio-track
+      (audio/stop! audio-track))
+    ;; Reset sync
+    (when sync-state
+      (sync/reset-sync! sync-state))
     this)
 
   (pause* [this]
     (when (= @state-atom :playing)
-      (reset! state-atom :paused))
+      (reset! state-atom :paused)
+      ;; Pause audio
+      (when audio-track
+        (audio/pause! audio-track)))
     this)
 
   (seek* [this seconds]
@@ -144,6 +171,12 @@
       (.setTimestamp grabber target-us)
       (reset! current-pts seconds)
       (reset! last-frame-pts -1.0)
+      ;; Seek audio if available
+      (when audio-track
+        (audio/seek! audio-track seconds))
+      ;; Reset sync to new position
+      (when sync-state
+        (sync/reset-sync-to! sync-state seconds))
       ;; Immediately decode frame at new position
       (when-let [frame (.grabImage grabber)]
         (when-let [{:keys [buffer stride channels]} (get-frame-info frame)]
@@ -193,28 +226,42 @@
 
   (advance-frame!* [this dt]
     (when (= @state-atom :playing)
-      ;; Advance playback position
-      (swap! current-pts + dt)
-      ;; Check if we need a new frame
-      (let [pts @current-pts
+      ;; Get timing source - audio position if syncing, otherwise advance by dt
+      (let [audio-pos (when (and use-audio-sync? audio-track)
+                        (audio/tell audio-track))
+            ;; Use audio position if available, otherwise advance by dt
+            effective-pts (if audio-pos
+                            audio-pos
+                            (swap! current-pts + dt))
             last-pts @last-frame-pts
             frame-time (/ 1.0 fps-val)]
-        (when (or @needs-decode?
-                  (>= (- pts last-pts) frame-time))
-          ;; Decode next frame
-          (when-let [frame (.grabImage grabber)]
-            (when-let [{:keys [buffer stride channels]} (get-frame-info frame)]
-              (when (= channels 4)
-                (when-not @texture-id
-                  (reset! texture-id (tex/create-texture width height)))
-                (tex/update-texture-with-stride! @texture-id width height buffer stride channels)
-                (reset! has-first-frame? true))
-              (reset! last-frame-pts (calculate-pts frame))
-              (reset! needs-decode? false)))
-          ;; Handle end of video
-          (when (>= @current-pts duration-val)
-            (reset! state-atom :stopped)
-            (reset! current-pts 0.0)))))
+        ;; Update current-pts to match effective timing
+        (when audio-pos
+          (reset! current-pts audio-pos))
+        ;; Simple frame-rate based decoding: decode when enough time has passed
+        ;; This keeps decoding smooth regardless of audio sync
+        (let [time-since-last-frame (- effective-pts last-pts)
+              should-decode? (or @needs-decode?
+                                 (>= time-since-last-frame frame-time))]
+          (when should-decode?
+            ;; Decode next frame
+            (when-let [frame (.grabImage grabber)]
+              (when-let [{:keys [buffer stride channels]} (get-frame-info frame)]
+                (when (= channels 4)
+                  (when-not @texture-id
+                    (reset! texture-id (tex/create-texture width height)))
+                  (tex/update-texture-with-stride! @texture-id width height buffer stride channels)
+                  (reset! has-first-frame? true))
+                ;; Update frame tracking - use audio position if available for smoother sync
+                (let [frame-pts (if audio-pos audio-pos (calculate-pts frame))]
+                  (reset! last-frame-pts frame-pts))
+                (reset! needs-decode? false)))
+            ;; Handle end of video
+            (when (>= @current-pts duration-val)
+              (reset! state-atom :stopped)
+              (reset! current-pts 0.0)
+              (when audio-track
+                (audio/stop! audio-track)))))))
     this)
 
   (current-frame* [this direct-context]
@@ -225,35 +272,78 @@
             img))))
 
   (close* [this]
+    ;; Close audio track
+    (when audio-track
+      (audio/close! audio-track))
+    ;; Close Skia image
     (when-let [img @skia-image]
       (.close img)
       (reset! skia-image nil))
+    ;; Delete texture
     (when-let [tex @texture-id]
       (tex/delete-texture! tex)
       (reset! texture-id nil))
+    ;; Close grabber
     (try
       (.stop grabber)
       (.close grabber)
       (catch Exception _))
-    this))
+    this)
+
+  ;; Audio sync methods
+  (has-audio?* [_this]
+    (some? audio-track))
+
+  (set-volume!* [this volume]
+    (when audio-track
+      (audio/set-volume! audio-track volume))
+    this)
+
+  (get-volume* [_this]
+    (if audio-track
+      @(:volume-atom audio-track)
+      1.0))
+
+  (audio-position* [_this]
+    (when audio-track
+      (audio/tell audio-track))))
 
 (defn- make-decoder-result
   "Create a decoder result map."
-  [grabber path hwaccel-type fallback?]
-  (let [width (.getImageWidth grabber)
-        height (.getImageHeight grabber)
-        fps (let [r (.getFrameRate grabber)]
-              (if (pos? r) r 30.0))
-        duration (/ (.getLengthInTime grabber) 1000000.0)]
-    (debug-log "Video:" width "x" height "@" fps "fps, duration:" duration "s")
-    (debug-log "Hwaccel:" (or hwaccel-type "none (software)"))
-    {:decoder (->HardwareDecoder
-                grabber path hwaccel-type
-                width height fps duration
-                (atom :stopped) (atom 0.0) (atom -1.0)
-                (atom nil) (atom nil) (atom true) (atom false))
-     :hwaccel-type hwaccel-type
-     :fallback? fallback?}))
+  ([grabber path hwaccel-type fallback?]
+   (make-decoder-result grabber path hwaccel-type fallback? {}))
+  ([grabber path hwaccel-type fallback? opts]
+   (let [width (.getImageWidth grabber)
+         height (.getImageHeight grabber)
+         fps (let [r (.getFrameRate grabber)]
+               (if (pos? r) r 30.0))
+         duration (/ (.getLengthInTime grabber) 1000000.0)
+         ;; Create audio track if enabled and video has audio
+         enable-audio? (get opts :audio? true)
+         audio-track (when enable-audio?
+                       (try
+                         (audio/create-audio-track path)
+                         (catch Exception e
+                           (debug-log "No audio track:" (.getMessage e))
+                           nil)))
+         ;; Enable audio sync if we have audio and it's enabled
+         use-audio-sync? (and audio-track
+                              (get opts :audio-sync? true))
+         ;; Create sync state if syncing
+         sync-state (when use-audio-sync?
+                      (sync/create-sync-state))]
+     (debug-log "Video:" width "x" height "@" fps "fps, duration:" duration "s")
+     (debug-log "Hwaccel:" (or hwaccel-type "none (software)"))
+     (when audio-track
+       (debug-log "Audio track enabled, sync:" use-audio-sync?))
+     {:decoder (->HardwareDecoder
+                 grabber path hwaccel-type
+                 width height fps duration
+                 (atom :stopped) (atom 0.0) (atom -1.0)
+                 (atom nil) (atom nil) (atom true) (atom false)
+                 audio-track sync-state use-audio-sync?)
+      :hwaccel-type hwaccel-type
+      :fallback? fallback?})))
 
 (defn- try-start-grabber!
   "Try to start grabber, return true on success."
@@ -278,8 +368,10 @@
    Attempts to use platform-appropriate hwaccel, falls back to software.
 
    Options:
-     :decoder - Force a specific decoder (:videotoolbox, :vaapi, :nvdec-cuda, :d3d11va, :software)
-     :debug?  - Enable debug logging
+     :decoder    - Force a specific decoder (:videotoolbox, :vaapi, :nvdec-cuda, :d3d11va, :software)
+     :debug?     - Enable debug logging
+     :audio?     - Enable audio track (default true)
+     :audio-sync? - Sync video to audio clock (default true when audio present)
 
    Returns {:decoder HardwareDecoder :hwaccel-type keyword :fallback? boolean}"
   ([path]
@@ -298,7 +390,7 @@
      (if-not use-hwaccel?
        ;; Software-only path
        (if-let [grabber (create-software-grabber path)]
-         (make-decoder-result grabber path nil false)
+         (make-decoder-result grabber path nil false opts)
          (throw (ex-info "Failed to create video decoder" {:path path})))
 
        ;; Try hwaccel path
@@ -308,14 +400,14 @@
 
          (if (and actual-decoder (try-start-grabber! grabber))
            ;; Hwaccel succeeded
-           (make-decoder-result grabber path actual-decoder false)
+           (make-decoder-result grabber path actual-decoder false opts)
 
            ;; Hwaccel failed, try software fallback
            (do
              (debug-log "Hwaccel failed, falling back to software decode")
              (try (.close grabber) (catch Exception _))
              (if-let [sw-grabber (create-software-grabber path)]
-               (make-decoder-result sw-grabber path nil true)
+               (make-decoder-result sw-grabber path nil true opts)
                (throw (ex-info "Failed to create video decoder" {:path path}))))))))))
 
 (defn hwaccel-type
