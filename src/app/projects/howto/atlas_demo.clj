@@ -51,9 +51,9 @@
   (try
     ;; Load sprite sheets
     (reset! characters-sheet
-            (image/from-file "resources/sprites/Tilemap/tilemap-characters.png"))
+            (image/file->image "resources/sprites/Tilemap/tilemap-characters.png"))
     (reset! tiles-sheet
-            (image/from-file "resources/sprites/Tilemap/tilemap.png"))
+            (image/file->image "resources/sprites/Tilemap/tilemap.png"))
     ;; Create quads for characters (24x24, 9 cols, 3 rows, 1px spacing)
     (reset! character-quads (quad-grid-with-spacing 24 24 9 3 1))
     (println "[atlas-demo] Loaded" (count @character-quads) "character sprites")

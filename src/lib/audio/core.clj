@@ -2,8 +2,8 @@
   "Love2D-style audio API for Clojure.
 
    Provides simple, game-friendly audio playback:
-   - (from-file \"sound.wav\") -> Source (default :static, fully buffered)
-   - (from-file \"music.mp3\" {:type :stream}) -> Source (streaming, low memory)
+   - (file->audio \"sound.wav\") -> Source (default :static, fully buffered)
+   - (file->audio \"music.mp3\" {:type :stream}) -> Source (streaming, low memory)
    - (play! source), (stop! source), (pause! source), (resume! source)
    - (set-volume! source 0.5), (set-looping! source true)
    - (playing? source), (duration source)
@@ -42,7 +42,7 @@
 ;; Loading
 ;; ============================================================
 
-(defn from-file
+(defn file->audio
   "Load audio source from file (WAV/OGG/MP3).
 
    Options:
@@ -54,7 +54,7 @@
    Returns a Source handle. Resources are automatically released when
    the Source is garbage collected (like Love2D)."
   ([path]
-   (from-file path {}))
+   (file->audio path {}))
   ([path opts]
    (let [id (swap! state/source-counter inc)
          source-type (get opts :type :static)

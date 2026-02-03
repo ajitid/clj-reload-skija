@@ -163,7 +163,7 @@
   (println "Audio Demo loaded!")
   (println "Loading audio file:" audio-file "(streaming mode)")
   (try
-    (reset! music (audio/from-file audio-file {:type :stream}))
+    (reset! music (audio/file->audio audio-file {:type :stream}))
     (println "Audio loaded successfully. Duration:" (format-time (audio/duration @music)))
     (catch Exception e
       (println "Failed to load audio:" (.getMessage e))))

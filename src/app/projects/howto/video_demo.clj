@@ -2,7 +2,7 @@
   "Video Demo - GPU-accelerated video playback with Skia effects and audio sync.
 
    Demonstrates:
-   - Loading video with (video/from-file)
+   - Loading video with (video/file->video)
    - Play, pause, stop controls
    - Seek via progress bar
    - Skia effects on video (rounded corners)
@@ -213,7 +213,7 @@
   (reset! muted? false)
   (reset! last-volume 1.0)
   (try
-    (reset! video-source (video/from-file video-file {:hw-accel? true}))
+    (reset! video-source (video/file->video video-file {:hw-accel? true}))
     (let [source @video-source
           hwaccel (video/hwaccel-type source)
           info (video/decoder-info source)

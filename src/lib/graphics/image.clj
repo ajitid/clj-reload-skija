@@ -13,10 +13,10 @@
 
    ```clojure
    ;; Load a sprite sheet
-   (def sheet (image/from-file \"assets/sprites.png\"))
+   (def sheet (image/file->image \"assets/sprites.png\"))
 
    ;; Load from bytes (e.g., downloaded content)
-   (def img (image/from-bytes byte-array))
+   (def img (image/bytes->image byte-array))
 
    ;; Define quads (sprite regions within the sheet)
    (def player-idle (image/quad 0 0 32 32))
@@ -182,7 +182,7 @@
 ;; Image Loading
 ;; ============================================================
 
-(defn from-file
+(defn file->image
   "Load an image from a file path or resource.
 
    Supports PNG, JPEG, WebP, and other formats supported by Skia.
@@ -198,8 +198,8 @@
      Exception if file not found or invalid image format
 
    Example:
-     (def sprites (from-file \"assets/sprites.png\"))
-     (def logo (from-file \"resources/logo.png\"))"
+     (def sprites (file->image \"assets/sprites.png\"))
+     (def logo (file->image \"resources/logo.png\"))"
   [path]
   (let [file (io/file path)
         bytes (if (.exists file)
@@ -216,7 +216,7 @@
                   (throw (ex-info (str "Image not found: " path) {:path path}))))]
     (Image/makeDeferredFromEncodedBytes bytes)))
 
-(defn from-bytes
+(defn bytes->image
   "Load an image from a byte array.
 
    Supports PNG, JPEG, WebP, and other formats supported by Skia.
@@ -229,14 +229,14 @@
      Skija Image object
 
    Example:
-     (def img (from-bytes (download-image-bytes url)))"
+     (def img (bytes->image (download-image-bytes url)))"
   [^bytes data]
   (Image/makeDeferredFromEncodedBytes data))
 
 ;; Legacy alias for backwards compatibility
 (def load-image
-  "DEPRECATED: Use from-file instead."
-  from-file)
+  "DEPRECATED: Use file->image instead."
+  file->image)
 
 (defn image-size
   "Get the dimensions of an image.

@@ -2,9 +2,9 @@
   "Love2D-style video API for Clojure.
 
    Provides GPU-accelerated video playback with Skia effects:
-   - (from-file \"video.mp4\") -> Source
-   - (from-file \"video.mp4\" {:hw-accel? true}) -> Try hardware decode
-   - (from-file \"video.mp4\" {:zero-copy? true}) -> Try zero-copy decode
+   - (file->video \"video.mp4\") -> Source
+   - (file->video \"video.mp4\" {:hw-accel? true}) -> Try hardware decode
+   - (file->video \"video.mp4\" {:zero-copy? true}) -> Try zero-copy decode
    - (play! source), (stop! source), (pause! source)
    - (seek! source time-seconds)
    - (current-frame source direct-context) -> Skia Image
@@ -76,7 +76,7 @@
         (println "[video] Zero-copy decoder failed:" (.getMessage e)))
       nil)))
 
-(defn from-file
+(defn file->video
   "Load video source from file (MP4/WebM/MOV/etc).
 
    Options:
@@ -100,14 +100,14 @@
    the Source is garbage collected.
 
    Example:
-     (def video (video/from-file \"movie.mp4\"))
+     (def video (video/file->video \"movie.mp4\"))
      (video/play! video)
      ;; In your draw loop:
      (when-let [frame (video/current-frame video ctx)]
        (.drawImage canvas frame 0 0))
      (video/advance-frame! video dt)"
   ([path]
-   (from-file path {}))
+   (file->video path {}))
   ([path opts]
    (let [id (swap! state/source-counter inc)
          ;; Options with defaults

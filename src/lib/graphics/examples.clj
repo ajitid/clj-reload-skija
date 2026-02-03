@@ -467,10 +467,10 @@
   (require '[lib.graphics.image :as image])
 
   ;; Load a sprite sheet
-  (def sheet (image/from-file "assets/sprites.png"))
+  (def sheet (image/file->image "assets/sprites.png"))
 
   ;; Load from bytes (e.g., downloaded content)
-  (def img (image/from-bytes byte-array))
+  (def img (image/bytes->image byte-array))
 
   ;; Define quads (sprite regions within the sheet)
   (def player-idle (image/quad 0 0 32 32))

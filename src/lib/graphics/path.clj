@@ -9,7 +9,7 @@
    ;; Factories
    (path/rect 10 10 100 50)
    (path/circle 50 50 25)
-   (path/from-svg \"M0,0 L100,100 Z\")
+   (path/svg->path \"M0,0 L100,100 Z\")
 
    ;; Builder (fluent)
    (-> (path/builder)
@@ -163,7 +163,7 @@
                   (float y1))))
     (.build pb)))
 
-(defn from-svg
+(defn svg->path
   "Parse an SVG path string into a Path."
   [^String svg-string]
   (Path/makeFromSVGString svg-string))

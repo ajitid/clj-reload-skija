@@ -103,7 +103,7 @@
     (future
       (try
         (let [bytes (fetch-image-bytes photo-url)
-              img (image/from-bytes bytes)]
+              img (image/bytes->image bytes)]
           ;; Close old image
           (when-let [old @photo-image]
             (.close old))
