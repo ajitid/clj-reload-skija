@@ -171,13 +171,15 @@
     (cond
       ;; Close event - hide the panel window instead of closing
       (instance? EventClose event)
-      (window/hide! panel-win)
+      (do (shell-state/panel-visible? false)
+          (window/hide! panel-win))
 
       ;; Frame event - draw the control panel
       (instance? EventFrameSkija event)
       (do
-        ;; Always request next frame to stay in sync with main window
-        (window/request-frame! panel-win)
+        ;; Only request next frame if panel is visible
+        (when @shell-state/panel-visible?
+          (window/request-frame! panel-win))
         (when-not @sys/reloading?
           (let [{:keys [canvas]} event
                 s @scale
@@ -196,9 +198,10 @@
 
       ;; Resize event
       (instance? EventResize event)
-      (let [{:keys [width height]} event]
+      (let [{:keys [width height scale]} event]
         (reset! panel-width width)
-        (reset! panel-height height))
+        (reset! panel-height height)
+        (reset! app.core/scale scale))
 
       ;; Mouse button event - route to gesture system with :window :panel
       (instance? EventMouseButton event)
@@ -209,7 +212,7 @@
                             (ht (:x event) (:y event)))]
             (if hit-field
               (when-let [md! (requiring-resolve 'app.ui.text-field/handle-mouse-down!)]
-                (md! hit-field (:x event) (:y event) (:clicks event)))
+                (md! hit-field (:x event) (:y event) (:clicks event) (:handle panel-win)))
               (do
                 (when-let [unfocus! (requiring-resolve 'app.ui.text-field/unfocus!)]
                   (unfocus!))
@@ -237,18 +240,29 @@
             (handle-fn event {:scale @scale
                               :window :panel}))))
 
-      ;; Text input event
+      ;; Text input event - only if text field is focused in THIS window
       (instance? EventTextInput event)
-      (when-let [handle-fn (requiring-resolve 'app.ui.text-field/handle-text-input!)]
-        (handle-fn (:text event)))
+      (when-let [focused? (requiring-resolve 'app.ui.text-field/focused-in-window?)]
+        (when (focused? (:handle panel-win))
+          (when-let [handle-fn (requiring-resolve 'app.ui.text-field/handle-text-input!)]
+            (handle-fn (:text event)))))
 
-      ;; Keyboard event - route text field keys
+      ;; Keyboard event - route text field keys only if focused in THIS window
       (instance? EventKey event)
-      (let [{:keys [pressed?]} event
-            text-field-focused? (when-let [f (requiring-resolve 'app.ui.text-field/any-focused?)] (f))]
-        (when (and text-field-focused? pressed?)
-          (when-let [handle-fn (requiring-resolve 'app.ui.text-field/handle-key-event!)]
-            (handle-fn event))))
+      (let [{:keys [key pressed? modifiers]} event
+            text-field-focused? (when-let [f (requiring-resolve 'app.ui.text-field/focused-in-window?)]
+                                  (f (:handle panel-win)))
+            consumed? (when (and text-field-focused? pressed?)
+                        (when-let [handle-fn (requiring-resolve 'app.ui.text-field/handle-key-event!)]
+                          (handle-fn event)))]
+        ;; Ctrl+` toggles panel show/hide (same as main window)
+        (when (and (not consumed?) pressed?
+                   (= key 0x60) (pos? (bit-and modifiers 0x00C0)))
+          (let [visible? (not @shell-state/panel-visible?)]
+            (shell-state/panel-visible? visible?)
+            (if visible?
+              (window/show! panel-win)
+              (window/hide! panel-win)))))
 
       :else nil)))
 
@@ -275,8 +289,9 @@
             (reset! sys/app-activated? true))
           (window/request-frame! win)
           ;; Also request frame for panel window to keep it in sync
-          (when-let [panel-win @sys/panel-window]
-            (window/request-frame! panel-win))
+          (when (and @shell-state/panel-visible?
+                     (some? @sys/panel-window))
+            (window/request-frame! @sys/panel-window))
           (when-not @sys/reloading?
             (let [{:keys [canvas]} event
                   s @scale
@@ -340,7 +355,7 @@
                 (if hit-field
                   ;; Clicked on a text field — position cursor, start drag-select
                   (when-let [md! (requiring-resolve 'app.ui.text-field/handle-mouse-down!)]
-                    (md! hit-field (:x event) (:y event) (:clicks event)))
+                    (md! hit-field (:x event) (:y event) (:clicks event) (:handle win)))
                   ;; Clicked outside text fields — unfocus and continue with gestures
                   (let [_ (when-let [unfocus! (requiring-resolve 'app.ui.text-field/unfocus!)]
                             (unfocus!))
@@ -414,15 +429,18 @@
                             :window :main
                             :window-width @window-width}))
 
-        ;; Text input event (from SDL_EVENT_TEXT_INPUT)
+        ;; Text input event (from SDL_EVENT_TEXT_INPUT) - only if text field is focused in THIS window
         (instance? EventTextInput event)
-        (when-let [handle-fn (requiring-resolve 'app.ui.text-field/handle-text-input!)]
-          (handle-fn (:text event)))
+        (when-let [focused? (requiring-resolve 'app.ui.text-field/focused-in-window?)]
+          (when (focused? (:handle win))
+            (when-let [handle-fn (requiring-resolve 'app.ui.text-field/handle-text-input!)]
+              (handle-fn (:text event)))))
 
         ;; Keyboard event
         (instance? EventKey event)
         (let [{:keys [key pressed? modifiers]} event
-              text-field-focused? (when-let [f (requiring-resolve 'app.ui.text-field/any-focused?)] (f))
+              text-field-focused? (when-let [f (requiring-resolve 'app.ui.text-field/focused-in-window?)]
+                                    (f (:handle win)))
               consumed? (when (and text-field-focused? pressed?)
                           (when-let [handle-fn (requiring-resolve 'app.ui.text-field/handle-key-event!)]
                             (handle-fn event)))
@@ -463,7 +481,18 @@
                         (start-recording! filename {:fps 60})
                         (reset! sys/recording? true)
                         (update-display-title!)
-                        (println "[keybind] Recording started:" filename)))))))))
+                        (println "[keybind] Recording started:" filename))))))
+
+              ;; Ctrl+` toggles panel window show/hide
+              (when (and (= key 0x60) (pos? (bit-and modifiers 0x00C0)))
+                (let [visible? (not @shell-state/panel-visible?)
+                      panel-win @sys/panel-window]
+                  (shell-state/panel-visible? visible?)
+                  (when panel-win
+                    (if visible?
+                      (do (window/show! panel-win)
+                          (window/raise! win))
+                      (window/hide! panel-win))))))))
 
         :else nil))))
 
@@ -535,6 +564,11 @@
           (reset! panel-width pw)
           (reset! panel-height ph))
 
+        ;; Raise main when panel visible, hide panel when not
+        (if @shell-state/panel-visible?
+          (window/raise! win)
+          (window/hide! panel-win))
+
         ;; 5. Apply post-creation properties to main window
         (when-not (:bordered? config)
           (window/set-bordered! win false))
@@ -566,7 +600,8 @@
         (window/set-event-handler! win (create-event-handler win))
         (window/set-event-handler! panel-win (create-panel-event-handler panel-win win))
         (window/request-frame! win)
-        (window/request-frame! panel-win)
+        (when @shell-state/panel-visible?
+          (window/request-frame! panel-win))
         (window/run-multi! win [panel-win])))))
 
 (defn start-app

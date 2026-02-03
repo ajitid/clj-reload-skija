@@ -454,6 +454,11 @@
   [^Window window opacity]
   (sdl/set-window-opacity! (:handle window) opacity))
 
+(defn raise!
+  "Raise a window to the front and give it input focus."
+  [^Window window]
+  (sdl/raise-window! (:handle window)))
+
 (defn show!
   "Show a hidden window."
   [^Window window]

@@ -528,6 +528,11 @@
   (when (and window-handle (not (zero? window-handle)))
     (SDLVideo/SDL_DestroyWindow window-handle)))
 
+(defn raise-window!
+  "Raise a window to the front and give it input focus."
+  [window-handle]
+  (SDLVideo/SDL_RaiseWindow window-handle))
+
 (defn show-window!
   "Show a hidden window."
   [window-handle]

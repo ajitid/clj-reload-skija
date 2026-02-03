@@ -76,6 +76,9 @@
 ;; Mouse drag state for text selection
 (defonce dragging? (atom false))
 
+;; Window handle that text input is currently active on (for stop-text-input!)
+(defonce text-input-window (atom nil))
+
 ;; Multi-click state (click count provided by SDL3 natively)
 (defonce click-count (atom 0))           ;; 1=single, 2=double, 3=triple
 
@@ -178,27 +181,32 @@
 
 (defn focus!
   "Set focus to a field, placing cursor at end of text.
-   Starts SDL text input so SDL_EVENT_TEXT_INPUT events are generated."
-  [field-id]
-  (when-let [va (get @field-registry field-id)]
-    (let [text-val (str (deref-value va))]
-      (reset! focus-state {:field-id field-id
-                           :cursor-pos (count text-val)
-                           :selection-start nil})
-      (reset-blink!)
-      ;; Start SDL text input
-      (when-let [handle (get-window-handle)]
-        (when-let [start! (requiring-resolve 'lib.window.internal/start-text-input!)]
-          (start! handle))))))
+   Starts SDL text input so SDL_EVENT_TEXT_INPUT events are generated.
+   Optional window-handle specifies which window to activate text input on."
+  ([field-id] (focus! field-id nil))
+  ([field-id window-handle]
+   (when-let [va (get @field-registry field-id)]
+     (let [text-val (str (deref-value va))
+           handle (or window-handle (get-window-handle))]
+       (reset! focus-state {:field-id field-id
+                            :cursor-pos (count text-val)
+                            :selection-start nil})
+       (reset-blink!)
+       ;; Start SDL text input on the specified window
+       (when handle
+         (reset! text-input-window handle)
+         (when-let [start! (requiring-resolve 'lib.window.internal/start-text-input!)]
+           (start! handle)))))))
 
 (defn unfocus!
   "Clear focus from any text field.
-   Stops SDL text input."
+   Stops SDL text input on the window it was started on."
   []
   (when (some? @focus-state)
     (reset! focus-state nil)
-    ;; Stop SDL text input
-    (when-let [handle (get-window-handle)]
+    ;; Stop SDL text input on the window where it was started
+    (when-let [handle @text-input-window]
+      (reset! text-input-window nil)
       (when-let [stop! (requiring-resolve 'lib.window.internal/stop-text-input!)]
         (stop! handle)))))
 
@@ -206,6 +214,12 @@
   "Check if any text field has focus."
   []
   (some? @focus-state))
+
+(defn focused-in-window?
+  "Check if a text field is focused and its text input belongs to this window."
+  [window-handle]
+  (and (some? @focus-state)
+       (= @text-input-window window-handle)))
 
 (defn- focused-field-id
   "Get the currently focused field ID, or nil."
@@ -239,51 +253,55 @@
    Focuses the field (if needed) and positions cursor at the clicked character.
    Supports double-click (select word) and triple-click (select all).
    clicks is the native SDL3 click count (1=single, 2=double, 3+=triple).
+   Optional window-handle specifies which window to activate text input on.
    Begins drag-to-select by anchoring selection-start."
-  [field-id x _y clicks]
-  (when-let [va (get @field-registry field-id)]
-    (let [text-val (str (deref-value va))
-          len (count text-val)
-          [bx _by _bw _bh] (get @field-bounds field-id)
-          text-start-x (+ bx pad-x)
-          char-pos (x-to-char-pos text-val x text-start-x)
-          already-focused? (= field-id (focused-field-id))
-          cc (min 3 (int (or clicks 1)))]
-      (reset! click-count cc)
-      ;; Ensure focused
-      (when-not already-focused?
-        (reset! focus-state {:field-id field-id
-                             :cursor-pos char-pos
-                             :selection-start char-pos})
-        (reset-blink!)
-        (when-let [handle (get-window-handle)]
-          (when-let [start! (requiring-resolve 'lib.window.internal/start-text-input!)]
-            (start! handle))))
-      ;; Branch on click count
-      (case cc
-        ;; Single click: position cursor
-        1 (do
-            (swap! focus-state assoc
-                   :cursor-pos char-pos
-                   :selection-start char-pos)
-            (reset! drag-word-anchor nil)
-            (reset-blink!))
-        ;; Double click: select word under cursor
-        2 (let [word-start (brk/word-start text-val char-pos)
-                word-end (brk/word-end text-val char-pos)]
-            (swap! focus-state assoc
-                   :cursor-pos word-end
-                   :selection-start word-start)
-            (reset! drag-word-anchor [word-start word-end])
-            (reset-blink!))
-        ;; Triple click: select all
-        3 (do
-            (swap! focus-state assoc
-                   :cursor-pos len
-                   :selection-start 0)
-            (reset! drag-word-anchor nil)
-            (reset-blink!)))
-      (reset! dragging? true))))
+  ([field-id x y clicks] (handle-mouse-down! field-id x y clicks nil))
+  ([field-id x _y clicks window-handle]
+   (when-let [va (get @field-registry field-id)]
+     (let [text-val (str (deref-value va))
+           len (count text-val)
+           [bx _by _bw _bh] (get @field-bounds field-id)
+           text-start-x (+ bx pad-x)
+           char-pos (x-to-char-pos text-val x text-start-x)
+           already-focused? (= field-id (focused-field-id))
+           cc (min 3 (int (or clicks 1)))
+           handle (or window-handle (get-window-handle))]
+       (reset! click-count cc)
+       ;; Ensure focused
+       (when-not already-focused?
+         (reset! focus-state {:field-id field-id
+                              :cursor-pos char-pos
+                              :selection-start char-pos})
+         (reset-blink!)
+         (when handle
+           (reset! text-input-window handle)
+           (when-let [start! (requiring-resolve 'lib.window.internal/start-text-input!)]
+             (start! handle))))
+       ;; Branch on click count
+       (case cc
+         ;; Single click: position cursor
+         1 (do
+             (swap! focus-state assoc
+                    :cursor-pos char-pos
+                    :selection-start char-pos)
+             (reset! drag-word-anchor nil)
+             (reset-blink!))
+         ;; Double click: select word under cursor
+         2 (let [word-start (brk/word-start text-val char-pos)
+                 word-end (brk/word-end text-val char-pos)]
+             (swap! focus-state assoc
+                    :cursor-pos word-end
+                    :selection-start word-start)
+             (reset! drag-word-anchor [word-start word-end])
+             (reset-blink!))
+         ;; Triple click: select all
+         3 (do
+             (swap! focus-state assoc
+                    :cursor-pos len
+                    :selection-start 0)
+             (reset! drag-word-anchor nil)
+             (reset-blink!)))
+       (reset! dragging? true)))))
 
 (defn handle-mouse-move!
   "Handle mouse move during a text-field drag-to-select.
