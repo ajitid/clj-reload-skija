@@ -25,7 +25,7 @@
 ;; Grid Layout
 ;; ============================================================
 
-(def cols 4)
+(def cols 7)
 (def card-w 180)
 (def card-h 200)
 (def card-pad 16)
@@ -107,14 +107,15 @@
   (draw-shape-circle canvas x y {:blur 5.0}))
 
 (defn- card-backdrop-blur [^Canvas canvas x y]
-  (draw-label canvas x y "Backdrop Blur")
   ;; Draw colorful shapes behind, then frosted glass panel on top
   (shapes/circle canvas (+ x 70) (+ y 100) 25 {:color oc/red-5})
   (shapes/circle canvas (+ x 110) (+ y 100) 25 {:color oc/green-5})
   (shapes/circle canvas (+ x 90) (+ y 130) 25 {:color oc/blue-5})
   (layers/with-layer [canvas {:backdrop (filters/blur 8)}]
     (shapes/rounded-rect canvas (+ x 40) (+ y 85) 100 60 8
-                         {:color [1 1 1 0.15]})))
+                         {:color [1 1 1 0.15]}))
+  ;; Label drawn last so it's not blurred
+  (draw-label canvas x y "Backdrop Blur"))
 
 (defn- card-inner-shadow [^Canvas canvas x y]
   (draw-label canvas x y "Inner Shadow")
@@ -140,11 +141,22 @@
                                    :spot [0 0 0 0.3]})
     (shapes/path canvas p {:color [0.95 0.95 0.97 1]})))
 
-(defn- card-emboss [^Canvas canvas x y]
-  (draw-label canvas x y "Emboss")
+(defn- card-emboss-kernel [^Canvas canvas x y]
+  (draw-label canvas x y "Emboss Kernel")
+  ;; Convolution-based emboss gives a classic raised/chiseled look
+  (shapes/rounded-rect canvas (+ x 30) (+ y 80) 120 70 10
+    {:color oc/gray-5
+     :image-filter (filters/matrix-convolution
+                     filters/emboss-kernel
+                     {:width 3 :height 3 :gain 1.0 :bias 0.5})}))
+
+(defn- card-emboss-light [^Canvas canvas x y]
+  ;; Lighting-based emboss via specular distant light
   (draw-shape-rrect canvas x y
     {:color oc/gray-5
-     :emboss {:azimuth 135 :elevation 45}}))
+     :emboss {:azimuth 135 :elevation 45}})
+  ;; Label drawn after so lighting doesn't cover it
+  (draw-label canvas x y "Emboss Light"))
 
 (defn- card-dilate [^Canvas canvas x y]
   (draw-label canvas x y "Dilate")
@@ -199,7 +211,8 @@
    card-box-shadow-outer
    card-box-shadow-inset
    card-material-shadow
-   card-emboss
+   card-emboss-kernel
+   card-emboss-light
    card-dilate
    card-erode
    card-multi-shadow

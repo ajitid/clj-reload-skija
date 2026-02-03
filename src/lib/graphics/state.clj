@@ -333,7 +333,7 @@
                                {:source :distant :type :specular
                                 :azimuth azimuth :elevation elevation
                                 :surface-scale surface-scale
-                                :color [1 1 1 1] :ks 0.5 :shininess 8.0})))
+                                :color [1 1 1 1] :ks 0.3 :shininess 12.0})))
 
     ;; High contrast (accessibility)
     :high-contrast
