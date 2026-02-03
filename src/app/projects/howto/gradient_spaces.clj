@@ -15,7 +15,6 @@
 
 (def ^:private label-color [0.85 0.85 0.85 1.0])
 (def ^:private sub-label-color [0.53 0.53 0.53 1.0])
-(def ^:private bg-color [0.08 0.08 0.12 1.0])
 (def ^:private section-title-color [0.7 0.7 0.8 1.0])
 
 (def ^:private color-space-rows
@@ -69,8 +68,6 @@
 
 (defn draw [^Canvas canvas width height]
   ;; Background
-  (shapes/rectangle canvas 0 0 width height {:color bg-color})
-
   ;; Title
   (text/text canvas "Gradient Color Space Interpolation"
              (/ width 2.0) 36
