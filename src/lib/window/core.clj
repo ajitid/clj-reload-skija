@@ -242,7 +242,7 @@
           (doseq [ev events]
             (cond
               ;; Close event - dispatch to handler (handler decides whether to close).
-              ;; Like Love2D's love.quit, handler can abort by returning truthy.
+              ;; Handler can veto close by returning ::veto (a namespaced keyword sentinel).
               ;;
               ;; SDL can send both SDL_QUIT and WINDOW_CLOSE in the same poll batch.
               ;; The first dispatch calls do-sys-cleanup! which sets running? to false,

@@ -144,7 +144,7 @@
 
 (defn- call-example-cleanup!
   "Call the active example's cleanup function.
-   Returns its return value (truthy = abort quit)."
+   Returns ::veto if the example wants to prevent window close."
   []
   (when-let [example-fn (requiring-resolve 'app.shell.core/example-fn)]
     (when-let [cleanup-fn (example-fn "cleanup")]
@@ -262,11 +262,10 @@
   (let [last-time (atom (System/nanoTime))]
     (fn [event]
       (cond
-        ;; Close event - like Love2D, cleanup can return true to abort
+        ;; Close event
         (instance? EventClose event)
-        (let [abort? (call-example-cleanup!)]
-          (when-not abort?
-            (do-sys-cleanup! win)))
+        (when-not (= ::veto (call-example-cleanup!))
+          (do-sys-cleanup! win))
 
         ;; Frame event
         (instance? EventFrameSkija event)
