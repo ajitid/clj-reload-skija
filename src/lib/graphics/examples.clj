@@ -27,7 +27,9 @@
             [lib.graphics.batch :as batch]
             [lib.graphics.filters :as filters]
             [lib.graphics.gradients :as gradients]
-            [lib.graphics.shaders :as shaders]))
+            [lib.graphics.shaders :as shaders]
+            [lib.graphics.shadows :as shadows]
+            [lib.graphics.path :as path]))
 
 ;; ============================================================
 ;; Basic Shapes
@@ -288,6 +290,172 @@
 
   (shapes/rectangle canvas 0 0 800 600
                    {:shader (shaders/animated-shader 800 600 @game-time)}))
+
+;; ============================================================
+;; Inner Shadow & Box Shadow (CSS-Style)
+;; ============================================================
+
+(comment
+  ;; Inner shadow - shadow inside the shape's edges
+  (shapes/rounded-rect canvas 10 10 200 100 10
+                       {:color [0.2 0.2 0.3 1.0]
+                        :inner-shadow {:dx 2 :dy 2 :blur 5 :color [0 0 0 0.6]}})
+
+  ;; CSS-style box shadow with spread
+  (shapes/circle canvas 100 100 50
+                {:color [0.29 0.56 0.85 1.0]
+                 :box-shadow {:dx 4 :dy 4 :blur 10 :spread 2 :color [0 0 0 0.4]}})
+
+  ;; Inset box shadow (same as inner shadow)
+  (shapes/rounded-rect canvas 10 10 200 100 10
+                       {:color [0.8 0.8 0.8 1.0]
+                        :box-shadow {:dx 2 :dy 2 :blur 6 :spread 1
+                                     :color [0 0 0 0.5] :inset true}}))
+
+;; ============================================================
+;; Morphology (Dilate / Erode)
+;; ============================================================
+
+(comment
+  ;; Dilate - thicken shapes
+  (shapes/circle canvas 100 100 50
+                {:color [1 0 0 1] :dilate 3})
+
+  ;; Erode - thin shapes
+  (shapes/circle canvas 100 100 50
+                {:color [0 0 1 1] :erode 2})
+
+  ;; Asymmetric morphology
+  (shapes/rectangle canvas 10 10 100 50
+                   {:color [0 1 0 1] :dilate [5 2]}))
+
+;; ============================================================
+;; Emboss & High Contrast
+;; ============================================================
+
+(comment
+  ;; Emboss with default settings (azimuth 135, elevation 45)
+  (shapes/rectangle canvas 10 10 100 50
+                   {:color [0.5 0.5 0.5 1] :emboss true})
+
+  ;; Emboss with custom light direction
+  (shapes/rectangle canvas 10 10 100 50
+                   {:color [0.5 0.5 0.5 1]
+                    :emboss {:azimuth 225 :elevation 30}})
+
+  ;; High contrast (accessibility)
+  (shapes/circle canvas 100 100 50
+                {:color [0.29 0.56 0.85 1.0]
+                 :high-contrast {:grayscale true :contrast 0.5}}))
+
+;; ============================================================
+;; Filter Composition (Low-Level Power)
+;; ============================================================
+
+(comment
+  ;; Compose two filters: blur then offset
+  (shapes/circle canvas 100 100 50
+                {:color [1 0 0 1]
+                 :image-filter (filters/compose (filters/offset 5 5)
+                                                (filters/blur 3.0))})
+
+  ;; Merge multiple filters (all visible)
+  (shapes/circle canvas 100 100 50
+                {:color [0 1 0 1]
+                 :image-filter (filters/merge-filters
+                                 (filters/drop-shadow 3 3 5 [0 0 0 0.5])
+                                 nil)})
+
+  ;; Blend two filter results with multiply mode
+  (shapes/circle canvas 100 100 50
+                {:color [1 1 1 1]
+                 :image-filter (filters/blend-filter :multiply
+                                 (filters/blur 2.0)
+                                 nil)}))
+
+;; ============================================================
+;; Convolution Kernels
+;; ============================================================
+
+(comment
+  ;; Sharpen
+  (shapes/rectangle canvas 10 10 200 200
+                   {:color [0.5 0.5 0.5 1]
+                    :image-filter (filters/matrix-convolution
+                                    filters/sharpen-kernel
+                                    {:width 3 :height 3})})
+
+  ;; Edge detection
+  (shapes/rectangle canvas 10 10 200 200
+                   {:color [0.5 0.5 0.5 1]
+                    :image-filter (filters/matrix-convolution
+                                    filters/edge-detect-kernel
+                                    {:width 3 :height 3})})
+
+  ;; Emboss via convolution kernel
+  (shapes/rectangle canvas 10 10 200 200
+                   {:color [0.5 0.5 0.5 1]
+                    :image-filter (filters/matrix-convolution
+                                    filters/emboss-kernel
+                                    {:width 3 :height 3 :gain 1.0 :bias 0.5})}))
+
+;; ============================================================
+;; Lighting Effects
+;; ============================================================
+
+(comment
+  ;; Distant diffuse light (sunlight)
+  (shapes/rectangle canvas 10 10 200 100
+                   {:color [0.5 0.5 0.5 1]
+                    :image-filter (filters/light
+                                    {:source :distant :type :diffuse
+                                     :azimuth 135 :elevation 45
+                                     :color [1 1 1 1] :kd 1.0})})
+
+  ;; Point specular light (nearby spotlight)
+  (shapes/rectangle canvas 10 10 200 100
+                   {:color [0.5 0.5 0.5 1]
+                    :image-filter (filters/light
+                                    {:source :point :type :specular
+                                     :x 100 :y 50 :z 100
+                                     :color [1 1 0.9 1]
+                                     :ks 0.8 :shininess 12.0})})
+
+  ;; Spot light (cone of light)
+  (shapes/circle canvas 150 150 80
+                {:color [0.4 0.4 0.4 1]
+                 :image-filter (filters/light
+                                 {:source :spot :type :diffuse
+                                  :from [150 0 200] :to [150 150 0]
+                                  :falloff 2.0 :cutoff-angle 45
+                                  :color [1 1 1 1]})}))
+
+;; ============================================================
+;; Material Design Shadows (Canvas-Level)
+;; ============================================================
+
+(comment
+  ;; Material shadow on a rounded rectangle path
+  (let [p (path/rrect 20 20 200 100 12)]
+    ;; Draw shadow first (behind the shape)
+    (shadows/draw-shadow canvas p {:z-height 8
+                                   :spot [0 0 0 0.4]})
+    ;; Then draw the shape on top
+    (shapes/path canvas p {:color [1 1 1 1]}))
+
+  ;; High elevation shadow
+  (let [p (path/circle 150 150 60)]
+    (shadows/draw-shadow canvas p {:z-height 24
+                                   :light-pos [200 0 800]
+                                   :ambient [0 0 0 0.15]
+                                   :spot [0 0 0 0.35]})
+    (shapes/path canvas p {:color [0.95 0.95 0.97 1]}))
+
+  ;; Transparent occluder (shadow visible through shape)
+  (let [p (path/rect 50 50 160 80)]
+    (shadows/draw-shadow canvas p {:z-height 6
+                                   :flags #{:transparent}
+                                   :spot [0 0 0.2 0.3]})))
 
 ;; ============================================================
 ;; Sprite Atlas & Image Drawing (Love2D Style)

@@ -301,6 +301,46 @@
                    :else effect-value)]
       (set-shader paint shader))
 
+    ;; Inner shadow
+    :inner-shadow
+    (let [{:keys [dx dy blur color] :or {dx 2 dy 2 blur 4 color [0 0 0 0.5]}} effect-value]
+      (require 'lib.graphics.filters)
+      (set-image-filter paint ((resolve 'lib.graphics.filters/inner-shadow) dx dy blur color)))
+
+    ;; Box shadow (CSS-style with spread support)
+    :box-shadow
+    (do (require 'lib.graphics.filters)
+        (set-image-filter paint ((resolve 'lib.graphics.filters/box-shadow) effect-value)))
+
+    ;; Morphology
+    :dilate
+    (let [[rx ry] (if (vector? effect-value) effect-value [effect-value effect-value])]
+      (require 'lib.graphics.filters)
+      (set-image-filter paint ((resolve 'lib.graphics.filters/dilate) rx ry)))
+
+    :erode
+    (let [[rx ry] (if (vector? effect-value) effect-value [effect-value effect-value])]
+      (require 'lib.graphics.filters)
+      (set-image-filter paint ((resolve 'lib.graphics.filters/erode) rx ry)))
+
+    ;; Emboss (lighting-based)
+    :emboss
+    (let [opts (if (map? effect-value) effect-value {})
+          {:keys [azimuth elevation surface-scale]
+           :or {azimuth 135 elevation 45 surface-scale 1.0}} opts]
+      (require 'lib.graphics.filters)
+      (set-image-filter paint ((resolve 'lib.graphics.filters/light)
+                               {:source :distant :type :specular
+                                :azimuth azimuth :elevation elevation
+                                :surface-scale surface-scale
+                                :color [1 1 1 1] :ks 0.5 :shininess 8.0})))
+
+    ;; High contrast (accessibility)
+    :high-contrast
+    (let [opts (if (map? effect-value) effect-value {})]
+      (require 'lib.graphics.filters)
+      (set-color-filter paint ((resolve 'lib.graphics.filters/high-contrast) opts)))
+
     ;; Low-level (for advanced users)
     :shader (set-shader paint effect-value)
     :color-filter (set-color-filter paint effect-value)
@@ -333,7 +373,13 @@
    High-Level Effects (idiomatic):
      :blur          - number or [sigma mode], e.g. 5.0 or [5.0 :clamp]
      :shadow        - {:dx :dy :blur :color}, e.g. {:dx 2 :dy 2 :blur 3 :color [0 0 0 0.5]}
+     :inner-shadow  - {:dx :dy :blur :color}, shadow inside shape edges
+     :box-shadow    - {:dx :dy :blur :spread :color :inset}, CSS-style box shadow
      :glow          - {:size :mode}, e.g. {:size 10 :mode :outer}
+     :dilate        - number or [rx ry], morphological expand (thicken)
+     :erode         - number or [rx ry], morphological shrink (thin)
+     :emboss        - true or {:azimuth :elevation}, lighting-based emboss
+     :high-contrast - true or {:grayscale :inversion :contrast}, accessibility
      :grayscale     - true/false
      :sepia         - true/false
      :brightness    - -1.0 to 1.0

@@ -70,10 +70,7 @@
        ;; Complex case with backdrop or blend mode
        (or backdrop# blend-mode#)
        (let [paint# (when blend-mode# (gfx/make-paint {:blend-mode blend-mode#}))
-             rec# (cond-> (SaveLayerRec.)
-                    rect# (.setBounds rect#)
-                    paint# (.setPaint paint#)
-                    backdrop# (.setBackdrop ^ImageFilter backdrop#))]
+             rec# (SaveLayerRec. rect# paint# ^ImageFilter backdrop#)]
          (.saveLayer c# rec#))
 
        ;; Basic layer
