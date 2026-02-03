@@ -23,27 +23,33 @@
 
    Arguments:
    - px, py: pointer position in logical pixels
-   - ctx: context map passed to bounds-fn (e.g., {:window-width w})
+   - ctx: context map passed to bounds-fn (e.g., {:window-width w, :window :main})
    - targets: map of target-id -> target definition
    - blocked-layers: set of layer keywords to exclude
 
+   Window filtering: targets with :window key are only hit-tested when
+   ctx contains a matching :window value. Default is :main for both.
+
    Returns sequence of {:target hit-target :depth index} sorted by priority."
   [px py ctx targets blocked-layers]
-  (->> (vals targets)
-       ;; Filter out targets in blocked layers
-       (remove #(contains? blocked-layers (:layer %)))
-       ;; Filter to targets that contain the point (skip if bounds is nil)
-       (filter (fn [target]
-                 (when-let [bounds-fn (:bounds-fn target)]
-                   (when-let [bounds (bounds-fn ctx)]
-                     (point-in-rect? px py bounds)))))
-       ;; Sort by layer priority (lower index = higher priority)
-       ;; then by z-index descending (higher z = on top)
-       (sort-by (juxt #(layer-index (:layer %))
-                      #(- (:z-index % 0))))
-       ;; Add depth index
-       (map-indexed (fn [idx target]
-                      {:target target :depth idx}))))
+  (let [active-window (:window ctx :main)]
+    (->> (vals targets)
+         ;; Filter out targets in blocked layers
+         (remove #(contains? blocked-layers (:layer %)))
+         ;; Filter by window - targets default to :main if no :window key
+         (filter #(= (get % :window :main) active-window))
+         ;; Filter to targets that contain the point (skip if bounds is nil)
+         (filter (fn [target]
+                   (when-let [bounds-fn (:bounds-fn target)]
+                     (when-let [bounds (bounds-fn ctx)]
+                       (point-in-rect? px py bounds)))))
+         ;; Sort by layer priority (lower index = higher priority)
+         ;; then by z-index descending (higher z = on top)
+         (sort-by (juxt #(layer-index (:layer %))
+                        #(- (:z-index % 0))))
+         ;; Add depth index
+         (map-indexed (fn [idx target]
+                        {:target target :depth idx})))))
 
 (defn topmost-target
   "Get only the topmost hit target under pointer, or nil.

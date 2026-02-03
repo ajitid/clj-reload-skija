@@ -145,29 +145,28 @@
 (defn- register-gestures! []
   (when-let [register! (requiring-resolve 'lib.gesture.api/register-target!)]
     (when-let [get-bounds (requiring-resolve 'app.shell.control-panel/get-control-bounds)]
-      (when-let [panel-visible (requiring-resolve 'app.shell.state/panel-visible?)]
-        (when-let [focus! (requiring-resolve 'app.ui.text-field/focus!)]
-          ;; Text field tap -> focus
-          (register!
-           {:id :variable-font-text-field
-            :layer :overlay
-            :z-index 20
-            :bounds-fn (fn [_ctx]
-                         (when @panel-visible
-                           (get-bounds :text :display-text)))
-            :gesture-recognizers [:tap]
-            :handlers {:on-tap (fn [_] (focus! [:text :display-text]))}}))))
+      (when-let [focus! (requiring-resolve 'app.ui.text-field/focus!)]
+        ;; Text field tap -> focus
+        (register!
+         {:id :variable-font-text-field
+          :layer :overlay
+          :z-index 20
+          :window :panel
+          :bounds-fn (fn [_ctx]
+                       (get-bounds :text :display-text))
+          :gesture-recognizers [:tap]
+          :handlers {:on-tap (fn [_] (focus! [:text :display-text]))}})))
     ;; Group header tap -> toggle collapse
     (when-let [toggle-group! (requiring-resolve 'app.shell.state/toggle-group-collapse!)]
       (when-let [get-header (requiring-resolve 'app.shell.control-panel/get-group-header-bounds)]
-        (when-let [panel-visible (requiring-resolve 'app.shell.state/panel-visible?)]
-          (register!
-           {:id :variable-font-group-header-text
-            :layer :overlay
-            :z-index 20
-            :bounds-fn (fn [_ctx] (when @panel-visible (get-header :text)))
-            :gesture-recognizers [:tap]
-            :handlers {:on-tap (fn [_] (toggle-group! :text))}}))))))
+        (register!
+         {:id :variable-font-group-header-text
+          :layer :overlay
+          :z-index 20
+          :window :panel
+          :bounds-fn (fn [_ctx] (get-header :text))
+          :gesture-recognizers [:tap]
+          :handlers {:on-tap (fn [_] (toggle-group! :text))}})))))
 
 ;; ============================================================
 ;; Example Interface

@@ -99,36 +99,36 @@
 
 (defn register-default-control-gestures!
   "Register gesture handlers for default controls (FPS checkbox, group headers).
-   Should be called after example init to ensure gesture system is ready."
+   Should be called after example init to ensure gesture system is ready.
+   Targets tagged with :window :panel for multi-window routing."
   []
   (when-let [register! (requiring-resolve 'lib.gesture.api/register-target!)]
     (when-let [get-control-bounds (requiring-resolve 'app.shell.control-panel/get-control-bounds)]
       (when-let [get-group-header-bounds (requiring-resolve 'app.shell.control-panel/get-group-header-bounds)]
         (when-let [toggle-group! (requiring-resolve 'app.shell.state/toggle-group-collapse!)]
           (when-let [fps-visible (requiring-resolve 'app.shell.state/fps-display-visible?)]
-            (when-let [panel-visible (requiring-resolve 'app.shell.state/panel-visible?)]
-              ;; FPS checkbox
-              (register!
-               {:id :default-fps-checkbox
-                :layer :overlay
-                :z-index 20
-                :bounds-fn (fn [_ctx]
-                             (when @panel-visible
-                               (get-control-bounds :display :show-fps)))
-                :gesture-recognizers [:tap]
-                :handlers {:on-tap (fn [_]
-                                     (let [fps-source @fps-visible]
-                                       (fps-source (not @fps-source))))}})
-              ;; Display group header
-              (register!
-               {:id :default-group-header-display
-                :layer :overlay
-                :z-index 20
-                :bounds-fn (fn [_ctx]
-                             (when @panel-visible
-                               (get-group-header-bounds :display)))
-                :gesture-recognizers [:tap]
-                :handlers {:on-tap (fn [_] (toggle-group! :display))}}))))))))
+            ;; FPS checkbox
+            (register!
+             {:id :default-fps-checkbox
+              :layer :overlay
+              :z-index 20
+              :window :panel
+              :bounds-fn (fn [_ctx]
+                           (get-control-bounds :display :show-fps))
+              :gesture-recognizers [:tap]
+              :handlers {:on-tap (fn [_]
+                                   (let [fps-source @fps-visible]
+                                     (fps-source (not @fps-source))))}})
+            ;; Display group header
+            (register!
+             {:id :default-group-header-display
+              :layer :overlay
+              :z-index 20
+              :window :panel
+              :bounds-fn (fn [_ctx]
+                           (get-group-header-bounds :display))
+              :gesture-recognizers [:tap]
+              :handlers {:on-tap (fn [_] (toggle-group! :display))}})))))))
 
 ;; ============================================================
 ;; Drawing
@@ -273,3 +273,25 @@
             (when-let [group (first groups)]
               (let [height (draw-group canvas group (+ px pad) cy (- pw (* 2 pad)))]
                 (recur (rest groups) (+ cy height group-spacing))))))))))
+
+(defn draw-standalone
+  "Draw control panel filling the entire canvas. For standalone panel window.
+   Ignores panel-visible? check since the panel is always shown in its own window."
+  [^Canvas canvas width height]
+  (let [groups (get-current-controls)]
+    (when (seq groups)
+      ;; Clear layout cache at start of frame
+      (reset! layout-cache {})
+      (let [pad panel-padding
+            content-width (- width (* 2 pad))]
+        ;; Draw background filling entire canvas
+        (let [[r g b a] panel-bg-color]
+          (with-open [bg-paint (doto (Paint.)
+                                 (.setColor4f (Color4f. (float r) (float g) (float b) (float a))))]
+            (.drawRect canvas (Rect/makeXYWH 0.0 0.0 (float width) (float height)) bg-paint)))
+        ;; Draw groups starting from padding offset
+        (loop [groups groups
+               cy (float pad)]
+          (when-let [group (first groups)]
+            (let [h (draw-group canvas group pad cy content-width)]
+              (recur (rest groups) (+ cy h group-spacing)))))))))

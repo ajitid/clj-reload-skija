@@ -510,6 +510,131 @@
   [window opacity]
   (SDLVideo/SDL_SetWindowOpacity window (float opacity)))
 
+(defn get-window-id
+  "Get the SDL window ID for a window handle.
+   Returns an integer ID used to match events to windows."
+  [window-handle]
+  (SDLVideo/SDL_GetWindowID window-handle))
+
+(defn make-gl-current!
+  "Make the GL context current for the given window.
+   Required before rendering to a window in multi-window OpenGL."
+  [window-handle gl-context]
+  (SDLVideo/SDL_GL_MakeCurrent window-handle gl-context))
+
+(defn destroy-window!
+  "Destroy a single SDL window without quitting SDL."
+  [window-handle]
+  (when (and window-handle (not (zero? window-handle)))
+    (SDLVideo/SDL_DestroyWindow window-handle)))
+
+(defn show-window!
+  "Show a hidden window."
+  [window-handle]
+  (SDLVideo/SDL_ShowWindow window-handle))
+
+(defn hide-window!
+  "Hide a window without destroying it."
+  [window-handle]
+  (SDLVideo/SDL_HideWindow window-handle))
+
+(defn poll-events-multi!
+  "Poll all pending SDL events for all windows, tagged with window IDs.
+   Returns a vector of {:window-id id :event event-record}.
+   windows-by-id: {sdl-window-id -> {:handle window-handle :width w :height h}}"
+  [^SDL_Event event windows-by-id]
+  (let [events (transient [])]
+    (while (SDLEvents/SDL_PollEvent event)
+      (let [event-type (.type event)]
+        (cond
+          (= event-type EVENT_QUIT)
+          (conj! events {:window-id :all :event (e/->EventClose)})
+
+          (= event-type EVENT_WINDOW_CLOSE)
+          (let [we (SDL_WindowEvent/create (.address (.window event)))]
+            (conj! events {:window-id (.windowID we) :event (e/->EventClose)}))
+
+          (= event-type EVENT_WINDOW_RESIZED)
+          (let [we (SDL_WindowEvent/create (.address (.window event)))
+                wid (.windowID we)
+                win-info (get windows-by-id wid)]
+            (when win-info
+              (conj! events {:window-id wid
+                             :event (convert-resize-event event (:handle win-info))})))
+
+          (= event-type EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+          nil
+
+          (= event-type EVENT_WINDOW_EXPOSED)
+          (let [we (SDL_WindowEvent/create (.address (.window event)))]
+            (conj! events {:window-id (.windowID we) :event (e/->EventExposed)}))
+
+          (= event-type EVENT_MOUSE_BUTTON_DOWN)
+          (let [mb (SDL_MouseButtonEvent/create (.address (.button event)))]
+            (conj! events {:window-id (.windowID mb)
+                           :event (convert-mouse-button-event event true)}))
+
+          (= event-type EVENT_MOUSE_BUTTON_UP)
+          (let [mb (SDL_MouseButtonEvent/create (.address (.button event)))]
+            (conj! events {:window-id (.windowID mb)
+                           :event (convert-mouse-button-event event false)}))
+
+          (= event-type EVENT_MOUSE_MOTION)
+          (let [mm (SDL_MouseMotionEvent/create (.address (.motion event)))]
+            (conj! events {:window-id (.windowID mm)
+                           :event (convert-mouse-motion-event event)}))
+
+          (= event-type EVENT_MOUSE_WHEEL)
+          (let [mw (SDL_MouseWheelEvent/create (.address (.wheel event)))]
+            (conj! events {:window-id (.windowID mw)
+                           :event (convert-mouse-wheel-event event)}))
+
+          (= event-type EVENT_KEY_DOWN)
+          (let [kb (SDL_KeyboardEvent/create (.address (.key event)))]
+            (conj! events {:window-id (.windowID kb)
+                           :event (convert-key-event event true)}))
+
+          (= event-type EVENT_KEY_UP)
+          (let [kb (SDL_KeyboardEvent/create (.address (.key event)))]
+            (conj! events {:window-id (.windowID kb)
+                           :event (convert-key-event event false)}))
+
+          (= event-type EVENT_TEXT_INPUT)
+          (let [ti (SDL_TextInputEvent/create (.address (.text event)))]
+            (conj! events {:window-id (.windowID ti)
+                           :event (convert-text-input-event event)}))
+
+          (= event-type EVENT_FINGER_DOWN)
+          (let [tf (SDL_TouchFingerEvent/create (.address (.tfinger event)))
+                wid (.windowID tf)
+                win-info (get windows-by-id wid)]
+            (when win-info
+              (conj! events {:window-id wid
+                             :event (convert-finger-event event event-type
+                                                          (:width win-info)
+                                                          (:height win-info))})))
+
+          (= event-type EVENT_FINGER_MOTION)
+          (let [tf (SDL_TouchFingerEvent/create (.address (.tfinger event)))
+                wid (.windowID tf)
+                win-info (get windows-by-id wid)]
+            (when win-info
+              (conj! events {:window-id wid
+                             :event (convert-finger-event event event-type
+                                                          (:width win-info)
+                                                          (:height win-info))})))
+
+          (= event-type EVENT_FINGER_UP)
+          (let [tf (SDL_TouchFingerEvent/create (.address (.tfinger event)))
+                wid (.windowID tf)
+                win-info (get windows-by-id wid)]
+            (when win-info
+              (conj! events {:window-id wid
+                             :event (convert-finger-event event event-type
+                                                          (:width win-info)
+                                                          (:height win-info))}))))))
+    (persistent! events)))
+
 (defn cleanup!
   "Clean up SDL resources.
    On macOS, we must pump events after destroying the window to let Cocoa

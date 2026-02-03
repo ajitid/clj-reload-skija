@@ -12,12 +12,9 @@
 ;; ============================================================
 
 (defn draw-panel
-  "Draw all debug overlays.
-   Delegates to fps-display (top-left) and control-panel (top-right)."
-  [^Canvas canvas window-width]
+  "Draw debug overlays (FPS display only).
+   Control panel is rendered in its own window."
+  [^Canvas canvas _window-width]
   ;; FPS display (top-left) - independent of control panel
   (when-let [fps-draw (requiring-resolve 'app.shell.fps-display/draw)]
-    (fps-draw canvas))
-  ;; Control panel (top-right) - toggleable with Ctrl+`
-  (when-let [panel-draw (requiring-resolve 'app.shell.control-panel/draw)]
-    (panel-draw canvas window-width)))
+    (fps-draw canvas)))

@@ -1,24 +1,22 @@
 (ns lib.window.layer-metal
   "Skija Metal surface management for macOS.
    Handles DirectContext, BackendRenderTarget, and Surface lifecycle
-   using Metal backend via SDL3's Metal view."
+   using Metal backend via SDL3's Metal view.
+   Shared device/queue/context, per-window metal-view/metal-layer."
   (:require [lib.window.metal :as metal])
   (:import [io.github.humbleui.skija DirectContext BackendRenderTarget
             Surface SurfaceOrigin ColorType]
            [org.lwjgl.sdl SDLMetal]))
 
 ;; ============================================================
-;; State
+;; State: shared globals + per-window registry
 ;; ============================================================
 
-(defonce ^:private state
-  (atom {:metal-view    nil     ; SDL_MetalView handle
-         :metal-layer   nil     ; CAMetalLayer pointer
-         :device        nil     ; MTLDevice pointer
-         :queue         nil     ; MTLCommandQueue pointer
-         :context       nil     ; Skija DirectContext
-         :width         0
-         :height        0}))
+;; Shared GPU resources (one per application)
+(defonce ^:private shared (atom {:device nil :queue nil :context nil}))
+
+;; Per-window resources: {handle -> {:metal-view :metal-layer :width :height}}
+(defonce ^:private windows (atom {}))
 
 ;; ============================================================
 ;; Initialization
@@ -27,35 +25,35 @@
 (defn init!
   "Initialize Metal layer for the given SDL window.
    Must be called after window creation with SDL_WINDOW_METAL flag.
+   Creates shared device/queue/context on first call.
    Returns true on success."
   [window-handle]
   (when (metal/available?)
-    ;; Create Metal device and queue
-    (let [{:keys [device queue device-name]} (metal/create-metal-context)]
-      (when (and device queue)
-        (println "[layer-metal] Using device:" device-name)
-
-        ;; Create SDL Metal view
+    ;; Initialize shared resources on first call
+    (when-not (:device @shared)
+      (let [{:keys [device queue device-name]} (metal/create-metal-context)]
+        (when (and device queue)
+          (println "[layer-metal] Using device:" device-name)
+          (let [skija-ctx (DirectContext/makeMetal device queue)]
+            (when skija-ctx
+              (reset! shared {:device device :queue queue :context skija-ctx}))))))
+    ;; Initialize per-window resources
+    (let [{:keys [device]} @shared]
+      (when device
         (let [metal-view (SDLMetal/SDL_Metal_CreateView window-handle)]
           (when (and metal-view (pos? metal-view))
-            ;; Get the CAMetalLayer from the view
             (let [metal-layer (SDLMetal/SDL_Metal_GetLayer metal-view)]
               (when (and metal-layer (pos? metal-layer))
                 ;; Configure the layer
                 (metal/set-layer-device! metal-layer device)
                 (metal/set-layer-pixel-format! metal-layer metal/MTLPixelFormatBGRA8Unorm)
-                (metal/set-layer-framebuffer-only! metal-layer false) ; Allow reading for Skia
-
-                ;; Create Skija DirectContext with Metal
-                (let [skija-ctx (DirectContext/makeMetal device queue)]
-                  (when skija-ctx
-                    (swap! state assoc
-                           :metal-view metal-view
-                           :metal-layer metal-layer
-                           :device device
-                           :queue queue
-                           :context skija-ctx)
-                    true))))))))))
+                (metal/set-layer-framebuffer-only! metal-layer false)
+                (swap! windows assoc window-handle
+                       {:metal-view metal-view
+                        :metal-layer metal-layer
+                        :width 0
+                        :height 0})
+                true))))))))
 
 ;; ============================================================
 ;; Frame Rendering
@@ -78,11 +76,14 @@
    2. Call flush-fn to flush Skia commands
    3. Optionally capture the texture (for screenshots/video)
    4. Call present-fn to display the frame"
-  [physical-width physical-height]
-  (let [{:keys [context metal-layer queue]} @state]
+  [handle physical-width physical-height]
+  (let [{:keys [context]} @shared
+        {:keys [metal-layer]} (get @windows handle)
+        {:keys [queue]} @shared]
     (when (and context metal-layer (pos? metal-layer))
       ;; Update cached dimensions
-      (swap! state assoc :width physical-width :height physical-height)
+      (swap! windows assoc-in [handle :width] physical-width)
+      (swap! windows assoc-in [handle :height] physical-height)
 
       ;; Get next drawable from the layer
       (let [drawable (metal/get-next-drawable metal-layer)]
@@ -106,24 +107,17 @@
                 (when surface
                   {:surface    surface
                    :canvas     (.getCanvas surface)
-                   :drawable   drawable   ; Exposed for capture
-                   :texture    texture    ; Exposed for capture
+                   :drawable   drawable
+                   :texture    texture
                    :flush-fn   (fn []
-                                 ;; Flush Skia to Metal
                                  (.flushAndSubmit context surface)
-                                 ;; Close the surface and render target
-                                 ;; (they're only valid for this frame)
                                  (.close surface)
                                  (.close render-target))
                    :present-fn (fn []
-                                 ;; Create command buffer for presentation
                                  (let [cmd-buffer (metal/create-command-buffer queue)]
                                    (when cmd-buffer
-                                     ;; Schedule drawable presentation
                                      (metal/present-drawable-with-command-buffer! cmd-buffer drawable)
-                                     ;; Commit the command buffer
                                      (metal/commit-command-buffer! cmd-buffer)
-                                     ;; Return command buffer for caller to wait on if needed
                                      cmd-buffer)))})))))))))
 
 ;; ============================================================
@@ -133,7 +127,7 @@
 (defn resize!
   "Called on window resize. The Metal layer auto-sizes from the view,
    so we just need to update our cached dimensions."
-  []
+  [_handle]
   ;; Metal layer auto-sizes from SDL Metal view
   ;; No explicit action needed here
   nil)
@@ -143,26 +137,21 @@
 ;; ============================================================
 
 (defn cleanup!
-  "Release all Metal/Skija resources."
-  []
-  (let [{:keys [context metal-view device queue]} @state]
-    ;; Close Skija context
-    (when context
-      (.close context))
-    ;; Destroy SDL Metal view
+  "Release Metal/Skija resources for a window.
+   Releases shared resources when last window is removed."
+  [handle]
+  (let [{:keys [metal-view]} (get @windows handle)]
+    ;; Destroy SDL Metal view for this window
     (when (and metal-view (pos? metal-view))
       (SDLMetal/SDL_Metal_DestroyView metal-view))
-    ;; Note: device and queue are owned by Metal framework,
-    ;; we should release them but they'll be cleaned up with the app
-    (when device (metal/release! device))
-    (when queue (metal/release! queue))
-    (reset! state {:metal-view nil
-                   :metal-layer nil
-                   :device nil
-                   :queue nil
-                   :context nil
-                   :width 0
-                   :height 0})))
+    (swap! windows dissoc handle))
+  ;; Release shared resources when no more windows
+  (when (empty? @windows)
+    (let [{:keys [context device queue]} @shared]
+      (when context (.close context))
+      (when device (metal/release! device))
+      (when queue (metal/release! queue))
+      (reset! shared {:device nil :queue nil :context nil}))))
 
 ;; ============================================================
 ;; Accessors
@@ -171,19 +160,19 @@
 (defn context
   "Get the DirectContext (for external use like Image.adoptFrom)."
   []
-  (:context @state))
+  (:context @shared))
 
 (defn device
   "Get the Metal device pointer."
   []
-  (:device @state))
+  (:device @shared))
 
 (defn queue
   "Get the Metal command queue pointer."
   []
-  (:queue @state))
+  (:queue @shared))
 
 (defn metal-layer
-  "Get the CAMetalLayer pointer."
-  []
-  (:metal-layer @state))
+  "Get the CAMetalLayer pointer for a window."
+  [handle]
+  (get-in @windows [handle :metal-layer]))

@@ -1,13 +1,14 @@
 (ns lib.window.core
   "Public window API - JWM-like interface over SDL3.
    Provides create-window, set-event-handler!, request-frame!, run-loop!, close!
-   Supports both OpenGL and Metal (macOS) backends."
+   Supports both OpenGL and Metal (macOS) backends.
+   Supports multi-window via run-multi!."
   (:refer-clojure :exclude [run!])
   (:require [lib.window.internal :as sdl]
             [lib.window.layer :as layer]
             [lib.window.layer-metal :as layer-metal]
             [lib.window.events :as e])
-  (:import [org.lwjgl.sdl SDL_Event]
+  (:import [org.lwjgl.sdl SDL_Event SDLVideo]
            [org.lwjgl.opengl GL11]
            [lib.window.events EventClose EventResize EventFrameSkija EventExposed]))
 
@@ -17,7 +18,8 @@
 
 ;; Window record holds SDL handles (long pointers) and state atoms
 ;; backend is :opengl or :metal
-(defrecord Window [^long handle ^long gl-context event-handler
+;; window-id is SDL's uint32 window identifier for event routing
+(defrecord Window [^long handle ^long gl-context window-id event-handler
                    frame-requested? running?
                    width height scale backend])
 
@@ -44,9 +46,12 @@
      :display        - Display index (0-based) to open on (default: primary)
      :backend        - Graphics backend :opengl, :metal, or :auto (default)
                        :auto uses Metal on macOS, OpenGL elsewhere
+     :shared-gl-context - For secondary OpenGL windows, share this GL context
+                          instead of creating a new one
    Position precedence: explicit :x/:y > :display (centered) > default
    Returns a Window record."
-  [{:keys [title width height x y resizable? high-dpi? always-on-top? display backend]
+  [{:keys [title width height x y resizable? high-dpi? always-on-top? display backend
+           shared-gl-context]
     :or {title "Window" width 800 height 600 resizable? true high-dpi? true backend :auto}
     :as opts}]
   ;; Resolve :auto to actual backend
@@ -63,13 +68,15 @@
       (let [;; Create Metal window (no GL attributes needed)
             handle (sdl/create-window! opts-with-backend)
             scale (sdl/get-window-scale handle)
-            [w h] (sdl/get-window-size handle)]
-        ;; Initialize Metal layer
+            [w h] (sdl/get-window-size handle)
+            wid (sdl/get-window-id handle)]
+        ;; Initialize Metal layer (shared device/queue created on first call)
         (when-not (layer-metal/init! handle)
           (throw (ex-info "Failed to initialize Metal layer" {:backend :metal})))
         (map->Window
          {:handle           handle
           :gl-context       0      ; No GL context for Metal
+          :window-id        wid
           :event-handler    (atom nil)
           :frame-requested? (atom false)
           :running?         (atom false)
@@ -80,14 +87,21 @@
 
       ;; Default: OpenGL
       (do
-        (sdl/set-gl-attributes!)
+        (when-not shared-gl-context
+          (sdl/set-gl-attributes!))
         (let [handle (sdl/create-window! (assoc opts-with-backend :backend :opengl))
-              gl-ctx (sdl/create-gl-context! handle)
+              gl-ctx (if shared-gl-context
+                       (do
+                         (sdl/make-gl-current! handle shared-gl-context)
+                         shared-gl-context)
+                       (sdl/create-gl-context! handle))
               scale (sdl/get-window-scale handle)
-              [w h] (sdl/get-window-size handle)]
+              [w h] (sdl/get-window-size handle)
+              wid (sdl/get-window-id handle)]
           (map->Window
            {:handle           handle
             :gl-context       gl-ctx
+            :window-id        wid
             :event-handler    (atom nil)
             :frame-requested? (atom false)
             :running?         (atom false)
@@ -126,22 +140,26 @@
   "Render a frame using the OpenGL/Skija layer."
   [^Window window]
   (let [handle (:handle window)
-        [pw ph] (sdl/get-window-size-in-pixels handle)
-        {:keys [surface canvas flush-fn]} (layer/frame! pw ph)]
-    ;; Update viewport to match new size
-    (GL11/glViewport 0 0 pw ph)
-    ;; Clear with white (or could be transparent)
-    (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_STENCIL_BUFFER_BIT))
-    ;; Dispatch frame event to handler
-    ;; Handler returns truthy if it drew, falsy to skip swap (preserve previous frame)
-    (when (dispatch-event! window (e/->EventFrameSkija surface canvas))
-      ;; Flush Skija and swap buffers only if handler drew something
-      (flush-fn)
-      ;; Process frame capture (PBO async read) - only if capture is active
-      (when @capture-active?
-        (when-let [capture-fn (resolve 'lib.window.capture/process-frame!)]
-          (capture-fn pw ph @(:scale window) :opengl)))
-      (sdl/swap-buffers! handle))))
+        gl-ctx (:gl-context window)]
+    ;; Make GL context current for this window (required for multi-window)
+    (when (and gl-ctx (pos? gl-ctx))
+      (sdl/make-gl-current! handle gl-ctx))
+    (let [[pw ph] (sdl/get-window-size-in-pixels handle)
+          {:keys [surface canvas flush-fn]} (layer/frame! handle pw ph)]
+      ;; Update viewport to match new size
+      (GL11/glViewport 0 0 pw ph)
+      ;; Clear with white (or could be transparent)
+      (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_STENCIL_BUFFER_BIT))
+      ;; Dispatch frame event to handler
+      ;; Handler returns truthy if it drew, falsy to skip swap (preserve previous frame)
+      (when (dispatch-event! window (e/->EventFrameSkija surface canvas))
+        ;; Flush Skija and swap buffers only if handler drew something
+        (flush-fn)
+        ;; Process frame capture (PBO async read) - only if capture is active
+        (when @capture-active?
+          (when-let [capture-fn (resolve 'lib.window.capture/process-frame!)]
+            (capture-fn pw ph @(:scale window) :opengl)))
+        (sdl/swap-buffers! handle)))))
 
 (defn- render-frame-metal!
   "Render a frame using the Metal/Skija layer.
@@ -154,7 +172,7 @@
   (let [handle (:handle window)
         [pw ph] (sdl/get-window-size-in-pixels handle)]
     ;; Get frame resources from Metal layer
-    (when-let [{:keys [surface canvas texture flush-fn present-fn]} (layer-metal/frame! pw ph)]
+    (when-let [{:keys [surface canvas texture flush-fn present-fn]} (layer-metal/frame! handle pw ph)]
       ;; Dispatch frame event to handler
       (when (dispatch-event! window (e/->EventFrameSkija surface canvas))
         ;; Flush Skija commands to Metal
@@ -225,7 +243,7 @@
             (cond
               ;; Close event - dispatch to handler (handler decides whether to close).
               ;; Like Love2D's love.quit, handler can abort by returning truthy.
-              ;; 
+              ;;
               ;; SDL can send both SDL_QUIT and WINDOW_CLOSE in the same poll batch.
               ;; The first dispatch calls do-sys-cleanup! which sets running? to false,
               ;; so the guard prevents dispatching a second close on an already-closed window.
@@ -241,9 +259,9 @@
                 (reset! (:scale window) (:scale ev))
                 ;; Backend-specific resize handling
                 (case (:backend window)
-                  :metal (layer-metal/resize!)
-                  :opengl (layer/resize!)
-                  (layer/resize!))
+                  :metal (layer-metal/resize! handle)
+                  :opengl (layer/resize! handle)
+                  (layer/resize! handle))
                 (dispatch-event! window ev))
 
               ;; Exposed event - handled by event watcher
@@ -271,10 +289,119 @@
           (audio-cleanup-fn))
         ;; Backend-specific cleanup
         (case (:backend window)
-          :metal (layer-metal/cleanup!)
-          :opengl (layer/cleanup!)
-          (layer/cleanup!))
+          :metal (layer-metal/cleanup! handle)
+          :opengl (layer/cleanup! handle)
+          (layer/cleanup! handle))
         (sdl/cleanup! (:gl-context window) handle)))))
+
+;; ============================================================
+;; Multi-window event loop
+;; ============================================================
+
+(defn run-multi!
+  "Run the event loop for multiple windows. Blocks until primary window closes.
+   primary: the main Window record (closing it exits the loop).
+   secondary-windows: seq of additional Window records."
+  [primary secondary-windows]
+  (let [all-windows (vec (cons primary secondary-windows))]
+    ;; Set all windows as running
+    (doseq [w all-windows]
+      (reset! (:running? w) true))
+    (let [primary-handle (:handle primary)
+          ;; Build window-id -> Window lookup
+          windows-by-wid (into {} (map (fn [w] [(:window-id w) w]) all-windows))
+          ;; Build poll info from current window state
+          poll-info-fn (fn []
+                         (into {}
+                           (map (fn [w]
+                                  [(:window-id w)
+                                   {:handle (:handle w)
+                                    :width @(:width w)
+                                    :height @(:height w)}])
+                                all-windows)))
+          event (SDL_Event/malloc)
+          ;; Set up live resize rendering callback (renders primary window)
+          last-render-size (atom [0 0])
+          _ (sdl/set-resize-render-fn!
+             (fn []
+               (let [[pw ph] (sdl/get-window-size-in-pixels primary-handle)]
+                 (when (not= @last-render-size [pw ph])
+                   (reset! last-render-size [pw ph])
+                   (let [[w h] (sdl/get-window-size primary-handle)
+                         s (sdl/get-window-scale primary-handle)]
+                     (reset! (:width primary) w)
+                     (reset! (:height primary) h)
+                     (reset! (:scale primary) s)
+                     (dispatch-event! primary (e/->EventResize w h s)))
+                   (render-frame! primary)))))
+          watcher (sdl/add-event-watcher!)]
+      (try
+        (while @(:running? primary)
+          ;; Poll events for all windows
+          (let [tagged-events (sdl/poll-events-multi! event (poll-info-fn))]
+            (doseq [{:keys [window-id] ev :event} tagged-events]
+              (if (= window-id :all)
+                ;; Global event (QUIT) - dispatch to primary
+                (when @(:running? primary)
+                  (dispatch-event! primary ev))
+                ;; Window-specific event
+                (when-let [w (get windows-by-wid window-id)]
+                  (cond
+                    ;; Close event
+                    (instance? EventClose ev)
+                    (if (= w primary)
+                      (when @(:running? primary)
+                        (dispatch-event! primary ev))
+                      ;; Secondary window close - dispatch to its handler
+                      (dispatch-event! w ev))
+
+                    ;; Resize event - update dimensions and invalidate surface
+                    (instance? EventResize ev)
+                    (let [h (:handle w)]
+                      (reset! (:width w) (:width ev))
+                      (reset! (:height w) (:height ev))
+                      (reset! (:scale w) (:scale ev))
+                      (case (:backend w)
+                        :metal (layer-metal/resize! h)
+                        :opengl (layer/resize! h)
+                        (layer/resize! h))
+                      (dispatch-event! w ev))
+
+                    ;; Exposed event - handled by event watcher
+                    (instance? EventExposed ev)
+                    nil
+
+                    ;; Other events - just dispatch
+                    :else
+                    (dispatch-event! w ev))))))
+
+          ;; Render frames for all windows that need it
+          (doseq [w all-windows]
+            (when (and @(:running? w) @(:frame-requested? w))
+              (reset! (:frame-requested? w) false)
+              (render-frame! w))))
+
+        (finally
+          (sdl/remove-event-watcher! watcher)
+          (sdl/set-resize-render-fn! nil)
+          (.free event)
+          ;; Cleanup capture resources
+          (when-let [cleanup-fn (resolve 'lib.window.capture/cleanup!)]
+            (cleanup-fn))
+          ;; Cleanup audio resources
+          (when-let [audio-cleanup-fn (resolve 'lib.audio.core/cleanup!)]
+            (audio-cleanup-fn))
+          ;; Cleanup layer state for all windows
+          (doseq [w all-windows]
+            (case (:backend w)
+              :metal (layer-metal/cleanup! (:handle w))
+              :opengl (layer/cleanup! (:handle w))
+              (layer/cleanup! (:handle w))))
+          ;; Destroy secondary windows first
+          (doseq [w secondary-windows]
+            (sdl/destroy-window! (:handle w)))
+          ;; Cleanup primary window and SDL
+          (sdl/cleanup! (:gl-context primary) primary-handle))))))
 
 ;; ============================================================
 ;; Window property setters
@@ -326,6 +453,16 @@
   "Set window opacity (0.0 = transparent, 1.0 = opaque)."
   [^Window window opacity]
   (sdl/set-window-opacity! (:handle window) opacity))
+
+(defn show!
+  "Show a hidden window."
+  [^Window window]
+  (sdl/show-window! (:handle window)))
+
+(defn hide!
+  "Hide a window without destroying it."
+  [^Window window]
+  (sdl/hide-window! (:handle window)))
 
 ;; ============================================================
 ;; Window property getters

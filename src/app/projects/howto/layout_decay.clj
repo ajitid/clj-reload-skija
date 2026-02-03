@@ -157,55 +157,54 @@
       (when-let [get-group-header-bounds (requiring-resolve 'app.shell.control-panel/get-group-header-bounds)]
         (when-let [toggle-group! (requiring-resolve 'app.shell.state/toggle-group-collapse!)]
           (when-let [slider-value-fn (requiring-resolve 'app.ui.slider/value-from-x)]
-            (when-let [panel-visible (requiring-resolve 'app.shell.state/panel-visible?)]
-              ;; Grid configuration group header
-                (register!
-                 {:id :group-header-grid
+            ;; Grid configuration group header
+            (register!
+             {:id :group-header-grid
+              :window :panel
                   :layer :overlay
                   :z-index 20
-                  :bounds-fn (fn [_ctx]
-                               (when @panel-visible
-                                 (get-group-header-bounds :grid)))
-                  :gesture-recognizers [:tap]
-                  :handlers {:on-tap (fn [_] (toggle-group! :grid))}})
-                ;; Grid X slider
-                (register!
-                 {:id :grid-x-slider
-                  :layer :overlay
-                  :z-index 20
-                  :bounds-fn (fn [_ctx]
-                               (when @panel-visible
-                                 (get-control-bounds :grid :grid-x)))
-                  :gesture-recognizers [:drag]
-                  :handlers {:on-pointer-down (fn [event]
-                                                (when-let [bounds (get-control-bounds :grid :grid-x)]
-                                                  (let [mx (get-in event [:pointer :x])
-                                                        new-val (slider-value-fn mx bounds min-circles max-circles)]
-                                                    (circles-x new-val))))
-                             :on-drag (fn [event]
-                                        (when-let [bounds (get-control-bounds :grid :grid-x)]
-                                          (let [mx (get-in event [:pointer :x])
-                                                new-val (slider-value-fn mx bounds min-circles max-circles)]
-                                            (circles-x new-val))))}})
-                ;; Grid Y slider
-                (register!
-                 {:id :grid-y-slider
-                  :layer :overlay
-                  :z-index 20
-                  :bounds-fn (fn [_ctx]
-                               (when @panel-visible
-                                 (get-control-bounds :grid :grid-y)))
-                  :gesture-recognizers [:drag]
-                  :handlers {:on-pointer-down (fn [event]
-                                                (when-let [bounds (get-control-bounds :grid :grid-y)]
-                                                  (let [mx (get-in event [:pointer :x])
-                                                        new-val (slider-value-fn mx bounds min-circles max-circles)]
-                                                    (circles-y new-val))))
-                             :on-drag (fn [event]
-                                        (when-let [bounds (get-control-bounds :grid :grid-y)]
-                                          (let [mx (get-in event [:pointer :x])
-                                                new-val (slider-value-fn mx bounds min-circles max-circles)]
-                                            (circles-y new-val))))}}))))))))
+              :bounds-fn (fn [_ctx]
+                           (get-group-header-bounds :grid))
+              :gesture-recognizers [:tap]
+              :handlers {:on-tap (fn [_] (toggle-group! :grid))}})
+            ;; Grid X slider
+            (register!
+             {:id :grid-x-slider
+              :layer :overlay
+              :z-index 20
+              :window :panel
+              :bounds-fn (fn [_ctx]
+                           (get-control-bounds :grid :grid-x))
+              :gesture-recognizers [:drag]
+              :handlers {:on-pointer-down (fn [event]
+                                            (when-let [bounds (get-control-bounds :grid :grid-x)]
+                                              (let [mx (get-in event [:pointer :x])
+                                                    new-val (slider-value-fn mx bounds min-circles max-circles)]
+                                                (circles-x new-val))))
+                         :on-drag (fn [event]
+                                    (when-let [bounds (get-control-bounds :grid :grid-x)]
+                                      (let [mx (get-in event [:pointer :x])
+                                            new-val (slider-value-fn mx bounds min-circles max-circles)]
+                                        (circles-x new-val))))}})
+            ;; Grid Y slider
+            (register!
+             {:id :grid-y-slider
+              :layer :overlay
+              :z-index 20
+              :window :panel
+              :bounds-fn (fn [_ctx]
+                           (get-control-bounds :grid :grid-y))
+              :gesture-recognizers [:drag]
+              :handlers {:on-pointer-down (fn [event]
+                                            (when-let [bounds (get-control-bounds :grid :grid-y)]
+                                              (let [mx (get-in event [:pointer :x])
+                                                    new-val (slider-value-fn mx bounds min-circles max-circles)]
+                                                (circles-y new-val))))
+                         :on-drag (fn [event]
+                                    (when-let [bounds (get-control-bounds :grid :grid-y)]
+                                      (let [mx (get-in event [:pointer :x])
+                                            new-val (slider-value-fn mx bounds min-circles max-circles)]
+                                        (circles-y new-val))))}})))))))
 
 (defn register-gestures! []
   (when-let [register! (requiring-resolve 'lib.gesture.api/register-target!)]

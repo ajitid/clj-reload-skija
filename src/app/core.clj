@@ -32,6 +32,10 @@
 (defonce window-height (atom 600))
 (defonce scale (atom 1.0))
 
+;; Panel window dimensions (tracked for gesture coordinate system)
+(defonce panel-width (atom 260))
+(defonce panel-height (atom 500))
+
 ;; ============================================================
 ;; Helpers
 ;; ============================================================
@@ -156,8 +160,104 @@
   (reset! sys/running? false)
   (window/close! win))
 
+;; ============================================================
+;; Panel window event handler
+;; ============================================================
+
+(defn create-panel-event-handler
+  "Create an event handler for the control panel window."
+  [panel-win main-win]
+  (fn [event]
+    (cond
+      ;; Close event - hide the panel window instead of closing
+      (instance? EventClose event)
+      (window/hide! panel-win)
+
+      ;; Frame event - draw the control panel
+      (instance? EventFrameSkija event)
+      (do
+        ;; Always request next frame to stay in sync with main window
+        (window/request-frame! panel-win)
+        (when-not @sys/reloading?
+          (let [{:keys [canvas]} event
+                s @scale
+                w @panel-width
+                h @panel-height]
+            (try
+              (.save canvas)
+              (.scale canvas (float s) (float s))
+              (when-let [draw-fn (requiring-resolve 'app.shell.control-panel/draw-standalone)]
+                (draw-fn canvas w h))
+              (catch Exception e
+                (println "Panel render error:" (.getMessage e)))
+              (finally
+                (.restore canvas)))
+            true)))
+
+      ;; Resize event
+      (instance? EventResize event)
+      (let [{:keys [width height]} event]
+        (reset! panel-width width)
+        (reset! panel-height height))
+
+      ;; Mouse button event - route to gesture system with :window :panel
+      (instance? EventMouseButton event)
+      (when (= (:button event) :primary)
+        (if (:pressed? event)
+          ;; Mouse down: check text field first, then gestures
+          (let [hit-field (when-let [ht (requiring-resolve 'app.ui.text-field/hit-test)]
+                            (ht (:x event) (:y event)))]
+            (if hit-field
+              (when-let [md! (requiring-resolve 'app.ui.text-field/handle-mouse-down!)]
+                (md! hit-field (:x event) (:y event) (:clicks event)))
+              (do
+                (when-let [unfocus! (requiring-resolve 'app.ui.text-field/unfocus!)]
+                  (unfocus!))
+                (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
+                  (handle-fn event {:scale @scale
+                                    :window :panel})))))
+          ;; Mouse up
+          (do
+            (when-let [dragging? (requiring-resolve 'app.ui.text-field/dragging-text?)]
+              (when (dragging?)
+                (when-let [mu! (requiring-resolve 'app.ui.text-field/handle-mouse-up!)]
+                  (mu!))))
+            (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
+              (handle-fn event {:scale @scale
+                                :window :panel})))))
+
+      ;; Mouse move event
+      (instance? EventMouseMove event)
+      (let [text-dragging? (when-let [f (requiring-resolve 'app.ui.text-field/dragging-text?)]
+                             (f))]
+        (if text-dragging?
+          (when-let [mm! (requiring-resolve 'app.ui.text-field/handle-mouse-move!)]
+            (mm! (:x event) (:y event)))
+          (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-move)]
+            (handle-fn event {:scale @scale
+                              :window :panel}))))
+
+      ;; Text input event
+      (instance? EventTextInput event)
+      (when-let [handle-fn (requiring-resolve 'app.ui.text-field/handle-text-input!)]
+        (handle-fn (:text event)))
+
+      ;; Keyboard event - route text field keys
+      (instance? EventKey event)
+      (let [{:keys [pressed?]} event
+            text-field-focused? (when-let [f (requiring-resolve 'app.ui.text-field/any-focused?)] (f))]
+        (when (and text-field-focused? pressed?)
+          (when-let [handle-fn (requiring-resolve 'app.ui.text-field/handle-key-event!)]
+            (handle-fn event))))
+
+      :else nil)))
+
+;; ============================================================
+;; Main window event handler
+;; ============================================================
+
 (defn create-event-handler
-  "Create an event handler for the window."
+  "Create an event handler for the main window."
   [win]
   (let [last-time (atom (System/nanoTime))]
     (fn [event]
@@ -175,6 +275,9 @@
             (macos/activate-app!)
             (reset! sys/app-activated? true))
           (window/request-frame! win)
+          ;; Also request frame for panel window to keep it in sync
+          (when-let [panel-win @sys/panel-window]
+            (window/request-frame! panel-win))
           (when-not @sys/reloading?
             (let [{:keys [canvas]} event
                   s @scale
@@ -251,6 +354,7 @@
                     (when-not scrollbar-hit?
                       (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
                         (handle-fn event {:scale @scale
+                                          :window :main
                                           :window-width @window-width}))))))
               ;; Mouse up
               (do
@@ -262,6 +366,7 @@
                   (end-scrollbar))
                 (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-button)]
                   (handle-fn event {:scale @scale
+                                    :window :main
                                     :window-width @window-width}))))))
 
         ;; Mouse move event
@@ -281,6 +386,7 @@
                     (window/request-frame! win)))
                 (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-mouse-move)]
                   (handle-fn event {:scale @scale
+                                    :window :main
                                     :window-width @window-width}))))))
 
         ;; Mouse wheel event
@@ -294,16 +400,19 @@
         (instance? EventFingerDown event)
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-finger-down)]
           (handle-fn event {:scale @scale
+                            :window :main
                             :window-width @window-width}))
 
         (instance? EventFingerMove event)
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-finger-move)]
           (handle-fn event {:scale @scale
+                            :window :main
                             :window-width @window-width}))
 
         (instance? EventFingerUp event)
         (when-let [handle-fn (requiring-resolve 'lib.gesture.api/handle-finger-up)]
           (handle-fn event {:scale @scale
+                            :window :main
                             :window-width @window-width}))
 
         ;; Text input event (from SDL_EVENT_TEXT_INPUT)
@@ -355,11 +464,7 @@
                         (start-recording! filename {:fps 60})
                         (reset! sys/recording? true)
                         (update-display-title!)
-                        (println "[keybind] Recording started:" filename))))))
-
-              ;; Ctrl+` toggles panel
-              (when (and (= key 0x60) (pos? (bit-and modifiers 0x00C0)))
-                (shell-state/panel-visible? (not @shell-state/panel-visible?))))))
+                        (println "[keybind] Recording started:" filename)))))))))
 
         :else nil))))
 
@@ -373,12 +478,13 @@
    Startup sequence:
    1. Load example namespace
    2. Read example's window-config, merge with defaults
-   3. Create window with merged config
-   4. Apply post-creation properties (bordered, fullscreen, etc.)
-   5. Initialize shell (time source)
-   6. Initialize example (calls init)
-   7. Register shutdown hook for Ctrl+C handling
-   8. Start event loop"
+   3. Create main window with merged config
+   4. Create panel window alongside main window
+   5. Apply post-creation properties (bordered, fullscreen, etc.)
+   6. Initialize shell (time source)
+   7. Initialize example (calls init)
+   8. Register shutdown hook for Ctrl+C handling
+   9. Start event loop with run-multi!"
   [example-key]
   (reset! sys/running? true)
 
@@ -392,7 +498,7 @@
         config (merge sys/default-window-config example-config)]
     (reset! sys/window-config config)
 
-    ;; 3. Create window with merged config
+    ;; 3. Create main window with merged config
     (let [display-title (compose-display-title)
           win-opts (cond-> {:title        display-title
                             :width        (:width config)
@@ -410,37 +516,59 @@
         (reset! window-width w)
         (reset! window-height h))
 
-      ;; 4. Apply post-creation properties
-      (when-not (:bordered? config)
-        (window/set-bordered! win false))
-      (when (:fullscreen? config)
-        (window/set-fullscreen! win true))
-      (when (not= 1.0 (:opacity config))
-        (window/set-opacity! win (:opacity config)))
-      (when-let [[mw mh] (:min-size config)]
-        (window/set-minimum-size! win mw mh))
-      (when-let [[mw mh] (:max-size config)]
-        (window/set-maximum-size! win mw mh))
+      ;; 4. Create panel window positioned to the right of main window
+      (let [[main-x main-y] (window/get-window-position win)
+            panel-x (+ main-x (:width config) 10)
+            panel-opts (cond-> {:title "Controls"
+                                :width 260
+                                :height 500
+                                :x panel-x
+                                :y main-y
+                                :resizable? true
+                                :high-dpi? true
+                                :always-on-top? true}
+                         ;; For OpenGL backend, share the GL context
+                         (= :opengl (window/get-backend win))
+                         (assoc :shared-gl-context (:gl-context win)))
+            panel-win (window/create-window panel-opts)]
+        (reset! sys/panel-window panel-win)
+        (let [[pw ph] (window/get-size panel-win)]
+          (reset! panel-width pw)
+          (reset! panel-height ph))
 
-      ;; 5. Initialize shell (time source, etc.)
-      (when-let [init-fn (requiring-resolve 'app.shell.core/init)]
-        (init-fn))
+        ;; 5. Apply post-creation properties to main window
+        (when-not (:bordered? config)
+          (window/set-bordered! win false))
+        (when (:fullscreen? config)
+          (window/set-fullscreen! win true))
+        (when (not= 1.0 (:opacity config))
+          (window/set-opacity! win (:opacity config)))
+        (when-let [[mw mh] (:min-size config)]
+          (window/set-minimum-size! win mw mh))
+        (when-let [[mw mh] (:max-size config)]
+          (window/set-maximum-size! win mw mh))
 
-      ;; 6. Initialize example
-      (when-let [init-example-fn (requiring-resolve 'app.shell.core/init-example!)]
-        (init-example-fn))
+        ;; 6. Initialize shell (time source, etc.)
+        (when-let [init-fn (requiring-resolve 'app.shell.core/init)]
+          (init-fn))
 
-      ;; 7. Register shutdown hook for Ctrl+C / SIGTERM
-      (.addShutdownHook (Runtime/getRuntime)
-                        (Thread. (fn []
-                                   (when @sys/running?
-                                     (call-example-cleanup!)
-                                     (do-sys-cleanup! win)))))
+        ;; 7. Initialize example
+        (when-let [init-example-fn (requiring-resolve 'app.shell.core/init-example!)]
+          (init-example-fn))
 
-      ;; 8. Start event loop
-      (window/set-event-handler! win (create-event-handler win))
-      (window/request-frame! win)
-      (window/run! win))))
+        ;; 8. Register shutdown hook for Ctrl+C / SIGTERM
+        (.addShutdownHook (Runtime/getRuntime)
+                          (Thread. (fn []
+                                     (when @sys/running?
+                                       (call-example-cleanup!)
+                                       (do-sys-cleanup! win)))))
+
+        ;; 9. Start event loop with both windows
+        (window/set-event-handler! win (create-event-handler win))
+        (window/set-event-handler! panel-win (create-panel-event-handler panel-win win))
+        (window/request-frame! win)
+        (window/request-frame! panel-win)
+        (window/run-multi! win [panel-win])))))
 
 (defn start-app
   "Start the application with the given example key."

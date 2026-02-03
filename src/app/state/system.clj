@@ -12,6 +12,7 @@
 ;; ============================================================
 
 (defonce window (atom nil))
+(defonce panel-window (atom nil))
 (defonce running? (atom false))
 (defonce reloading? (atom false))
 (defonce app-activated? (atom false))
