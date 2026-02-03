@@ -48,11 +48,10 @@
   ([deg]
    (Matrix33/makeRotate (float deg)))
   ([deg px py]
-   (Matrix33/makeConcat
-     (Matrix33/makeConcat
-       (Matrix33/makeTranslate (float px) (float py))
-       (Matrix33/makeRotate (float deg)))
-     (Matrix33/makeTranslate (float (- (double px))) (float (- (double py)))))))
+   (let [t1 (Matrix33/makeTranslate (float px) (float py))
+         r  (Matrix33/makeRotate (float deg))
+         t2 (Matrix33/makeTranslate (float (- (double px))) (float (- (double py))))]
+     (.makeConcat (.makeConcat t1 r) t2))))
 
 (defn skew-matrix
   "Create a 2D skew/shear Matrix33."
@@ -64,10 +63,86 @@
 (defn compose-matrix
   "Compose two or more Matrix33 transforms.
    Application order: left to right (first arg applied first)."
-  ([m1 m2]
-   (Matrix33/makeConcat ^Matrix33 m1 ^Matrix33 m2))
+  ([^Matrix33 m1 ^Matrix33 m2]
+   (.makeConcat m1 m2))
   ([m1 m2 & more]
    (reduce compose-matrix (compose-matrix m1 m2) more)))
+
+;; ============================================================
+;; FitBox — map src rect into dst rect with fit mode
+;; ============================================================
+
+(defn- apply-box-fit
+  "Given a fit mode and input/output sizes, return adjusted {:src-size :dst-size}.
+   Sizes are [w h] pairs. Ported from React Native Skia's Fitting.ts."
+  [fit [iw ih] [ow oh]]
+  (let [iw (double iw) ih (double ih)
+        ow (double ow) oh (double oh)]
+    (case fit
+      :fill
+      {:src-size [iw ih] :dst-size [ow oh]}
+
+      :contain
+      (if (> (/ ow oh) (/ iw ih))
+        {:src-size [iw ih] :dst-size [(* oh (/ iw ih)) oh]}
+        {:src-size [iw ih] :dst-size [ow (* ow (/ ih iw))]})
+
+      :cover
+      (if (< (/ ow oh) (/ iw ih))
+        {:src-size [iw ih] :dst-size [(* oh (/ iw ih)) oh]}
+        {:src-size [iw ih] :dst-size [ow (* ow (/ ih iw))]})
+
+      :fit-width
+      {:src-size [iw ih] :dst-size [ow (* ow (/ ih iw))]}
+
+      :fit-height
+      {:src-size [iw ih] :dst-size [(* oh (/ iw ih)) oh]}
+
+      :none
+      {:src-size [iw ih] :dst-size [iw ih]}
+
+      :scale-down
+      (if (or (> iw ow) (> ih oh))
+        (recur :contain [iw ih] [ow oh])
+        {:src-size [iw ih] :dst-size [iw ih]}))))
+
+(defn- inscribe
+  "Center a size [w h] within a rect {:x :y :w :h}. Returns {:x :y :w :h}."
+  [[sw sh] {:keys [x y w h]}]
+  (let [hw (* 0.5 (- (double w) (double sw)))
+        hh (* 0.5 (- (double h) (double sh)))]
+    {:x (+ (double x) hw) :y (+ (double y) hh) :w (double sw) :h (double sh)}))
+
+(defn- rect2rect
+  "Compute a Matrix33 that maps adjusted-src rect into adjusted-dst rect."
+  [src dst]
+  (let [sx (/ (:w dst) (:w src))
+        sy (/ (:h dst) (:h src))
+        tx (- (:x dst) (* (:x src) sx))
+        ty (- (:y dst) (* (:y src) sy))]
+    (compose-matrix
+      (translate-matrix tx ty)
+      (scale-matrix sx sy))))
+
+(defn fitbox
+  "Compute a Matrix33 that maps src rect into dst rect using the given fit mode.
+
+   Rects are maps: {:x :y :w :h}
+
+   Fit modes: :contain (default), :cover, :fill, :fit-width, :fit-height, :scale-down, :none
+
+   Usage with with-transform:
+     (with-transform [canvas (fitbox :contain {:x 0 :y 0 :w 200 :h 200}
+                                               {:x 50 :y 50 :w 80 :h 80})]
+       ;; draw as if canvas is 200x200
+       ...)"
+  ([src dst] (fitbox :contain src dst))
+  ([fit src dst]
+   (let [{:keys [src-size dst-size]}
+         (apply-box-fit fit [(:w src) (:h src)] [(:w dst) (:h dst)])
+         adj-src (inscribe src-size src)
+         adj-dst (inscribe dst-size dst)]
+     (rect2rect adj-src adj-dst))))
 
 ;; ============================================================
 ;; Matrix44 Builders (3D / perspective transforms)
@@ -310,7 +385,13 @@
 
    ;; Pre-built matrix (Matrix33 or Matrix44)
    (with-transform [canvas my-matrix]
-     (draw-stuff...))"
+     (draw-stuff...))
+
+   ;; FitBox — map design coordinates into a screen rect
+   (with-transform [canvas (fitbox :contain {:x 0 :y 0 :w 200 :h 200}
+                                             {:x 50 :y 50 :w 80 :h 80})]
+     ;; draw as if canvas is 200×200
+     ...)"
   [[canvas & [opts-or-matrix]] & body]
   (if opts-or-matrix
     `(let [c# ~canvas]
