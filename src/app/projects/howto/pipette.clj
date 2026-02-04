@@ -42,14 +42,6 @@
         b (bit-and color 0xFF)]
     (format "#%02X%02X%02X" r g b)))
 
-(defn color-int->color4f
-  "Convert packed ARGB int to [r g b a] floats."
-  [color]
-  [(/ (bit-and (bit-shift-right color 16) 0xFF) 255.0)
-   (/ (bit-and (bit-shift-right color 8) 0xFF) 255.0)
-   (/ (bit-and color 0xFF) 255.0)
-   (/ (bit-and (bit-shift-right color 24) 0xFF) 255.0)])
-
 ;; ============================================================
 ;; Gradient image generation
 ;; ============================================================
@@ -154,7 +146,7 @@
     (doseq [{:keys [x y color]} @sampled-points]
       (let [screen-x (+ offset-x x)
             screen-y (+ offset-y y)
-            color4f (color-int->color4f color)]
+            color4f (color/hex->color4f color)]
         ;; White outline circle
         (shapes/circle canvas screen-x screen-y (+ sample-radius outline-width)
                        {:color color/white})

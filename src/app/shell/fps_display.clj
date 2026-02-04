@@ -20,7 +20,7 @@
 (def display-width 200)
 (def display-height 80)
 (def display-padding 12)
-(def display-bg-color (color/with-alpha oc/gray-8 0.87))
+(def display-bg-color (color/gray 0.153 0.87))
 (def display-text-color color/white)
 (def font-size 14)
 (def text-graph-spacing 8)
@@ -28,7 +28,7 @@
 ;; FPS graph settings
 (def fps-graph-height 40)
 (def fps-graph-color oc/green-4)
-(def fps-graph-bg-color oc/gray-9)
+(def fps-graph-bg-color (color/gray 0.11 0.87))
 (def fps-target 60)
 
 ;; ============================================================

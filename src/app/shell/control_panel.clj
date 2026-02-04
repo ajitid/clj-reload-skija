@@ -17,7 +17,7 @@
 (def panel-y 10)
 (def panel-width 240)
 (def panel-padding 10)
-(def panel-bg-color (color/with-alpha oc/gray-8 0.87))
+(def panel-bg-color (color/gray 0.153 0.87))
 (def group-spacing 10)
 
 ;; ============================================================

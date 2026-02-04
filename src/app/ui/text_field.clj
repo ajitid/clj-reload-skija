@@ -43,7 +43,7 @@
 ;; Styling - [r g b a] floats
 ;; ============================================================
 
-(def ^:private box-bg-color        oc/gray-9)
+(def ^:private box-bg-color        (color/gray 0.11))
 (def ^:private border-focused      oc/blue-6)
 (def ^:private border-unfocused    [0.333 0.333 0.333 1.0])
 (def ^:private text-color          color/white)

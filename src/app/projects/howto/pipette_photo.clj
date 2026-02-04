@@ -62,14 +62,6 @@
         b (bit-and color 0xFF)]
     (format "#%02X%02X%02X" r g b)))
 
-(defn color-int->color4f
-  "Convert packed ARGB int to [r g b a] floats."
-  [color]
-  [(/ (bit-and (bit-shift-right color 16) 0xFF) 255.0)
-   (/ (bit-and (bit-shift-right color 8) 0xFF) 255.0)
-   (/ (bit-and color 0xFF) 255.0)
-   (/ (bit-and (bit-shift-right color 24) 0xFF) 255.0)])
-
 ;; ============================================================
 ;; Image download
 ;; ============================================================
@@ -225,7 +217,7 @@
             py (- height 80)]
         (doseq [i (range n)]
           (let [{:keys [color]} (nth points i)
-                color4f (color-int->color4f color)
+                color4f (color/hex->color4f color)
                 px (+ start-x (* i (+ palette-size palette-gap)))]
             ;; Swatch square
             (shapes/rectangle canvas px py palette-size palette-size {:color color4f})
@@ -269,7 +261,7 @@
         (doseq [{:keys [x y color]} @sampled-points]
           (let [sx (+ ox x)
                 sy (+ oy y)
-                color4f (color-int->color4f color)]
+                color4f (color/hex->color4f color)]
             ;; White outline
             (shapes/circle canvas sx sy (+ sample-radius outline-width)
                            {:color color/white})
