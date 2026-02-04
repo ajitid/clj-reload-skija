@@ -26,8 +26,10 @@
   "Initialize Metal layer for the given SDL window.
    Must be called after window creation with SDL_WINDOW_METAL flag.
    Creates shared device/queue/context on first call.
+   Options:
+     :vsync? - Enable display sync (default true)
    Returns true on success."
-  [window-handle]
+  [window-handle & {:keys [vsync?] :or {vsync? true}}]
   (when (metal/available?)
     ;; Initialize shared resources on first call
     (when-not (:device @shared)
@@ -48,6 +50,7 @@
                 (metal/set-layer-device! metal-layer device)
                 (metal/set-layer-pixel-format! metal-layer metal/MTLPixelFormatBGRA8Unorm)
                 (metal/set-layer-framebuffer-only! metal-layer false)
+                (metal/set-layer-display-sync-enabled! metal-layer vsync?)
                 (swap! windows assoc window-handle
                        {:metal-view metal-view
                         :metal-layer metal-layer

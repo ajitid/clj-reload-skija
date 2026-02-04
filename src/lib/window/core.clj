@@ -21,7 +21,8 @@
 ;; window-id is SDL's uint32 window identifier for event routing
 (defrecord Window [^long handle ^long gl-context window-id event-handler
                    frame-requested? running?
-                   width height scale backend])
+                   width height scale backend
+                   vsync])
 
 (defn- detect-backend
   "Detect the best backend for the current platform.
@@ -51,7 +52,7 @@
    Position precedence: explicit :x/:y > :display (centered) > default
    Returns a Window record."
   [{:keys [title width height x y resizable? high-dpi? always-on-top? display backend
-           shared-gl-context]
+           shared-gl-context vsync]
     :or {title "Window" width 800 height 600 resizable? true high-dpi? true backend :auto}
     :as opts}]
   ;; Resolve :auto to actual backend
@@ -71,7 +72,7 @@
             [w h] (sdl/get-window-size handle)
             wid (sdl/get-window-id handle)]
         ;; Initialize Metal layer (shared device/queue created on first call)
-        (when-not (layer-metal/init! handle)
+        (when-not (layer-metal/init! handle :vsync? (not= vsync 0))
           (throw (ex-info "Failed to initialize Metal layer" {:backend :metal})))
         (map->Window
          {:handle           handle
@@ -83,7 +84,8 @@
           :width            (atom w)
           :height           (atom h)
           :scale            (atom scale)
-          :backend          :metal}))
+          :backend          :metal
+          :vsync            (atom (or vsync 1))}))
 
       ;; Default: OpenGL
       (do
@@ -97,7 +99,13 @@
                        (sdl/create-gl-context! handle))
               scale (sdl/get-window-scale handle)
               [w h] (sdl/get-window-size handle)
-              wid (sdl/get-window-id handle)]
+              wid (sdl/get-window-id handle)
+              ;; For primary window, try adaptive vsync (-1), fall back to standard (1)
+              ;; For secondary windows, default to 0 (no vsync)
+              desired (or vsync (if shared-gl-context 0 -1))
+              effective (if (and (= desired -1) (not (sdl/set-swap-interval! -1)))
+                          (do (sdl/set-swap-interval! 1) 1)
+                          (do (sdl/set-swap-interval! desired) desired))]
           (map->Window
            {:handle           handle
             :gl-context       gl-ctx
@@ -108,7 +116,8 @@
             :width            (atom w)
             :height           (atom h)
             :scale            (atom scale)
-            :backend          :opengl}))))))
+            :backend          :opengl
+            :vsync            (atom effective)}))))))
 
 (defn set-event-handler!
   "Set the event handler function.
@@ -159,6 +168,8 @@
         (when @capture-active?
           (when-let [capture-fn (resolve 'lib.window.capture/process-frame!)]
             (capture-fn pw ph @(:scale window) :opengl)))
+        ;; Set per-window swap interval before swapping
+        (sdl/set-swap-interval! @(:vsync window))
         (sdl/swap-buffers! handle)))))
 
 (defn- render-frame-metal!

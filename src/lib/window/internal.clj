@@ -176,8 +176,6 @@
     (SDLVideo/SDL_GL_MakeCurrent window ctx)
     ;; Initialize LWJGL's GL bindings
     (GL/createCapabilities)
-    ;; Enable vsync (1 = on, 0 = off, -1 = adaptive)
-    (SDLVideo/SDL_GL_SetSwapInterval 1)
     ctx))
 
 (defn get-window-scale
@@ -332,6 +330,12 @@
   "Swap the window's OpenGL buffers."
   [window]
   (SDLVideo/SDL_GL_SwapWindow window))
+
+(defn set-swap-interval!
+  "Set OpenGL swap interval. 0=off, 1=vsync, -1=adaptive.
+   Returns true if supported."
+  [interval]
+  (SDLVideo/SDL_GL_SetSwapInterval interval))
 
 (defn set-window-title!
   "Set the window title."

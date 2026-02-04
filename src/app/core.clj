@@ -36,6 +36,9 @@
 (defonce panel-width (atom 260))
 (defonce panel-height (atom 500))
 
+;; Time-based throttle for panel window rendering (~30 FPS)
+(defonce panel-last-render-time (atom 0))
+
 ;; ============================================================
 ;; Helpers
 ;; ============================================================
@@ -288,10 +291,14 @@
             (macos/activate-app!)
             (reset! sys/app-activated? true))
           (window/request-frame! win)
-          ;; Also request frame for panel window to keep it in sync
+          ;; Request panel frame at ~30 FPS (time-based, monitor-rate independent)
           (when (and @shell-state/panel-visible?
                      (some? @sys/panel-window))
-            (window/request-frame! @sys/panel-window))
+            (let [now-ms (/ (System/nanoTime) 1e6)
+                  elapsed (- now-ms @panel-last-render-time)]
+              (when (>= elapsed 33.0)
+                (reset! panel-last-render-time now-ms)
+                (window/request-frame! @sys/panel-window))))
           (when-not @sys/reloading?
             (let [{:keys [canvas]} event
                   s @scale
@@ -554,7 +561,8 @@
                                 :y main-y
                                 :resizable? true
                                 :high-dpi? true
-                                :always-on-top? true}
+                                :always-on-top? true
+                                :vsync 0}
                          ;; For OpenGL backend, share the GL context
                          (= :opengl (window/get-backend win))
                          (assoc :shared-gl-context (:gl-context win)))
