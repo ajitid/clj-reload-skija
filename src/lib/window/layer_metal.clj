@@ -27,9 +27,10 @@
    Must be called after window creation with SDL_WINDOW_METAL flag.
    Creates shared device/queue/context on first call.
    Options:
-     :vsync? - Enable display sync (default true)
+     :vsync?       - Enable display sync (default true)
+     :transparent? - Set layer non-opaque for transparent windows (default false)
    Returns true on success."
-  [window-handle & {:keys [vsync?] :or {vsync? true}}]
+  [window-handle & {:keys [vsync? transparent?] :or {vsync? true transparent? false}}]
   (when (metal/available?)
     ;; Initialize shared resources on first call
     (when-not (:device @shared)
@@ -51,6 +52,8 @@
                 (metal/set-layer-pixel-format! metal-layer metal/MTLPixelFormatBGRA8Unorm)
                 (metal/set-layer-framebuffer-only! metal-layer false)
                 (metal/set-layer-display-sync-enabled! metal-layer vsync?)
+                (when transparent?
+                  (metal/set-layer-opaque! metal-layer false))
                 (swap! windows assoc window-handle
                        {:metal-view metal-view
                         :metal-layer metal-layer

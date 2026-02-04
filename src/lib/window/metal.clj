@@ -149,6 +149,15 @@
       ;; BOOL is passed as a pointer-sized value in ObjC ABI
       (JNI/invokePPPV layer sel (if framebuffer-only? 1 0) msg-send))))
 
+(defn set-layer-opaque!
+  "Set whether the layer is opaque.
+   Setting to false allows the compositor to blend alpha for transparent windows."
+  [layer opaque?]
+  (when (and layer (pos? layer))
+    (let [sel (get-selector "setOpaque:")
+          msg-send (objc-msg-send)]
+      (JNI/invokePPPV layer sel (if opaque? 1 0) msg-send))))
+
 (defn set-layer-display-sync-enabled!
   "Set whether the layer synchronizes presentation with the display refresh.
    true = vsync on, false = vsync off."

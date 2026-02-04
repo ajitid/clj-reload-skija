@@ -40,6 +40,7 @@
    :bordered?      true
    :fullscreen?    false
    :opacity        1.0
+   :transparent?   false
    :min-size       nil       ;; [w h] or nil
    :max-size       nil       ;; [w h] or nil
    :position       nil       ;; [x y] or nil (centered)

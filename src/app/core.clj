@@ -543,7 +543,8 @@
                             :height       (:height config)
                             :resizable?   (:resizable? config)
                             :high-dpi?    true
-                            :always-on-top? (:always-on-top? config)}
+                            :always-on-top? (:always-on-top? config)
+                            :transparent? (:transparent? config)}
                      (:position config) (assoc :x (first (:position config))
                                                :y (second (:position config))))
           win (window/create-window win-opts)]
@@ -581,7 +582,9 @@
             (window/hide! panel-win)))
 
         ;; 5. Apply post-creation properties to main window
-        (when-not (:bordered? config)
+        ;; Skip set-bordered! when transparent (already borderless from SDL flag)
+        (when (and (not (:bordered? config))
+                   (not (:transparent? config)))
           (window/set-bordered! win false))
         (when (:fullscreen? config)
           (window/set-fullscreen! win true))

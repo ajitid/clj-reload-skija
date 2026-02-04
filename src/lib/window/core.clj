@@ -22,7 +22,7 @@
 (defrecord Window [^long handle ^long gl-context window-id event-handler
                    frame-requested? running?
                    width height scale backend
-                   vsync])
+                   vsync transparent?])
 
 (defn- detect-backend
   "Detect the best backend for the current platform.
@@ -44,6 +44,7 @@
      :resizable?     - Allow resizing (default true)
      :high-dpi?      - Enable high DPI (default true)
      :always-on-top? - Keep window above others (default false)
+     :transparent?   - Enable per-pixel transparency (default false, implies borderless)
      :display        - Display index (0-based) to open on (default: primary)
      :backend        - Graphics backend :opengl, :metal, or :auto (default)
                        :auto uses Metal on macOS, OpenGL elsewhere
@@ -51,9 +52,9 @@
                           instead of creating a new one
    Position precedence: explicit :x/:y > :display (centered) > default
    Returns a Window record."
-  [{:keys [title width height x y resizable? high-dpi? always-on-top? display backend
+  [{:keys [title width height x y resizable? high-dpi? always-on-top? transparent? display backend
            shared-gl-context vsync]
-    :or {title "Window" width 800 height 600 resizable? true high-dpi? true backend :auto}
+    :or {title "Window" width 800 height 600 resizable? true high-dpi? true transparent? false backend :auto}
     :as opts}]
   ;; Resolve :auto to actual backend
   (let [effective-backend (if (= backend :auto)
@@ -72,7 +73,7 @@
             [w h] (sdl/get-window-size handle)
             wid (sdl/get-window-id handle)]
         ;; Initialize Metal layer (shared device/queue created on first call)
-        (when-not (layer-metal/init! handle :vsync? (not= vsync 0))
+        (when-not (layer-metal/init! handle :vsync? (not= vsync 0) :transparent? transparent?)
           (throw (ex-info "Failed to initialize Metal layer" {:backend :metal})))
         (println "[metal] GPU:" (layer-metal/device-name))
         (println "[metal] VSync:" (if (not= vsync 0) "on" "off"))
@@ -87,12 +88,13 @@
           :height           (atom h)
           :scale            (atom scale)
           :backend          :metal
-          :vsync            (atom (or vsync 1))}))
+          :vsync            (atom (or vsync 1))
+          :transparent?     transparent?}))
 
       ;; Default: OpenGL
       (do
         (when-not shared-gl-context
-          (sdl/set-gl-attributes!))
+          (sdl/set-gl-attributes! :transparent? transparent?))
         (let [handle (sdl/create-window! (assoc opts-with-backend :backend :opengl))
               gl-ctx (if shared-gl-context
                        (do
@@ -122,7 +124,8 @@
             :height           (atom h)
             :scale            (atom scale)
             :backend          :opengl
-            :vsync            (atom effective)}))))))
+            :vsync            (atom effective)
+            :transparent?     transparent?}))))))
 
 (defn set-event-handler!
   "Set the event handler function.
@@ -162,7 +165,9 @@
           {:keys [surface canvas flush-fn]} (layer/frame! handle pw ph)]
       ;; Update viewport to match new size
       (GL11/glViewport 0 0 pw ph)
-      ;; Clear with white (or could be transparent)
+      ;; Clear framebuffer — transparent black for transparent windows, default otherwise
+      (when (:transparent? window)
+        (GL11/glClearColor 0.0 0.0 0.0 0.0))
       (GL11/glClear (bit-or GL11/GL_COLOR_BUFFER_BIT GL11/GL_STENCIL_BUFFER_BIT))
       ;; Dispatch frame event to handler
       ;; Handler returns truthy if it drew, falsy to skip swap (preserve previous frame)

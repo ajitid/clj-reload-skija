@@ -103,8 +103,11 @@
   "Shell draw - called every frame.
    Delegates to example draw, then overlays debug panel."
   [^Canvas canvas width height]
-  ;; Clear background
-  (.clear canvas (unchecked-int 0xFF222222))
+  ;; Clear background (transparent when window is transparent)
+  (.clear canvas (unchecked-int
+                   (if (:transparent? @sys/window-config)
+                     0x00000000
+                     0xFF222222)))
   ;; Delegate to example draw
   (when-let [draw-fn (example-fn "draw")]
     (draw-fn canvas width height))

@@ -14,6 +14,8 @@
 (def ^:private WINDOW_RESIZABLE          SDLVideo/SDL_WINDOW_RESIZABLE)
 (def ^:private WINDOW_HIGH_PIXEL_DENSITY SDLVideo/SDL_WINDOW_HIGH_PIXEL_DENSITY)
 (def ^:private WINDOW_ALWAYS_ON_TOP      SDLVideo/SDL_WINDOW_ALWAYS_ON_TOP)
+(def ^:private WINDOW_TRANSPARENT        SDLVideo/SDL_WINDOW_TRANSPARENT)
+(def ^:private WINDOW_BORDERLESS         SDLVideo/SDL_WINDOW_BORDERLESS)
 
 ;; SDL event types (from SDLEvents)
 (def ^:private EVENT_QUIT              SDLEvents/SDL_EVENT_QUIT)
@@ -44,6 +46,7 @@
 (def ^:private GL_CONTEXT_PROFILE_CORE  SDLVideo/SDL_GL_CONTEXT_PROFILE_CORE)
 (def ^:private GL_STENCIL_SIZE          SDLVideo/SDL_GL_STENCIL_SIZE)
 (def ^:private GL_DOUBLEBUFFER          SDLVideo/SDL_GL_DOUBLEBUFFER)
+(def ^:private GL_ALPHA_SIZE            SDLVideo/SDL_GL_ALPHA_SIZE)
 
 (defn init-sdl!
   "Initialize SDL with video subsystem."
@@ -52,13 +55,17 @@
     (throw (ex-info "Failed to initialize SDL" {:error (SDLError/SDL_GetError)}))))
 
 (defn set-gl-attributes!
-  "Set OpenGL context attributes before window creation."
-  []
+  "Set OpenGL context attributes before window creation.
+   Options:
+     :transparent? - When true, request 8-bit alpha channel for transparent windows."
+  [& {:keys [transparent?] :or {transparent? false}}]
   (SDLVideo/SDL_GL_SetAttribute GL_CONTEXT_MAJOR_VERSION 3)
   (SDLVideo/SDL_GL_SetAttribute GL_CONTEXT_MINOR_VERSION 3)
   (SDLVideo/SDL_GL_SetAttribute GL_CONTEXT_PROFILE_MASK GL_CONTEXT_PROFILE_CORE)
   (SDLVideo/SDL_GL_SetAttribute GL_STENCIL_SIZE 8)
-  (SDLVideo/SDL_GL_SetAttribute GL_DOUBLEBUFFER 1))
+  (SDLVideo/SDL_GL_SetAttribute GL_DOUBLEBUFFER 1)
+  (when transparent?
+    (SDLVideo/SDL_GL_SetAttribute GL_ALPHA_SIZE 8)))
 
 (defn get-displays
   "Get all available display IDs.
@@ -130,11 +137,12 @@
      :high-dpi?    - Enable high DPI (default true)
      :always-on-top? - Keep window above others (default false)
      :display      - Display index (0-based) or display ID to open on (default: primary)
+     :transparent? - Enable per-pixel transparency (default false, implies borderless)
      :backend      - Graphics backend :opengl (default) or :metal (macOS only)
    Position precedence: explicit :x/:y > :display (centered) > default (primary, centered)
    Returns the window handle (long pointer)."
-  [{:keys [title width height x y resizable? high-dpi? always-on-top? display backend]
-    :or {title "Window" width 800 height 600 resizable? true high-dpi? true always-on-top? false backend :opengl}}]
+  [{:keys [title width height x y resizable? high-dpi? always-on-top? transparent? display backend]
+    :or {title "Window" width 800 height 600 resizable? true high-dpi? true always-on-top? false transparent? false backend :opengl}}]
   (let [graphics-flag (case backend
                         :metal WINDOW_METAL
                         :opengl WINDOW_OPENGL
@@ -142,7 +150,8 @@
         flags (cond-> graphics-flag
                 resizable?     (bit-or WINDOW_RESIZABLE)
                 high-dpi?      (bit-or WINDOW_HIGH_PIXEL_DENSITY)
-                always-on-top? (bit-or WINDOW_ALWAYS_ON_TOP))
+                always-on-top? (bit-or WINDOW_ALWAYS_ON_TOP)
+                transparent?   (bit-or WINDOW_TRANSPARENT WINDOW_BORDERLESS))
         window (SDLVideo/SDL_CreateWindow title width height flags)]
     (when (zero? window)
       (throw (ex-info "Failed to create window" {:backend backend})))
