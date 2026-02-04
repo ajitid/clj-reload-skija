@@ -112,7 +112,7 @@
              {:id :default-fps-checkbox
               :layer :overlay
               :z-index 20
-              :window :panel
+              :window (state/panel-gesture-window)
               :bounds-fn (fn [_ctx]
                            (get-control-bounds :display :show-fps))
               :gesture-recognizers [:tap]
@@ -124,7 +124,7 @@
              {:id :default-group-header-display
               :layer :overlay
               :z-index 20
-              :window :panel
+              :window (state/panel-gesture-window)
               :bounds-fn (fn [_ctx]
                            (get-group-header-bounds :display))
               :gesture-recognizers [:tap]

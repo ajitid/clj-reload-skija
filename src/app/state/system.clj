@@ -42,7 +42,8 @@
    :opacity        1.0
    :min-size       nil       ;; [w h] or nil
    :max-size       nil       ;; [w h] or nil
-   :position       nil})     ;; [x y] or nil (centered)
+   :position       nil       ;; [x y] or nil (centered)
+   :panel-inline?  true})
 
 (defonce window-config (atom default-window-config))
 

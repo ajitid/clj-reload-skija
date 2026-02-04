@@ -263,9 +263,11 @@
                    (= key 0x60) (pos? (bit-and modifiers 0x00C0)))
           (let [visible? (not @shell-state/panel-visible?)]
             (shell-state/panel-visible? visible?)
-            (if visible?
-              (window/show! panel-win)
-              (window/hide! panel-win)))))
+            (when-not (:panel-inline? @sys/window-config)
+              (if visible?
+                (window/show! panel-win)
+                (do (window/hide! panel-win)
+                    (window/raise! main-win)))))))
 
       :else nil)))
 
@@ -292,7 +294,8 @@
             (reset! sys/app-activated? true))
           (window/request-frame! win)
           ;; Request panel frame at ~30 FPS (time-based, monitor-rate independent)
-          (when (and @shell-state/panel-visible?
+          (when (and (not (:panel-inline? @sys/window-config))
+                     @shell-state/panel-visible?
                      (some? @sys/panel-window))
             (let [now-ms (/ (System/nanoTime) 1e6)
                   elapsed (- now-ms @panel-last-render-time)]
@@ -492,14 +495,14 @@
 
               ;; Ctrl+` toggles panel window show/hide
               (when (and (= key 0x60) (pos? (bit-and modifiers 0x00C0)))
-                (let [visible? (not @shell-state/panel-visible?)
-                      panel-win @sys/panel-window]
+                (let [visible? (not @shell-state/panel-visible?)]
                   (shell-state/panel-visible? visible?)
-                  (when panel-win
-                    (if visible?
-                      (do (window/show! panel-win)
-                          (window/raise! win))
-                      (window/hide! panel-win))))))))
+                  (when-not (:panel-inline? @sys/window-config)
+                    (when-let [panel-win @sys/panel-window]
+                      (if visible?
+                        (window/show! panel-win)
+                        (do (window/hide! panel-win)
+                            (window/raise! win))))))))))
 
         :else nil))))
 
@@ -551,31 +554,31 @@
         (reset! window-width w)
         (reset! window-height h))
 
-      ;; 4. Create panel window positioned to the right of main window
-      (let [[main-x main-y] (window/get-window-position win)
-            panel-x (+ main-x (:width config) 10)
-            panel-opts (cond-> {:title "Controls"
-                                :width 260
-                                :height 500
-                                :x panel-x
-                                :y main-y
-                                :resizable? true
-                                :high-dpi? true
-                                :always-on-top? true
-                                :vsync 0}
-                         ;; For OpenGL backend, share the GL context
-                         (= :opengl (window/get-backend win))
-                         (assoc :shared-gl-context (:gl-context win)))
-            panel-win (window/create-window panel-opts)]
+      ;; 4. Create panel window positioned to the right of main window (unless inline)
+      (let [panel-win (when-not (:panel-inline? @sys/window-config)
+                        (let [[main-x main-y] (window/get-window-position win)
+                              panel-x (+ main-x (:width config) 10)
+                              panel-opts (cond-> {:title "Controls"
+                                                  :width 260
+                                                  :height 500
+                                                  :x panel-x
+                                                  :y main-y
+                                                  :resizable? true
+                                                  :high-dpi? true
+                                                  :always-on-top? true
+                                                  :vsync 0}
+                                           ;; For OpenGL backend, share the GL context
+                                           (= :opengl (window/get-backend win))
+                                           (assoc :shared-gl-context (:gl-context win)))]
+                          (window/create-window panel-opts)))]
         (reset! sys/panel-window panel-win)
-        (let [[pw ph] (window/get-size panel-win)]
-          (reset! panel-width pw)
-          (reset! panel-height ph))
-
-        ;; Raise main when panel visible, hide panel when not
-        (if @shell-state/panel-visible?
-          (window/raise! win)
-          (window/hide! panel-win))
+        (when panel-win
+          (let [[pw ph] (window/get-size panel-win)]
+            (reset! panel-width pw)
+            (reset! panel-height ph))
+          ;; Hide panel if not visible at startup
+          (when-not @shell-state/panel-visible?
+            (window/hide! panel-win)))
 
         ;; 5. Apply post-creation properties to main window
         (when-not (:bordered? config)
@@ -604,13 +607,14 @@
                                        (call-example-cleanup!)
                                        (do-sys-cleanup! win)))))
 
-        ;; 9. Start event loop with both windows
+        ;; 9. Start event loop with both windows (or just main if inline)
         (window/set-event-handler! win (create-event-handler win))
-        (window/set-event-handler! panel-win (create-panel-event-handler panel-win win))
+        (when panel-win
+          (window/set-event-handler! panel-win (create-panel-event-handler panel-win win)))
         (window/request-frame! win)
-        (when @shell-state/panel-visible?
+        (when (and panel-win @shell-state/panel-visible?)
           (window/request-frame! panel-win))
-        (window/run-multi! win [panel-win])))))
+        (window/run-multi! win (if panel-win [panel-win] []))))))
 
 (defn start-app
   "Start the application with the given example key."

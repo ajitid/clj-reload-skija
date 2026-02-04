@@ -10,7 +10,8 @@
    - Click 'Add' to add item (fades in from top)
    - Click 'Remove' to remove random item (fades out)
    - Click 'Shuffle' to reorder (smooth position animation)"
-  (:require [lib.color.open-color :as oc]
+  (:require [app.shell.state :as state]
+            [lib.color.open-color :as oc]
             [lib.flex.core :as flex]
             [lib.gesture.api :as gesture]
             [lib.graphics.shapes :as shapes]
@@ -111,6 +112,7 @@
     (gesture/register-target!
       {:id btn-id
        :layer :overlay
+       :window (state/panel-gesture-window)
        :z-index 10
        :bounds-fn (make-button-bounds-fn btn-id)
        :gesture-recognizers [:tap]

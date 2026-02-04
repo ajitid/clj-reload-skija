@@ -105,6 +105,8 @@ Each example file provides these functions:
 (defn cleanup [])
 ```
 
+**Gesture window routing:** When registering gestures for control panel overlays (`:layer :overlay`), always include `:window (state/panel-gesture-window)` in the target map. This ensures gestures route correctly whether the panel is inline or in a separate window. Content-layer gestures (`:layer :content`) don't need this — they always target `:main`.
+
 ### Launch Mechanism
 
 **From REPL:**

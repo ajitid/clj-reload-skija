@@ -6,7 +6,8 @@
    - GPU-resident image snapshot (no CPU readback)
    - Semi-transparent overlay of captured frame
    - Button widget with tap gesture"
-  (:require [lib.color.core :as color]
+  (:require [app.shell.state :as state]
+            [lib.color.core :as color]
             [lib.color.open-color :as oc]
             [app.ui.button :as button]
             [lib.flex.core :as flex]
@@ -102,6 +103,7 @@
     (register!
      {:id :capture-button
       :layer :overlay
+      :window (state/panel-gesture-window)
       :z-index 10
       :bounds-fn button-bounds-fn
       :gesture-recognizers [:tap :drag]

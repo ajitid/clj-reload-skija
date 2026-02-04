@@ -6,7 +6,8 @@
    - Pixel-level color sampling via Bitmap
    - Click-to-pick interaction with gesture system
    - Button widget for controls"
-  (:require [lib.color.core :as color]
+  (:require [app.shell.state :as state]
+            [lib.color.core :as color]
             [lib.color.open-color :as oc]
             [app.ui.button :as button]
             [lib.flex.core :as flex]
@@ -196,6 +197,7 @@
     (register!
      {:id :pipette-new-photo
       :layer :overlay
+      :window (state/panel-gesture-window)
       :z-index 10
       :bounds-fn new-photo-btn-bounds
       :gesture-recognizers [:tap]
@@ -204,6 +206,7 @@
     (register!
      {:id :pipette-clear
       :layer :overlay
+      :window (state/panel-gesture-window)
       :z-index 10
       :bounds-fn clear-btn-bounds
       :gesture-recognizers [:tap]

@@ -10,6 +10,7 @@
    Previously the default example (ball-spring). Renamed to reflect actual content."
   (:require [lib.color.core :as color]
             [lib.color.open-color :as oc]
+            [app.shell.state :as state]
             [app.state.system :as sys]
             [app.ui.slider :as slider]
             [lib.flex.core :as flex]
@@ -160,7 +161,7 @@
             ;; Grid configuration group header
             (register!
              {:id :group-header-grid
-              :window :panel
+              :window (state/panel-gesture-window)
                   :layer :overlay
                   :z-index 20
               :bounds-fn (fn [_ctx]
@@ -172,7 +173,7 @@
              {:id :grid-x-slider
               :layer :overlay
               :z-index 20
-              :window :panel
+              :window (state/panel-gesture-window)
               :bounds-fn (fn [_ctx]
                            (get-control-bounds :grid :grid-x))
               :gesture-recognizers [:drag]
@@ -191,7 +192,7 @@
              {:id :grid-y-slider
               :layer :overlay
               :z-index 20
-              :window :panel
+              :window (state/panel-gesture-window)
               :bounds-fn (fn [_ctx]
                            (get-control-bounds :grid :grid-y))
               :gesture-recognizers [:drag]

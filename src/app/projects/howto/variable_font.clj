@@ -8,6 +8,7 @@
    - Edit display text via control panel"
   (:require [lib.color.core :as color]
             [lib.color.open-color :as oc]
+            [app.shell.state :as state]
             [app.state.system :as sys]
             [lib.flex.core :as flex]
             [lib.text.core :as text])
@@ -16,6 +17,8 @@
 ;; ============================================================
 ;; Configuration
 ;; ============================================================
+
+;; (def window-config {:panel-inline? false})
 
 (def font-family "Inter Variable")
 (def font-size 72)
@@ -151,7 +154,7 @@
          {:id :variable-font-text-field
           :layer :overlay
           :z-index 20
-          :window :panel
+          :window (state/panel-gesture-window)
           :bounds-fn (fn [_ctx]
                        (get-bounds :text :display-text))
           :gesture-recognizers [:tap]
@@ -163,7 +166,7 @@
          {:id :variable-font-group-header-text
           :layer :overlay
           :z-index 20
-          :window :panel
+          :window (state/panel-gesture-window)
           :bounds-fn (fn [_ctx] (get-header :text))
           :gesture-recognizers [:tap]
           :handlers {:on-tap (fn [_] (toggle-group! :text))}})))))

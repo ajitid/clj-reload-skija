@@ -3,7 +3,8 @@
 
    These are dev infrastructure sources that persist across hot-reloads
    and example switches."
-  (:require [lib.flex.core :as flex]))
+  (:require [app.state.system :as sys]
+            [lib.flex.core :as flex]))
 
 ;; ============================================================
 ;; FPS display
@@ -24,6 +25,11 @@
 
 ;; Control panel visibility (Ctrl+` toggle)
 (flex/defsource panel-visible? false)
+
+(defn panel-gesture-window
+  "Returns :main when panel is inline, :panel when separate window."
+  []
+  (if (:panel-inline? @sys/window-config) :main :panel))
 
 ;; FPS display visibility (toggled via control panel checkbox)
 (flex/defsource fps-display-visible? false)

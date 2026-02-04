@@ -27,6 +27,28 @@ from urllib.parse import urlparse
 CLAUDE_DIR = Path.home() / ".claude"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
 
+# ANSI color support — disabled when stdout is not a TTY (e.g. piped)
+_USE_COLOR = hasattr(sys.stdout, 'isatty') and sys.stdout.isatty()
+
+def _ansi(code):
+    """Return ANSI escape sequence if colors are enabled, empty string otherwise."""
+    return f"\033[{code}m" if _USE_COLOR else ""
+
+BOLD      = _ansi("1")
+DIM       = _ansi("2")
+RESET     = _ansi("0")
+CYAN      = _ansi("36")
+BOLD_CYAN = _ansi("1;36")
+YELLOW    = _ansi("33")
+BOLD_YELLOW = _ansi("1;33")
+
+def _term_width():
+    """Get terminal width, defaulting to 120 if unavailable."""
+    try:
+        return os.get_terminal_size().columns
+    except (OSError, ValueError):
+        return 120
+
 def normalize_path(path_str):
     """Normalize a path string to absolute path."""
     path = Path(path_str).expanduser().resolve()
@@ -529,14 +551,32 @@ def search_conversations(keyword, project_path=None):
 
             # Search in messages
             matches = []
+            term_w = _term_width()
             for i, msg in enumerate(conv['messages']):
                 if keyword.lower() in msg['text'].lower():
-                    # Get context (snippet around match)
-                    text = msg['text']
+                    # Get context (snippet around match), clipped to one terminal line
+                    text = msg['text'].replace('\n', ' ↵ ')
                     idx = text.lower().find(keyword.lower())
-                    start = max(0, idx - 50)
-                    end = min(len(text), idx + len(keyword) + 50)
-                    snippet = "..." + text[start:end] + "..."
+                    # Prefix like "   - Msg #12 (assistant): " eats ~30 chars
+                    prefix = f"   - Msg #{i+1} ({msg['role']}): "
+                    avail = max(40, term_w - len(prefix) - 1)
+                    half = (avail - len(keyword) - 6) // 2  # 6 = two "..."
+                    half = max(10, half)
+                    start = max(0, idx - half)
+                    end = min(len(text), idx + len(keyword) + half)
+                    snippet = ("..." if start > 0 else "") + text[start:end] + ("..." if end < len(text) else "")
+                    # Hard-cap to available width
+                    if len(snippet) > avail:
+                        snippet = snippet[:avail - 3] + "..."
+
+                    # Highlight keyword (after truncation so ANSI codes don't affect width calc)
+                    if _USE_COLOR:
+                        snippet = re.sub(
+                            re.escape(keyword),
+                            lambda m: f"{BOLD_YELLOW}{m.group()}{RESET}",
+                            snippet,
+                            flags=re.IGNORECASE
+                        )
 
                     matches.append({
                         'msg_num': i + 1,
@@ -556,25 +596,25 @@ def search_conversations(keyword, project_path=None):
         return
 
     print(f"Found {len(results)} conversation(s) with matches\n")
-    print("=" * 100)
+    print(f"{DIM}{'=' * 100}{RESET}")
 
     for i, result in enumerate(results, 1):
         conv = result['conv']
         dt = datetime.fromisoformat(conv['last_timestamp'].replace('Z', '+00:00'))
         project_name = Path(conv['project']).name if conv['project'] else "Unknown"
 
-        print(f"\n{i}. {conv['first_message']}")
-        print(f"   Project: {project_name}")
-        print(f"   Date: {dt.strftime('%Y-%m-%d %H:%M')}")
-        print(f"   Session: {conv['session_id']}")
-        print(f"   Matches: {len(result['matches'])}")
+        print(f"\n{BOLD_CYAN}{i}. {conv['first_message']}{RESET}")
+        print(f"   {DIM}Project:{RESET} {project_name}")
+        print(f"   {DIM}Date:{RESET} {dt.strftime('%Y-%m-%d %H:%M')}")
+        print(f"   {DIM}Session:{RESET} {conv['session_id']}")
+        print(f"   {DIM}Matches:{RESET} {len(result['matches'])}")
 
         # Show first few matches
         for match in result['matches'][:3]:
             print(f"   - Msg #{match['msg_num']} ({match['role']}): {match['snippet']}")
 
         if len(result['matches']) > 3:
-            print(f"   ... and {len(result['matches']) - 3} more matches")
+            print(f"   {DIM}... and {len(result['matches']) - 3} more matches{RESET}")
 
 def export_conversation(session_id, output_path=None):
     """Export a specific conversation to markdown with TOC."""
