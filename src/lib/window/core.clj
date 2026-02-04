@@ -74,6 +74,8 @@
         ;; Initialize Metal layer (shared device/queue created on first call)
         (when-not (layer-metal/init! handle :vsync? (not= vsync 0))
           (throw (ex-info "Failed to initialize Metal layer" {:backend :metal})))
+        (println "[metal] GPU:" (layer-metal/device-name))
+        (println "[metal] VSync:" (if (not= vsync 0) "on" "off"))
         (map->Window
          {:handle           handle
           :gl-context       0      ; No GL context for Metal
@@ -106,6 +108,9 @@
               effective (if (and (= desired -1) (not (sdl/set-swap-interval! -1)))
                           (do (sdl/set-swap-interval! 1) 1)
                           (do (sdl/set-swap-interval! desired) desired))]
+          (when-not shared-gl-context
+            (println "[opengl] GPU:" (GL11/glGetString GL11/GL_RENDERER))
+            (println "[opengl] VSync:" (case (int effective) -1 "adaptive" 1 "on" 0 "off" (str effective))))
           (map->Window
            {:handle           handle
             :gl-context       gl-ctx

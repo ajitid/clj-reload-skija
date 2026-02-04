@@ -35,10 +35,10 @@
     (when-not (:device @shared)
       (let [{:keys [device queue device-name]} (metal/create-metal-context)]
         (when (and device queue)
-          (println "[layer-metal] Using device:" device-name)
           (let [skija-ctx (DirectContext/makeMetal device queue)]
             (when skija-ctx
-              (reset! shared {:device device :queue queue :context skija-ctx}))))))
+              (reset! shared {:device device :queue queue :context skija-ctx
+                              :device-name device-name}))))))
     ;; Initialize per-window resources
     (let [{:keys [device]} @shared]
       (when device
@@ -169,6 +169,11 @@
   "Get the Metal device pointer."
   []
   (:device @shared))
+
+(defn device-name
+  "Get the Metal device name string."
+  []
+  (:device-name @shared))
 
 (defn queue
   "Get the Metal command queue pointer."
