@@ -142,10 +142,10 @@
   [value-atom]
   (when value-atom
     (let [v (deref value-atom)]
-      (if (fn? v)
-        ;; It's a defsource (which is a function), deref to get the value
+      (if (instance? clojure.lang.IDeref v)
+        ;; It's a defsource (implements IDeref), deref to get the actual value
         (deref v)
-        ;; It's already the value (direct defsource was passed)
+        ;; It's already the value
         v))))
 
 ;; ============================================================
