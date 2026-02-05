@@ -131,6 +131,24 @@
               :handlers {:on-tap (fn [_] (toggle-group! :display))}})))))))
 
 ;; ============================================================
+;; Value resolution helpers
+;; ============================================================
+
+(defn resolve-value
+  "Resolve a value from a value-atom, handling both:
+   - Var -> defsource -> value (from requiring-resolve)
+   - Direct defsource -> value (passed directly)
+   Returns nil if value-atom is nil."
+  [value-atom]
+  (when value-atom
+    (let [v (deref value-atom)]
+      (if (fn? v)
+        ;; It's a defsource (which is a function), deref to get the value
+        (deref v)
+        ;; It's already the value (direct defsource was passed)
+        v))))
+
+;; ============================================================
 ;; Drawing
 ;; ============================================================
 
@@ -141,14 +159,7 @@
   (case (:type control)
     :checkbox
     (let [checkbox-draw (requiring-resolve 'app.ui.checkbox/draw)
-          value-atom (:value-atom control)
-          ;; value-atom can be either a Var (from requiring-resolve) or a defsource directly
-          ;; Try double-deref for Var, fall back to single deref for direct defsource
-          checked? (when value-atom
-                     (try
-                       (deref (deref value-atom))  ;; Var -> defsource -> value
-                       (catch Exception _
-                         (deref value-atom))))  ;; Direct defsource -> value
+          checked? (resolve-value (:value-atom control))
           height (:height control)
           bounds [cx cy cw height]]
       ;; Cache bounds for gesture registration
@@ -159,14 +170,7 @@
 
     :slider
     (let [slider-draw (requiring-resolve 'app.ui.slider/draw)
-          value-atom (:value-atom control)
-          ;; value-atom can be either a Var (from requiring-resolve) or a defsource directly
-          ;; Try double-deref for Var, fall back to single deref for direct defsource
-          value (when value-atom
-                  (try
-                    (deref (deref value-atom))  ;; Var -> defsource -> value
-                    (catch Exception _
-                      (deref value-atom))))  ;; Direct defsource -> value
+          value (resolve-value (:value-atom control))
           height (:height control)
           ;; Slider needs vertical space for label above track
           label-height 20
@@ -184,11 +188,7 @@
     (let [text-field-draw (requiring-resolve 'app.ui.text-field/draw)
           register-field (requiring-resolve 'app.ui.text-field/register-field!)
           value-atom (:value-atom control)
-          text-value (when value-atom
-                       (try
-                         (deref (deref value-atom))
-                         (catch Exception _
-                           (deref value-atom))))
+          text-value (resolve-value value-atom)
           height (:height control)
           label-height 20
           box-height 24

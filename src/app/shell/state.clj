@@ -46,12 +46,13 @@
 ;; ============================================================
 
 ;; Group collapse state: {group-id -> collapsed?}
-(defonce group-collapse-state (atom {}))
+;; Using defsource for consistency with other panel state
+(flex/defsource group-collapse-state {})
 
 (defn toggle-group-collapse!
   "Toggle the collapse state of a group."
   [group-id]
-  (swap! group-collapse-state update group-id not))
+  (group-collapse-state (update @group-collapse-state group-id not)))
 
 (defn is-group-collapsed?
   "Check if a group is collapsed. Default: expanded (false)."

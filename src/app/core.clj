@@ -16,7 +16,6 @@
             [clojure.string :as str]
             [lib.error.core :as err]
             [lib.error.overlay :as err-overlay]
-            [lib.flex.core :as flex]
             [lib.window.core :as window]
             [lib.window.events :as e]
             [lib.window.macos :as macos])
