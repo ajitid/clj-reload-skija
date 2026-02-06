@@ -347,9 +347,12 @@
   "Write frame data to FFmpegFrameRecorder. Called from worker thread.
    Creates a JavaCV Frame wrapping the pixel buffer, records it, then frees."
   [{:keys [pixels width height]}]
-  (let [{:keys [recorder]} @capture-state]
+  (let [{:keys [recorder backend]} @capture-state]
     (when recorder
       (try
+        ;; Only flip for OpenGL (bottom-up); Metal is already top-down
+        (when (= backend :opengl)
+          (flip-vertical! pixels width height))
         (let [stride (* width 4)
               frame (Frame.)]
           ;; Set up frame metadata
@@ -492,7 +495,7 @@
   "Save pixels as PNG or JPEG using Skija's built-in encoding.
    Sets DPI metadata on macOS so images display at logical size.
    Runs asynchronously to avoid blocking the render thread."
-  [^ByteBuffer pixels src-width src-height path format opts scale]
+  [^ByteBuffer pixels src-width src-height path format opts scale backend]
   ;; Copy pixel data to byte array before freeing the ByteBuffer
   (let [size (* src-width src-height 4)
         bytes (byte-array size)]
@@ -503,8 +506,9 @@
     ;; Process off render thread
     (future
       (try
-        ;; Flip vertically (OpenGL is bottom-up)
-        (flip-vertical-bytes! bytes src-width src-height)
+        ;; Only flip for OpenGL (bottom-up); Metal is already top-down
+        (when (= backend :opengl)
+          (flip-vertical-bytes! bytes src-width src-height))
         ;; Create Skija Image from raw pixels
         (let [row-bytes (* src-width 4)
               info (ImageInfo. src-width src-height ColorType/RGBA_8888 ColorAlphaType/UNPREMUL)
@@ -779,11 +783,11 @@
   "Process captured pixels (screenshot or video frame).
    Common logic for both OpenGL and Metal backends."
   [^ByteBuffer pixels width height scale]
-  (let [{:keys [mode]} @capture-state]
+  (let [{:keys [mode backend]} @capture-state]
     (case mode
       :screenshot
       (let [{:keys [screenshot-path screenshot-format screenshot-opts]} @capture-state]
-        (save-screenshot! pixels width height screenshot-path screenshot-format screenshot-opts scale)
+        (save-screenshot! pixels width height screenshot-path screenshot-format screenshot-opts scale backend)
         (swap! capture-state assoc :mode nil))
 
       :video
