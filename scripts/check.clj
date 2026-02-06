@@ -111,6 +111,54 @@
                        (count bindings))
          :form    (list (first form) bindings '...)}))))
 
+(defn- primitive-hinted?
+  "True if a symbol has ^double or ^long metadata."
+  [sym]
+  (and (symbol? sym)
+       (let [tag (:tag (meta sym))]
+         (contains? #{'double 'long} tag))))
+
+(defn- extract-param-vectors
+  "Extract all parameter vectors from a defn/defn-/fn form.
+   Handles single-arity, multi-arity, docstrings, and attr-maps."
+  [form]
+  (let [parts (rest form)
+        ;; Skip name symbol (defn/defn- always have one; fn optionally)
+        parts (if (symbol? (first parts)) (rest parts) parts)
+        ;; Skip optional docstring
+        parts (if (string? (first parts)) (rest parts) parts)
+        ;; Skip optional attr-map
+        parts (if (map? (first parts)) (rest parts) parts)]
+    (if (vector? (first parts))
+      [(first parts)]
+      ;; Multi-arity: (([] body) ([x] body) ...)
+      (keep (fn [arity-form]
+              (when (and (seq? arity-form) (vector? (first arity-form)))
+                (first arity-form)))
+            parts))))
+
+(defn- check-primitive-arity
+  "Detect ^double/^long hints on functions with >4 args (Clojure compiler rejects these)."
+  [form]
+  (when (and (seq? form)
+             (#{'defn 'defn- 'fn} (first form)))
+    (let [fn-name (when (#{'defn 'defn-} (first form)) (second form))
+          param-vecs (extract-param-vectors form)]
+      (first
+        (keep (fn [params]
+                (let [hinted (filter primitive-hinted? params)]
+                  (when (and (> (count params) 4)
+                             (seq hinted))
+                    {:rule    :primitive-arity
+                     :message (str (when fn-name (str "`" fn-name "` — "))
+                                   "function has " (count params) " args with primitive hint(s) "
+                                   (pr-str (mapv (comp :tag meta) hinted))
+                                   " on " (pr-str (vec hinted)) ". "
+                                   "Clojure limits primitive-hinted fns to 4 or fewer total args. "
+                                   "Remove hints from params and use (double x) / (long x) in the body.")
+                     :form    (take 3 form)})))
+              param-vecs)))))
+
 ;; --- File-level check: definition order ---
 
 (defn- collect-call-position-symbols
@@ -165,7 +213,8 @@
 (def ^:private all-checks
   [check-misplaced-docstring
    check-defonce-arity
-   check-let-bindings-even])
+   check-let-bindings-even
+   check-primitive-arity])
 
 (defn- walk-forms
   [form check-fns]
@@ -247,5 +296,6 @@
       (println "     - Misplaced docstrings in defonce, defrecord, deftype, etc.")
       (println "     - defonce with wrong number of args")
       (println "     - let/loop with odd number of bindings")
+      (println "     - Primitive type hints (^double/^long) on fns with >4 args")
       (println "     - Definition order: defn calling functions defined later in the file")
       (System/exit 1))))
