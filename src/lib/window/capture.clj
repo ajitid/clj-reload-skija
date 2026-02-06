@@ -244,9 +244,9 @@
         (.position pixels top-offset)
         (.get pixels temp)
         ;; Copy bottom to top
-        (.position pixels top-offset)
         (let [bot-slice (.slice (.position pixels bot-offset))]
           (.limit bot-slice row-bytes)
+          (.position pixels top-offset)
           (.put pixels bot-slice))
         ;; Copy saved top to bottom
         (.position pixels bot-offset)
@@ -266,22 +266,6 @@
         (System/arraycopy data bot-offset data top-offset row-bytes)
         (System/arraycopy temp 0 data bot-offset row-bytes)))
     data))
-
-(defn- pixels->image
-  "Convert raw RGBA pixels to Skija Image."
-  [^ByteBuffer pixels width height]
-  ;; Flip vertically (OpenGL is bottom-up)
-  (flip-vertical! pixels width height)
-  ;; Create Skija Image via Bitmap
-  (let [row-bytes (* width 4)
-        bytes (byte-array (* width height 4))
-        _ (.get pixels bytes)
-        _ (.rewind pixels)
-        info (ImageInfo. width height ColorType/RGBA_8888 ColorAlphaType/UNPREMUL)
-        bitmap (Bitmap.)]
-    (.allocPixels bitmap info)
-    (.installPixels bitmap info bytes row-bytes)
-    (Image/makeFromBitmap (.setImmutable bitmap))))
 
 ;; ============================================================
 ;; Hardware Encoder Detection

@@ -19,6 +19,8 @@
 ;; ============================================================
 
 ;; (def window-config {:panel-inline? false})
+;; (def window-config {:backend :opengl})
+
 
 (def font-family "Inter Variable")
 (def font-size 72)
