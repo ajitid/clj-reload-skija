@@ -543,7 +543,8 @@
                             :resizable?   (:resizable? config)
                             :high-dpi?    true
                             :always-on-top? (:always-on-top? config)
-                            :transparent? (:transparent? config)}
+                            :transparent? (:transparent? config)
+                            :backend      (:backend config)}
                      (:position config) (assoc :x (first (:position config))
                                                :y (second (:position config))))
           win (window/create-window win-opts)]
