@@ -1,7 +1,12 @@
 (ns lib.graphics.curves.hobby
-  "Hobby Curve (G1) — based on Jake Low's implementation (ISC License).
-   https://www.jakelow.com/blog/hobby-curves/hobby.js
-   Which follows Jackowski's paper (TUGboat vol. 34, 2013)."
+  "Hobby Curve (G1) — G1-continuous curve using Hobby's algorithm.
+
+   Based on Jackowski's 2013 TUGboat paper 'Typographers, programmers and
+   mathematicians, or the case of an æsthetically pleasing interpolation'.
+   Implementation matches OPENRNDR (https://github.com/openrndr/orx).
+
+   Uses the complex rho formula (with sqrt(5)) and supports per-segment
+   asymmetric tension via optional callback (METAFONT-style feature)."
   (:require [lib.graphics.curves.common :as common])
   (:import [io.github.humbleui.skija PathBuilder]))
 
