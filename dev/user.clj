@@ -38,6 +38,8 @@
   "Reload all changed namespaces."
   []
   (println "Reloading...")
+  (when-let [cancel-fn (resolve 'lib.render/cancel-current-frame!)]
+    (cancel-fn))
   (reset! @(resolve 'app.state.system/reloading?) true)
   (try
     ;; Dispose Flex effects first

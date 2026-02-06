@@ -16,6 +16,7 @@
             [clojure.string :as str]
             [lib.error.core :as err]
             [lib.error.overlay :as err-overlay]
+            [lib.render :as render]
             [lib.window.core :as window]
             [lib.window.events :as e]
             [lib.window.macos :as macos])
@@ -325,12 +326,16 @@
                 (if-let [reload-err @sys/last-reload-error]
                   (err-overlay/draw-error canvas reload-err)
                   (do
+                    (render/reset-cancel!)
                     (reset! sys/last-runtime-error nil)
                     ;; Delegate to shell
                     (when-let [tick-fn (requiring-resolve 'app.shell.core/tick)]
                       (tick-fn dt))
                     (when-let [draw-fn (requiring-resolve 'app.shell.core/draw)]
                       (draw-fn canvas w h))))
+                (catch Error e
+                  (when-not (render/cancelled-exception? e)
+                    (throw e)))
                 (catch Exception e
                   (reset! sys/last-runtime-error e)
                   (err-overlay/draw-error canvas (or @sys/last-reload-error e))

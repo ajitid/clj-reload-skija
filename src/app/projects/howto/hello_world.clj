@@ -17,7 +17,7 @@
 ;; Configuration
 ;; ============================================================
 
-(def circle-count 3)
+(def circle-count 32)
 (def circle-radius 20)
 (def orbit-radius 150)
 (def animation-speed 0.3)  ;; cycles per second
@@ -144,6 +144,8 @@
   (let [phase-offset (/ (* 2 Math/PI) circle-count)
         [br bg bb _] bg-circle-color]
     (doseq [i (range circle-count)]
+      (when (zero? (mod i 1000000))
+        (println "[draw-circles] iteration" i))
       (let [;; Base angle for this circle
             base-angle (* i phase-offset)
             ;; Animate with time - each circle has offset phase
@@ -192,8 +194,11 @@
   "Called every frame with delta time."
   (update-trail!))
 
+(defonce frame-counter (atom 0))
+
 (defn draw [^Canvas canvas width height]
   "Called every frame for rendering."
+  (println "[draw] frame" (swap! frame-counter inc))
   ;; Center the draggable circle on first draw if not moved
   (when (and (= @circle-x 400.0) (= @circle-y 300.0))
     (reset! circle-x (/ width 2))

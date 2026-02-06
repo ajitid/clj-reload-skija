@@ -2,6 +2,7 @@
   "Paint management utilities - Love2D-style graphics state.
 
    NOTE: Not hot-reloadable (lib.* namespaces require restart per clj-reload pattern)."
+  (:require [lib.render :as render])
   (:import [io.github.humbleui.skija Paint PaintMode PaintStrokeCap PaintStrokeJoin
             BlendMode ImageFilter MaskFilter ColorFilter Shader PathEffect Blender
             Color4f ColorSpace]))
@@ -431,6 +432,7 @@
                          :uniforms {:res [800 600]}}})"
   ([] (make-paint {}))
   ([opts]
+   (render/check-cancelled!)
    (let [paint (Paint.)
          ;; Separate basic props from effects
          basic-keys #{:color :mode :stroke-width :stroke-cap :stroke-join :stroke-miter
