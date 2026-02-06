@@ -36,6 +36,8 @@
 ;; Change this path to your video file
 (def video-file "resources/videos/sample.mp4")
 
+(def window-config {:backend :auto})
+
 ;; ============================================================
 ;; State
 ;; ============================================================
@@ -232,18 +234,18 @@
       (println "Make sure the video file exists at:" video-file)))
   ;; Register seek bar for click/drag
   (gesture/register-target!
-    {:id :video-seek-bar
-     :layer :content
-     :z-index 10
-     :bounds-fn (fn [_ctx]
-                  (get-seek-bar-bounds-from-window @window-width @window-height))
-     :gesture-recognizers [:drag]
-     :handlers {:on-pointer-down (fn [event]
-                                   (let [x (get-in event [:pointer :x])]
-                                     (seek-from-x x @window-width @window-height)))
-                :on-drag (fn [event]
-                           (let [x (get-in event [:pointer :x])]
-                             (seek-from-x x @window-width @window-height)))}}))
+   {:id :video-seek-bar
+    :layer :content
+    :z-index 10
+    :bounds-fn (fn [_ctx]
+                 (get-seek-bar-bounds-from-window @window-width @window-height))
+    :gesture-recognizers [:drag]
+    :handlers {:on-pointer-down (fn [event]
+                                  (let [x (get-in event [:pointer :x])]
+                                    (seek-from-x x @window-width @window-height)))
+               :on-drag (fn [event]
+                          (let [x (get-in event [:pointer :x])]
+                            (seek-from-x x @window-width @window-height)))}}))
 
 (defn tick [dt]
   "Called every frame with delta time."

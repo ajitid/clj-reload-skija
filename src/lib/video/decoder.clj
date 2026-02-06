@@ -125,6 +125,9 @@
             (when-not @texture-id
               (reset! texture-id (tex/create-texture width height)))
             (tex/update-texture-with-stride! @texture-id width height buffer stride channels)
+            ;; Invalidate cached Skia Image so current-frame* re-wraps the updated texture
+            (when-let [old-img @skia-image] (.close old-img))
+            (reset! skia-image nil)
             (reset! has-first-frame? true)
             (reset! last-frame-pts seconds))))
       (reset! needs-decode? false))
@@ -163,6 +166,7 @@
               (reset! texture-id (tex/create-texture width height)))
             ;; Upload first frame
             (tex/update-texture-with-stride! @texture-id width height buffer stride channels)
+            (reset! skia-image nil)
             (reset! has-first-frame? true))
           ;; Reset to beginning for playback
           (.setTimestamp grabber 0))))
@@ -200,6 +204,9 @@
                     (reset! texture-id (tex/create-texture width height)))
                   ;; Upload to GPU with proper stride handling
                   (tex/update-texture-with-stride! @texture-id width height buffer stride channels)
+                  ;; Invalidate cached Skia Image so current-frame* re-wraps the updated texture
+                  (when-let [old-img @skia-image] (.close old-img))
+                  (reset! skia-image nil)
                   (reset! has-first-frame? true))
                 ;; Update frame tracking - use audio position if available for smoother sync
                 (let [frame-pts (if audio-pos audio-pos (calculate-pts frame))]

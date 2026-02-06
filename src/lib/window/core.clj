@@ -60,6 +60,10 @@
   (let [effective-backend (if (= backend :auto)
                             (detect-backend)
                             backend)
+        mac? (.contains (.toLowerCase (System/getProperty "os.name" "")) "mac")
+        _ (when (and mac? (= effective-backend :opengl))
+            (throw (ex-info "OpenGL backend is not supported on macOS. Use :metal or :auto"
+                            {:backend backend :platform "macOS"})))
         opts-with-backend (assoc opts :backend effective-backend)]
     ;; Initialize SDL
     (sdl/init-sdl!)
