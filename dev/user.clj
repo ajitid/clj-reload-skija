@@ -91,7 +91,7 @@
           (fn [event]
             (when (and (#{:modify :create} (:type event))
                        (str/ends-with? (str (:path event)) ".clj"))
-              (reset! @(requiring-resolve 'app.state.system/reload-requested?) true)))
+              (reload)))
           "src"))
       (println "Auto-reload: watching src/ for .clj changes"))))
 

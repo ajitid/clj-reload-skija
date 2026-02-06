@@ -17,7 +17,7 @@
 (defonce reloading? (atom false))
 (defonce app-activated? (atom false))
 (defonce recording? (atom false))
-(defonce reload-requested? (atom false))
+
 
 ;; ============================================================
 ;; Error handling

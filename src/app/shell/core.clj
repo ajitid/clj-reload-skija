@@ -87,10 +87,6 @@
   "Shell tick - called every frame.
    Advances game time and delegates to example tick."
   [dt]
-  ;; Handle watcher-triggered reload on render thread (thread-safe)
-  (when (compare-and-set! sys/reload-requested? true false)
-    (when-let [reload-fn (requiring-resolve 'user/reload)]
-      (reload-fn)))
   ;; Advance game time (dt is in seconds, apply time scale)
   (swap! sys/game-time + (* dt @sys/time-scale))
   ;; Check long-press timers in gesture system

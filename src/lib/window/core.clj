@@ -199,23 +199,16 @@
     ;; Get frame resources from Metal layer
     (when-let [{:keys [surface canvas texture flush-fn present-fn]} (layer-metal/frame! handle pw ph)]
       ;; Dispatch frame event to handler
-      (when (dispatch-event! window (e/->EventFrameSkija surface canvas))
-        ;; Flush Skija commands to Metal
+      (let [drew? (dispatch-event! window (e/->EventFrameSkija surface canvas))]
+        ;; Always flush+present to return drawable to pool.
+        ;; Unlike OpenGL (persistent surface), Metal drawables are per-frame and
+        ;; MUST be presented to avoid exhausting the triple-buffer pool.
         (flush-fn)
-
-        ;; CAPTURE: Issue texture read BEFORE present (texture still valid)
-        ;; This captures the current frame's texture into a buffer
-        (when @capture-active?
+        (when (and drew? @capture-active?)
           (when-let [capture-fn (resolve 'lib.window.capture/start-async-capture-metal!)]
-            ;; Note: We pass nil for cmd-buffer since Skia's flushAndSubmit
-            ;; already waits for GPU completion internally
             (capture-fn texture nil pw ph)))
-
-        ;; Present the drawable (texture becomes invalid after this)
         (let [cmd-buffer (present-fn)]
-          ;; PROCESS: Handle previously captured frame's pixels
-          ;; This runs AFTER present so it doesn't block the current frame
-          (when @capture-active?
+          (when (and drew? @capture-active?)
             (when-let [process-fn (resolve 'lib.window.capture/process-frame!)]
               (process-fn pw ph @(:scale window) :metal))))))))
 
