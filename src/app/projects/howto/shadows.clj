@@ -44,14 +44,14 @@
   "Draw card background."
   [^Canvas canvas x y]
   (shapes/rounded-rect canvas x y card-w card-h 8
-                       {:color [0.12 0.12 0.15 1.0]}))
+                       {:color [0.85 0.83 0.80 1.0]}))
 
 (defn- draw-label
   "Draw card title label."
   [^Canvas canvas x y title]
   (text/text canvas title
              (+ x (/ card-w 2.0)) (+ y 20)
-             {:size 12 :align :center :color oc/gray-4}))
+             {:size 12 :align :center :color oc/gray-8}))
 
 ;; ============================================================
 ;; Card Shape Helpers
@@ -196,6 +196,24 @@
                    {:color oc/orange-5
                     :image-filter merged})))
 
+(defn- card-rect-shadow-clip [^Canvas canvas x y]
+  (draw-label canvas x y "Rect Shadow")
+  (let [rx (+ x 30) ry (+ y 75)]
+    (shapes/rect-shadow canvas rx ry 120 70
+                        {:dy 4 :blur 10 :color [0 0 0 0.5]})
+    (shapes/rounded-rect canvas rx ry 120 70 10
+                         {:color [0.95 0.95 0.97 1]})))
+
+(defn- card-rect-shadow-noclip [^Canvas canvas x y]
+  (draw-label canvas x y "Rect Shadow Noclip")
+  (let [rx (+ x 30) ry (+ y 75)]
+    (shapes/rect-shadow canvas rx ry 120 70
+                        {:dy 4 :blur 14 :color [0 0 0 0.6] :clip false})
+    (shapes/rounded-rect canvas rx ry 120 70 10
+                         {:color [0.95 0.95 0.97 0.4]})
+    (shapes/rounded-rect canvas rx ry 120 70 10
+                         {:mode :stroke :stroke-width 1 :color [1 1 1 0.5]})))
+
 ;; ============================================================
 ;; Card Registry
 ;; ============================================================
@@ -217,7 +235,9 @@
    card-erode
    card-multi-shadow
    card-colored-shadow
-   card-long-shadow])
+   card-long-shadow
+   card-rect-shadow-clip
+   card-rect-shadow-noclip])
 
 ;; ============================================================
 ;; Example Interface
