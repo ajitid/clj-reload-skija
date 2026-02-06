@@ -7,20 +7,25 @@
    Both use double-buffering to process the previous frame while
    capturing the current frame.
 
+   Screenshots use Skija's built-in Image encoding (no external tools).
+   Video recording uses JavaCV's FFmpegFrameRecorder (in-process, no
+   external ffmpeg binary required).
+
    Performance optimizations:
    - Hardware encoder selection (VideoToolbox/VAAPI/NVENC)
    - glFenceSync for non-blocking PBO reads (OpenGL)
-   - Worker thread with bounded queue for FFmpeg writes"
+   - Worker thread with bounded queue for recorder writes"
   (:require [clojure.java.shell :as shell]
-            [clojure.java.io :as io]
             [clojure.string :as str])
   (:import [org.lwjgl.opengl GL11 GL15 GL21 GL32]
            [org.lwjgl.system MemoryUtil]
-           [java.nio ByteBuffer ByteOrder]
-           [java.io OutputStream FileOutputStream]
+           [java.nio ByteBuffer]
+           [java.io FileOutputStream]
            [java.util.concurrent LinkedBlockingQueue TimeUnit]
            [io.github.humbleui.skija Image ImageInfo ColorAlphaType ColorType
-            EncodedImageFormat Data Bitmap]))
+            EncodedImageFormat Bitmap Surface Canvas]
+           [org.bytedeco.javacv FFmpegFrameRecorder Frame]
+           [org.bytedeco.ffmpeg.global avutil]))
 
 ;; ============================================================
 ;; Metal Capture Module (optional, loaded if FFM available)
@@ -60,13 +65,12 @@
          :recording-fps     nil    ; Frame rate
          :recording-format  nil    ; :mp4 | :png
          :recording-opts    nil    ; Scaling options {:width :height}
-         :recording-dims    nil    ; [width height] FFmpeg was started with
-         ;; FFmpeg process (shared)
-         :ffmpeg-process    nil    ; FFmpeg Process object
-         :ffmpeg-stdin      nil    ; FFmpeg stdin OutputStream
-         :recording?        false})) ; FFmpeg actually running?
+         :recording-dims    nil    ; [width height] recorder was started with
+         ;; FFmpegFrameRecorder (in-process)
+         :recorder          nil    ; FFmpegFrameRecorder instance
+         :recording?        false})) ; Recorder actually running?
 
-;; Worker thread state for async FFmpeg writes
+;; Worker thread state for async recorder writes
 (defonce worker-state
   (atom {:queue    nil       ; LinkedBlockingQueue for frame data
          :thread   nil       ; Worker Thread
@@ -170,7 +174,7 @@
       (GL32/glDeleteSync old-fence))
     ;; Bind PBO and issue async read
     (GL15/glBindBuffer GL21/GL_PIXEL_PACK_BUFFER current-pbo)
-    ;; Ensure tight packing (no row padding) for correct vflip in FFmpeg
+    ;; Ensure tight packing (no row padding) for correct vflip
     (GL11/glPixelStorei GL11/GL_PACK_ALIGNMENT 1)
     ;; Read framebuffer into PBO (returns immediately - async DMA)
     (GL11/glReadPixels 0 0 width height
@@ -250,6 +254,19 @@
     (.rewind pixels)
     pixels))
 
+(defn- flip-vertical-bytes!
+  "Flip a byte array vertically (OpenGL is bottom-up). Mutates in place."
+  [^bytes data width height]
+  (let [row-bytes (* width 4)
+        temp (byte-array row-bytes)]
+    (dotimes [y (quot height 2)]
+      (let [top-offset (* y row-bytes)
+            bot-offset (* (- height 1 y) row-bytes)]
+        (System/arraycopy data top-offset temp 0 row-bytes)
+        (System/arraycopy data bot-offset data top-offset row-bytes)
+        (System/arraycopy temp 0 data bot-offset row-bytes)))
+    data))
+
 (defn- pixels->image
   "Convert raw RGBA pixels to Skija Image."
   [^ByteBuffer pixels width height]
@@ -281,23 +298,8 @@
       (str/includes? os "Win")   "h264_nvenc"
       :else                      "libx264")))
 
-(defn- get-encoder-args
-  "Get platform-specific FFmpeg encoder arguments.
-   Returns [encoder-args vf-extra] where vf-extra is prepended to vf filter.
-   All hardware encoders need explicit bitrate — defaults are unusable:
-   videotoolbox=200kbps, nvenc=2Mbps, vaapi=200kbps, amf=20Mbps."
-  [encoder]
-  (case encoder
-    "h264_videotoolbox" [["-c:v" "h264_videotoolbox" "-b:v" "10M"] nil]
-    "h264_vaapi"        [["-vaapi_device" "/dev/dri/renderD128"
-                          "-c:v" "h264_vaapi"] "format=nv12,hwupload,"]
-    "h264_nvenc"        [["-c:v" "h264_nvenc" "-preset" "p4" "-b:v" "10M"] nil]
-    "h264_amf"          [["-c:v" "h264_amf" "-quality" "balanced" "-b:v" "10M"] nil]
-    ;; Fallback: libx264
-    [["-c:v" "libx264" "-preset" "ultrafast" "-crf" "18"] nil]))
-
 ;; ============================================================
-;; Encoder Warm-up
+;; Encoder Warm-up (in-process via JavaCV)
 ;; ============================================================
 
 (defn- warm-up-encoder!
@@ -305,72 +307,69 @@
    VideoToolbox (macOS) and other hardware encoders have a cold-start
    delay on first use — Apple's VTCompressionSessionPrepareToEncodeFrames
    exists because hardware resource allocation is expensive.
-   If we don't warm up, the first recording attempt stalls FFmpeg's stdin
-   pipe, fills the frame queue, and drops every frame (frozen video).
+   If we don't warm up, the first recording attempt stalls and drops frames.
    Only runs once per process lifetime."
   []
   (when-not @encoder-warmed-up?
     (try
       (let [encoder (get-hw-encoder)
             w 64 h 64
-            frame-size (* w h 4)
-            dummy-frame (byte-array frame-size)
             null-output (if (str/includes? (System/getProperty "os.name") "Win")
                           "NUL"
                           "/dev/null")
-            [encoder-args _] (get-encoder-args encoder)
-            cmd (vec (concat
-                       ["ffmpeg" "-y"
-                        "-f" "rawvideo" "-pix_fmt" "rgba"
-                        "-s" (str w "x" h)
-                        "-r" "30"
-                        "-i" "-"]
-                       encoder-args
-                       ["-pix_fmt" "yuv420p"
-                        "-frames:v" "3"
-                        null-output]))
-            pb (ProcessBuilder. ^java.util.List cmd)
-            _ (.redirectErrorStream pb true)
-            process (.start pb)
-            stdin (.getOutputStream process)]
+            recorder (FFmpegFrameRecorder. ^String null-output (int w) (int h))]
         (println "[capture] Warming up encoder:" encoder)
-        ;; Send 3 tiny dummy frames to force hardware encoder initialization
-        (dotimes [_ 3]
-          (.write stdin dummy-frame))
-        (.close stdin)
-        ;; Wait for warm-up to complete (max 10 seconds)
-        (.waitFor ^Process process 10 java.util.concurrent.TimeUnit/SECONDS)
-        (when (.isAlive ^Process process)
-          (.destroyForcibly ^Process process))
+        (.setVideoCodecName recorder encoder)
+        (.setPixelFormat recorder avutil/AV_PIX_FMT_YUV420P)
+        (.setFrameRate recorder 30.0)
+        (.setVideoBitrate recorder 1000000)
+        (.setFormat recorder "mp4")
+        (.start recorder)
+        ;; Send 3 tiny dummy frames
+        (let [frame (Frame. (int w) (int h) Frame/DEPTH_UBYTE (int 4))]
+          (dotimes [_ 3]
+            (.record recorder frame)))
+        (.stop recorder)
+        (.release recorder)
         (reset! encoder-warmed-up? true)
         (println "[capture] Encoder warm-up complete"))
       (catch Exception e
         (println "[capture] Encoder warm-up failed (non-fatal):" (.getMessage e))
-        ;; Mark as warmed up anyway to avoid retrying on every recording
         (reset! encoder-warmed-up? true)))))
 
 ;; ============================================================
-;; Worker Thread for Async FFmpeg Writes
+;; Worker Thread for Async Recorder Writes
 ;; ============================================================
 
 (def ^:private queue-capacity 6)  ; ~48MB at 1080p RGBA, 100ms buffer at 60fps
 
 (defn- write-frame-data!
-  "Write frame data to FFmpeg stdin. Called from worker thread."
+  "Write frame data to FFmpegFrameRecorder. Called from worker thread.
+   Creates a JavaCV Frame wrapping the pixel buffer, records it, then frees."
   [{:keys [pixels width height]}]
-  (let [{:keys [ffmpeg-stdin]} @capture-state]
-    (when ffmpeg-stdin
+  (let [{:keys [recorder]} @capture-state]
+    (when recorder
       (try
-        (let [bytes (byte-array (* width height 4))]
-          (.get ^ByteBuffer pixels bytes)
-          (.write ^OutputStream ffmpeg-stdin bytes))
+        (let [stride (* width 4)
+              frame (Frame.)]
+          ;; Set up frame metadata
+          (set! (.-imageWidth frame) (int width))
+          (set! (.-imageHeight frame) (int height))
+          (set! (.-imageDepth frame) (int Frame/DEPTH_UBYTE))
+          (set! (.-imageChannels frame) (int 4))
+          (set! (.-imageStride frame) (int stride))
+          ;; Set the pixel buffer directly
+          (.rewind ^ByteBuffer pixels)
+          (set! (.-image frame) (into-array java.nio.Buffer [pixels]))
+          ;; Record the frame — FFmpegFrameRecorder handles pixel format conversion
+          (.record recorder frame avutil/AV_PIX_FMT_RGBA))
         (catch Exception e
-          (println "[capture] FFmpeg write error:" (.getMessage e)))
+          (println "[capture] Recorder write error:" (.getMessage e)))
         (finally
           (MemoryUtil/memFree pixels))))))
 
 (defn- worker-loop
-  "Worker thread main loop. Polls queue and writes frames to FFmpeg."
+  "Worker thread main loop. Polls queue and writes frames to recorder."
   []
   (let [{:keys [queue]} @worker-state]
     (while (:running? @worker-state)
@@ -389,7 +388,7 @@
         (write-frame-data! frame)))))
 
 (defn- start-worker!
-  "Start the worker thread for async FFmpeg writes."
+  "Start the worker thread for async recorder writes."
   []
   (when-not (:running? @worker-state)
     (let [queue (LinkedBlockingQueue. ^int queue-capacity)
@@ -434,46 +433,7 @@
         :dropped))))
 
 ;; ============================================================
-;; FFmpeg Helpers
-;; ============================================================
-
-(defn- build-vf-filter
-  "Build FFmpeg -vf filter string with optional scaling.
-   Preserves aspect ratio in all cases."
-  [{:keys [width height]}]
-  (cond
-    ;; Both: fit within bounds, pad to exact size with black bars
-    (and width height)
-    (str "vflip,scale=" width ":" height
-         ":force_original_aspect_ratio=decrease,"
-         "pad=" width ":" height ":(ow-iw)/2:(oh-ih)/2")
-
-    ;; Width only: scale to width, auto height (preserve aspect ratio)
-    width
-    (str "vflip,scale=" width ":-2")
-
-    ;; Height only: scale to height, auto width (preserve aspect ratio)
-    height
-    (str "vflip,scale=-2:" height)
-
-    ;; Neither: just flip
-    :else
-    "vflip"))
-
-(defn- check-ffmpeg!
-  "Verify FFmpeg is available in PATH."
-  []
-  (let [cmd (if (= (System/getProperty "os.name") "Mac OS X")
-              ["which" "ffmpeg"]
-              ["where" "ffmpeg"])
-        result (apply shell/sh cmd)]
-    (when (not= 0 (:exit result))
-      (throw (ex-info "FFmpeg not found in PATH. Install FFmpeg to enable video recording."
-                      {:exit (:exit result)
-                       :err (:err result)})))))
-
-;; ============================================================
-;; Screenshot API
+;; Screenshot API (Skija-based, no external tools)
 ;; ============================================================
 
 (defn- set-image-dpi!
@@ -491,47 +451,88 @@
       (catch Exception e
         (println "[capture] sips error (non-fatal):" (.getMessage e))))))
 
+(defn- scale-image
+  "Scale a Skija Image to fit within target dimensions, preserving aspect ratio.
+   Returns a new Image, or the original if no scaling needed."
+  [^Image image {:keys [width height]}]
+  (if (or width height)
+    (let [src-w (.getWidth image)
+          src-h (.getHeight image)
+          ;; Calculate target dimensions preserving aspect ratio
+          aspect (/ (double src-w) (double src-h))
+          [dst-w dst-h] (cond
+                          (and width height)
+                          ;; Fit within bounds (letterbox)
+                          (let [scale-w (/ (double width) src-w)
+                                scale-h (/ (double height) src-h)
+                                s (min scale-w scale-h)]
+                            [(int (* src-w s)) (int (* src-h s))])
+
+                          width
+                          [width (int (/ (double width) aspect))]
+
+                          height
+                          [(int (* (double height) aspect)) height])
+          ;; Ensure even dimensions for video compatibility
+          dst-w (max 2 (bit-and (int dst-w) (bit-not 1)))
+          dst-h (max 2 (bit-and (int dst-h) (bit-not 1)))
+          info (ImageInfo. dst-w dst-h ColorType/RGBA_8888 ColorAlphaType/UNPREMUL)
+          surface (Surface/makeRaster info)]
+      (try
+        (let [canvas (.getCanvas surface)]
+          (.drawImageRect canvas image
+                         (io.github.humbleui.types.Rect/makeWH (float dst-w) (float dst-h)))
+          (let [result (.makeImageSnapshot surface)]
+            result))
+        (finally
+          (.close surface))))
+    image))
+
 (defn- save-screenshot!
-  "Save pixels as PNG or JPEG using FFmpeg (supports scaling).
+  "Save pixels as PNG or JPEG using Skija's built-in encoding.
    Sets DPI metadata on macOS so images display at logical size.
    Runs asynchronously to avoid blocking the render thread."
   [^ByteBuffer pixels src-width src-height path format opts scale]
   ;; Copy pixel data to byte array before freeing the ByteBuffer
-  ;; This lets us free GPU memory immediately and process async
   (let [size (* src-width src-height 4)
         bytes (byte-array size)]
     (try
       (.get pixels bytes)
       (finally
         (MemoryUtil/memFree pixels)))
-    ;; Run FFmpeg asynchronously in a future
+    ;; Process off render thread
     (future
       (try
-        (let [{:keys [width height]} opts
-              vf (build-vf-filter {:width width :height height})
-              fmt-args (case format
-                         :jpeg ["-q:v" "2"]  ;; High quality JPEG
-                         [])                  ;; PNG needs no extra args
-              cmd (into ["ffmpeg" "-y"
-                         "-f" "rawvideo"
-                         "-pix_fmt" "rgba"
-                         "-s" (str src-width "x" src-height)
-                         "-i" "-"
-                         "-vf" vf
-                         "-frames:v" "1"]
-                        (concat fmt-args [path]))
-              pb (ProcessBuilder. ^java.util.List cmd)
-              _ (.redirectErrorStream pb true)
-              process (.start pb)
-              stdin (.getOutputStream process)]
-          (.write stdin bytes)
-          (.close stdin)
-          (.waitFor process)
-          (if (zero? (.exitValue process))
-            (do
+        ;; Flip vertically (OpenGL is bottom-up)
+        (flip-vertical-bytes! bytes src-width src-height)
+        ;; Create Skija Image from raw pixels
+        (let [row-bytes (* src-width 4)
+              info (ImageInfo. src-width src-height ColorType/RGBA_8888 ColorAlphaType/UNPREMUL)
+              bitmap (Bitmap.)]
+          (.allocPixels bitmap info)
+          (.installPixels bitmap info bytes row-bytes)
+          (let [image (Image/makeFromBitmap (.setImmutable bitmap))
+                ;; Scale if requested
+                final-image (scale-image image opts)
+                ;; Encode
+                enc-format (case format
+                             :jpeg EncodedImageFormat/JPEG
+                             EncodedImageFormat/PNG)
+                quality (case format :jpeg 95 100)
+                data (.encodeToData final-image enc-format quality)]
+            (when data
+              ;; Write to file
+              (let [data-bytes (.getBytes data)]
+                (with-open [out (FileOutputStream. ^String path)]
+                  (.write out ^bytes data-bytes)))
               (set-image-dpi! path scale)
               (println "[capture] Screenshot saved:" path))
-            (println "[capture] Screenshot failed, FFmpeg exit code:" (.exitValue process))))
+            (when-not data
+              (println "[capture] Screenshot encoding failed"))
+            ;; Clean up scaled image if different from original
+            (when (not (identical? final-image image))
+              (.close final-image))
+            (.close image)))
         (catch Exception e
           (println "[capture] Screenshot error:" (.getMessage e)))))))
 
@@ -553,7 +554,6 @@
    (if (= :video (:mode @capture-state))
      (println "[capture] WARNING: Cannot take screenshot while recording is in progress")
      (do
-       (check-ffmpeg!)
        ;; Detect backend from window state (stored in app.state.system/window)
        (let [backend (if-let [window-atom (resolve 'app.state.system/window)]
                        (or (:backend @(deref window-atom)) :opengl)
@@ -574,68 +574,56 @@
          (println "[capture] Screenshot requested:" path "(backend:" (name backend) ")"))))))
 
 ;; ============================================================
-;; Video Recording API
+;; Video Recording API (in-process via JavaCV)
 ;; ============================================================
 
-(defn- try-encoder!
-  "Helper function to try starting FFmpeg with a specific encoder.
-   Returns process and stdin on success, nil on failure."
-  [src-width src-height base-vf encoder recording-path recording-fps recording-format]
+(defn- try-recorder!
+  "Try to create and start an FFmpegFrameRecorder with a specific encoder.
+   Returns the recorder on success, nil on failure."
+  [src-width src-height encoder recording-path recording-fps]
   (try
-    (let [[encoder-args vf-extra] (get-encoder-args encoder)
-          vf (if vf-extra (str vf-extra base-vf) base-vf)
-          cmd (case recording-format
-                :png
-                ["ffmpeg" "-y"
-                 "-f" "rawvideo"
-                 "-pix_fmt" "rgba"
-                 "-s" (str src-width "x" src-height)
-                 "-r" (str recording-fps)
-                 "-i" "-"
-                 "-vf" base-vf
-                 recording-path]
-
-                ;; Default: MP4 video with hardware encoder
-                (vec (concat
-                       ["ffmpeg" "-y"
-                        "-f" "rawvideo"
-                        "-pix_fmt" "rgba"
-                        "-s" (str src-width "x" src-height)
-                        "-r" (str recording-fps)
-                        "-i" "-"]
-                       (when (= encoder "h264_vaapi")
-                         ["-vaapi_device" "/dev/dri/renderD128"])
-                       ["-vf" vf]
-                       (if (= encoder "h264_vaapi")
-                         ["-c:v" "h264_vaapi" "-b:v" "10M"]
-                         encoder-args)
-                       ["-pix_fmt" "yuv420p"
-                        recording-path])))
-          pb (ProcessBuilder. ^java.util.List cmd)
-          _ (.redirectErrorStream pb true)
-          process (.start pb)
-          stdin (.getOutputStream process)]
-      {:process process :stdin stdin})
+    (let [recorder (FFmpegFrameRecorder. ^String recording-path
+                                         (int src-width)
+                                         (int src-height))]
+      (.setVideoCodecName recorder encoder)
+      (.setPixelFormat recorder avutil/AV_PIX_FMT_YUV420P)
+      (.setFrameRate recorder (double recording-fps))
+      (.setFormat recorder "mp4")
+      ;; All hardware encoders need explicit bitrate
+      (if (= encoder "libx264")
+        (do
+          (.setVideoQuality recorder 18.0)  ;; CRF 18 equivalent
+          (.setOption recorder "preset" "ultrafast"))
+        (.setVideoBitrate recorder 10000000))  ;; 10 Mbps for HW encoders
+      ;; VAAPI needs device path
+      (when (= encoder "h264_vaapi")
+        (.setOption recorder "vaapi_device" "/dev/dri/renderD128"))
+      (.start recorder)
+      recorder)
     (catch Exception e
       (println "[capture] Encoder" encoder "failed:" (.getMessage e))
       nil)))
 
-(defn- spawn-ffmpeg-recording!
-  "Spawn FFmpeg process for video recording. Called on first frame.
+(defn- spawn-recording!
+  "Create FFmpegFrameRecorder for video recording. Called on first frame.
    Uses hardware encoder when available, falls back to libx264.
-   On Windows: tries NVENC → AMF → libx264.
+   On Windows: tries NVENC -> AMF -> libx264.
    Returns true if successful, false otherwise."
   [src-width src-height]
   (let [{:keys [recording-path recording-fps recording-format recording-opts]} @capture-state
-        {:keys [width height]} recording-opts
-        base-vf (build-vf-filter {:width width :height height})
         os (System/getProperty "os.name")
         is-windows? (str/includes? os "Win")
         ;; Define encoder cascade based on platform
         encoders (if is-windows?
-                   ["h264_nvenc" "h264_amf" "libx264"]  ; Windows: NVENC → AMF → libx264
-                   [(get-hw-encoder) "libx264"])]       ; Other platforms: default → libx264
-    ;; Start worker thread before FFmpeg
+                   ["h264_nvenc" "h264_amf" "libx264"]
+                   [(get-hw-encoder) "libx264"])]
+    ;; Warn about unsupported scaling opts (deferred)
+    (when (or (:width recording-opts) (:height recording-opts))
+      (println "[capture] WARNING: Video scaling options not supported for in-process recording, recording at native size"))
+    ;; PNG sequence format not supported with in-process recorder
+    (when (= recording-format :png)
+      (println "[capture] WARNING: PNG sequence format not supported with in-process recorder, using MP4"))
+    ;; Start worker thread before recorder
     (start-worker!)
     ;; Try encoders in order until one succeeds
     (loop [encoders-to-try encoders]
@@ -648,19 +636,18 @@
           false)
         ;; Try next encoder
         (let [encoder (first encoders-to-try)
-              result (try-encoder! src-width src-height base-vf encoder
-                                   recording-path recording-fps recording-format)]
-          (if result
+              recorder (try-recorder! src-width src-height encoder
+                                      recording-path recording-fps)]
+          (if recorder
             ;; Success!
-            (let [{:keys [process stdin]} result]
+            (do
               (swap! capture-state assoc
-                     :ffmpeg-process process
-                     :ffmpeg-stdin stdin
+                     :recorder recorder
                      :recording-dims [src-width src-height]
                      :recording? true)
               (println "[capture] Recording started:" recording-path
-                       (if (= recording-format :png) "(PNG sequence)" "(MP4)")
-                       "at" recording-fps "fps," src-width "x" src-height
+                       "(MP4) at" recording-fps "fps,"
+                       src-width "x" src-height
                        "encoder:" encoder)
               true)
             ;; Failed, try next encoder
@@ -672,19 +659,12 @@
 
    Options:
      :fps    - Frame rate (default 60)
-     :format - Output format: :mp4 (default) or :png (lossless image sequence)
-     :width  - Scale to this width, preserve aspect ratio (auto height)
-     :height - Scale to this height, preserve aspect ratio (auto width)
-               If both width and height specified, fits within bounds with black bars.
-
-   For :png format, path should include %d or %04d for frame numbers:
-     (start-recording! \"frames/frame-%04d.png\" {:format :png})
+     :format - Output format: :mp4 (default)
+     :width  - (not yet supported for in-process recording)
+     :height - (not yet supported for in-process recording)
 
    Examples:
-     (start-recording! \"out.mp4\" {:fps 60})                      ; native size
-     (start-recording! \"out.mp4\" {:fps 60 :width 1920})          ; scale to 1920 wide
-     (start-recording! \"out.mp4\" {:fps 60 :height 1080})         ; scale to 1080 tall
-     (start-recording! \"out.mp4\" {:fps 60 :width 1920 :height 1080}) ; fit in 1920x1080"
+     (start-recording! \"out.mp4\" {:fps 60})                      ; native size"
   [path {:keys [fps format width height] :or {fps 60 format :mp4} :as opts}]
   (let [{:keys [mode]} @capture-state]
     (cond
@@ -696,14 +676,13 @@
 
       :else
       (do
-        (check-ffmpeg!)
         ;; Pre-warm hardware encoder to avoid cold-start frame drops
         (warm-up-encoder!)
         ;; Detect backend from window state (stored in app.state.system/window)
         (let [backend (if-let [window-atom (resolve 'app.state.system/window)]
                         (or (:backend @(deref window-atom)) :opengl)
                         :opengl)]
-          ;; Just set state - FFmpeg will be spawned on first frame in process-frame!
+          ;; Just set state - recorder will be created on first frame in process-frame!
           (swap! capture-state assoc
                  :mode :video
                  :backend backend
@@ -712,7 +691,7 @@
                  :recording-format format
                  :recording-opts {:width width :height height}
                  :recording-dims nil
-                 :recording? false)  ; Not actually recording until FFmpeg starts
+                 :recording? false)
           (set-capture-active!)
           (println "[capture] Recording requested:" path
                    "(backend:" (name backend) ", will start on next frame)"))))))
@@ -721,17 +700,16 @@
   "Stop video recording."
   ([] (stop-recording! nil))
   ([reason]
-   (let [{:keys [ffmpeg-process ffmpeg-stdin recording? mode]} @capture-state]
+   (let [{:keys [recorder recording? mode]} @capture-state]
      ;; Stop if actually recording OR if mode is :video (requested but not started)
      (if (or recording? (= mode :video))
        (do
          ;; Stop worker thread first (drains remaining frames)
          (stop-worker!)
          (try
-           (when ffmpeg-stdin
-             (.close ^OutputStream ffmpeg-stdin))
-           (when ffmpeg-process
-             (.waitFor ^Process ffmpeg-process))
+           (when recorder
+             (.stop ^FFmpegFrameRecorder recorder)
+             (.release ^FFmpegFrameRecorder recorder))
            (if reason
              (println "[capture] Recording stopped:" reason)
              (println "[capture] Recording stopped"))
@@ -744,8 +722,7 @@
                 :recording-format nil
                 :recording-opts nil
                 :recording-dims nil
-                :ffmpeg-process nil
-                :ffmpeg-stdin nil
+                :recorder nil
                 :recording? false))
        (println "[capture] Nothing to stop (no recording in progress)")))))
 
@@ -754,8 +731,8 @@
   []
   (:recording? @capture-state))
 
-(defn- write-frame-to-ffmpeg!
-  "Queue raw RGBA pixels for async writing to FFmpeg.
+(defn- write-frame-to-recorder!
+  "Queue raw RGBA pixels for async writing to recorder.
    Frame ownership: render thread allocates, worker thread frees."
   [^ByteBuffer pixels width height]
   (let [result (queue-frame! pixels width height)]
@@ -812,11 +789,11 @@
       :video
       (let [{:keys [recording? recording-dims]} @capture-state]
         (cond
-          ;; First frame: spawn FFmpeg with actual dimensions
+          ;; First frame: create recorder with actual dimensions
           (not recording?)
-          (if (spawn-ffmpeg-recording! width height)
-            (write-frame-to-ffmpeg! pixels width height)
-            ;; FFmpeg failed to start, free pixels
+          (if (spawn-recording! width height)
+            (write-frame-to-recorder! pixels width height)
+            ;; Recorder failed to start, free pixels
             (MemoryUtil/memFree pixels))
 
           ;; Resize detected: stop recording with warning
@@ -827,9 +804,9 @@
             (MemoryUtil/memFree pixels)
             (stop-recording! "window resized"))
 
-          ;; Normal frame: write to FFmpeg
+          ;; Normal frame: write to recorder
           :else
-          (write-frame-to-ffmpeg! pixels width height)))
+          (write-frame-to-recorder! pixels width height)))
 
       nil)))
 
@@ -844,7 +821,7 @@
         (let [pixels (get-prev-fn width height)]
           (if pixels
             (do
-              ;; Metal uses BGRA format, convert to RGBA for FFmpeg
+              ;; Metal uses BGRA format, convert to RGBA for recorder
               (when-let [convert-fn (resolve 'lib.window.capture-metal/bgra->rgba!)]
                 (convert-fn pixels width height))
               (process-pixels! pixels width height scale))
