@@ -82,7 +82,8 @@
    :extra-deps
    {io.github.tonsky/clj-reload {:mvn/version "1.0.0"}
     nrepl/nrepl {:mvn/version "1.5.1"}
-    cider/cider-nrepl {:mvn/version "0.58.0"}}
+    cider/cider-nrepl {:mvn/version "0.58.0"}
+    com.nextjournal/beholder {:mvn/version "1.0.3"}}
    ;; Enable FFM native access for Metal async capture (JDK 22+)
    :jvm-opts ["--enable-native-access=ALL-UNNAMED"]}
 

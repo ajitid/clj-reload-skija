@@ -179,41 +179,63 @@ Then in the connected REPL:
 
 Changes apply immediately - no restart needed.
 
-### Auto-Reload with watchexec
+### Auto-Reload with `--watch`
 
-For automatic reload on file save, use [watchexec](https://github.com/watchexec/watchexec) with [rep](https://github.com/eraserhd/rep) (a simple nREPL client):
+The simplest way to get automatic reloading — edit a file, save, and see changes instantly with no manual `(reload)` calls needed.
+
+**Option 1: Via pool.clj (recommended for new users)**
+
+```bash
+bb scripts/pool.clj open --watch playground/ball-spring
+```
+
+This launches the app and enables the file watcher in one command.
+
+**Option 2: From the REPL**
+
+If you already have a REPL running and an example open, connect from another terminal and enable the watcher:
+
+```bash
+# Connect to the running nREPL
+clj -M:connect --port <port>
+```
+
+```clojure
+(start-watcher!)   ;; Enable auto-reload — watches src/ for .clj changes
+(stop-watcher!)    ;; Disable auto-reload
+```
+
+The watcher uses [beholder](https://github.com/nextjournal/beholder) (OS-native file events) to detect changes to any `.clj` file in `src/`. When a change is detected, reload happens automatically on the next frame — no manual intervention needed.
+
+#### Alternative: watchexec
+
+If you prefer an external file watcher, use [watchexec](https://github.com/watchexec/watchexec) with [rep](https://github.com/eraserhd/rep) (a lightweight nREPL client):
 
 ```bash
 # Install (macOS)
 brew install watchexec
-brew install eraserhd/rep/rep # or directly grab the binary from https://github.com/eraserhd/rep
+brew install eraserhd/rep/rep
 ```
 
-Then run in a separate terminal:
+**With pool.clj (dynamic port):**
+
+When you launch via `bb scripts/pool.clj open`, the active nREPL port is written to `.jvm-pool/active-port`. The included reload scripts read this file on each invocation, so they automatically track port changes across app restarts:
 
 ```bash
-# If using fixed port (NREPL_PORT=7888):
-watchexec -qnrc -e clj -w src -w dev -- rep -p 7888 "(reload)"
+# macOS / Linux
+watchexec -qnrc -e clj -w src -- ./scripts/reload.sh
 
-# If using JVM pool (macOS/Linux):
-watchexec -qnrc -e clj -w src -w dev -- ./scripts/reload.sh
-
-# If using JVM pool (Windows):
-watchexec -qnrc -e clj -w src -w dev -- scripts\reload.cmd
+# Windows
+watchexec -qnrc -e clj -w src -- scripts\reload.cmd
 ```
 
-The reload scripts read the port from `.jvm-pool/active-port` fresh on each reload. This means if you restart the app with `bb scripts/pool.clj open` (which assigns a new port), the next reload automatically uses the new port - no need to restart watchexec.
+**With a fixed port:**
 
-**Flags explained:**
-- `-q` — quiet mode
-- `-n` — no shell
-- `-r` — restart on change
-- `-c` — clear screen
-- `-e clj` — watch only `.clj` files
-- `-w src -w dev` — watch directories
-- `-p <port>` — nREPL port
+If you started the REPL with a fixed nREPL port (e.g., `NREPL_PORT=7888`), point `rep` at it directly:
 
-Now every time you save a `.clj` file, reload happens automatically.
+```bash
+watchexec -qnrc -e clj -w src -- rep -p 7888 "(reload)"
+```
 
 ### Error Recovery
 

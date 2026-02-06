@@ -98,12 +98,12 @@
       (clear!))
 
     (register!
-      {:id :draggable-circle
-       :layer :content
-       :z-index 10
-       :bounds-fn circle-bounds-fn
-       :gesture-recognizers [:drag]
-       :handlers circle-handlers})))
+     {:id :draggable-circle
+      :layer :content
+      :z-index 10
+      :bounds-fn circle-bounds-fn
+      :gesture-recognizers [:drag]
+      :handlers circle-handlers})))
 
 ;; ============================================================
 ;; Trail

@@ -5,7 +5,7 @@
 ;; Commands:
 ;;   start [--spare N]  Start pool, keep N idle JVMs ready (default: 2, min: 1)
 ;;   stop              Kill all JVMs, cleanup
-;;   open              Open app (restarts if already running)
+;;   open [--watch]    Open app (restarts if already running)
 ;;   close             Close app
 ;;   status            Show pool state
 ;;   connect           Print connection info for active JVM
@@ -533,9 +533,9 @@
 
 (defn cmd-open
   "Open app with example key.
-   Usage: bb pool.clj open <example-key>
-   Example: bb pool.clj open playground/ball-spring"
-  [example-key]
+   Usage: bb pool.clj open [--watch] <example-key>
+   Example: bb pool.clj open --watch playground/ball-spring"
+  [example-key & {:keys [watch?]}]
   (when-not example-key
     (println "Error: example key required")
     (println "Usage: bb pool.clj open <example-key>")
@@ -561,6 +561,10 @@
     (if jvm
       (do
         (println "Acquired JVM" (:id jvm) "on port" (:port jvm))
+        (when watch?
+          (println "Starting file watcher...")
+          (let [result (send-nrepl-command! (:port jvm) "(start-watcher!)")]
+            (print-nrepl-result result)))
         (println "Sending" open-cmd "+ replenishing in parallel...")
         (let [start-time (System/currentTimeMillis)
               cmd-future (future (send-nrepl-command! (:port jvm) open-cmd))
@@ -653,11 +657,14 @@
   (println "Commands:")
   (println "  start              Start pool, warm up JVMs")
   (println "  stop               Kill all JVMs, cleanup")
-  (println "  open <example>     Open app (restarts if already running)")
+  (println "  open [--watch] <example>  Open app (restarts if already running)")
   (println "  close              Close app")
   (println "  status             Show pool state")
   (println "  connect            Print connection info for active JVM")
   (println "  help               Show this help")
+  (println)
+  (println "Options for 'open':")
+  (println "  --watch, -w  Auto-reload on .clj file changes (no external tools needed)")
   (println)
   (println "Options for 'start':")
   (println "  --spare N  Idle JVMs to keep ready (default: 2, minimum: 1)")
@@ -686,6 +693,9 @@
           (= "--cmd" arg)
           (recur (next rest) (assoc opts :cmd (first rest)))
 
+          (or (= "--watch" arg) (= "-w" arg))
+          (recur rest (assoc opts :watch? true))
+
           ;; If we already have a command, this might be the example key
           (and (:command opts) (= (:command opts) "open") (not (str/starts-with? arg "--")))
           (recur rest (assoc opts :example arg))
@@ -698,7 +708,7 @@
     (case (:command opts)
       "start" (cmd-start opts)
       "stop" (cmd-stop)
-      "open" (cmd-open (:example opts))
+      "open" (cmd-open (:example opts) :watch? (:watch? opts))
       "close" (cmd-close)
       "status" (cmd-status)
       "connect" (cmd-connect)

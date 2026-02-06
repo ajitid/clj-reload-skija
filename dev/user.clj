@@ -13,6 +13,7 @@
    - Everything reloads except 'user' namespace and defonce values
    - See: https://github.com/tonsky/clj-reload"
   (:require [clj-reload.core :as reload]
+            [clojure.string :as str]
             [nrepl.server :as nrepl]))
 
 ;; Start nREPL server for hot-reloading
@@ -77,6 +78,32 @@
   (open example-key)
   (System/exit 0))
 
+(defonce watcher (atom nil))
+
+(defn start-watcher!
+  "Start auto-reload on .clj file changes. Call (stop-watcher!) to disable."
+  []
+  (if @watcher
+    (println "Watcher already running.")
+    (let [watch-fn (requiring-resolve 'nextjournal.beholder/watch)]
+      (reset! watcher
+        (watch-fn
+          (fn [event]
+            (when (and (#{:modify :create} (:type event))
+                       (str/ends-with? (str (:path event)) ".clj"))
+              (reset! @(requiring-resolve 'app.state.system/reload-requested?) true)))
+          "src"))
+      (println "Auto-reload: watching src/ for .clj changes"))))
+
+(defn stop-watcher!
+  "Stop auto-reload file watcher."
+  []
+  (when-let [w @watcher]
+    (let [stop-fn (requiring-resolve 'nextjournal.beholder/stop)]
+      (stop-fn w)
+      (reset! watcher nil)
+      (println "Watcher stopped."))))
+
 (comment
   ;; Quick REPL commands:
 
@@ -85,4 +112,8 @@
 
   ;; After editing, reload to see changes
   (reload)
+
+  ;; Auto-reload on file save
+  (start-watcher!)
+  (stop-watcher!)
   )
