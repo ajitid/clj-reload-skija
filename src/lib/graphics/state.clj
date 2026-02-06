@@ -330,17 +330,21 @@
       (require 'lib.graphics.filters)
       (set-image-filter paint ((resolve 'lib.graphics.filters/erode) rx ry)))
 
-    ;; Emboss (lighting-based)
+    ;; Emboss (lighting-based) — uses diffuse distant light.
+    ;; Diffuse lighting spills outside shape bounds; caller must clip
+    ;; (canvas clipRect or layers/with-layer + DstIn).
     :emboss
     (let [opts (if (map? effect-value) effect-value {})
-          {:keys [azimuth elevation surface-scale]
-           :or {azimuth 135 elevation 45 surface-scale 1.0}} opts]
+          {:keys [azimuth elevation surface-scale kd color]
+           :or {azimuth 135 elevation 45 surface-scale 3.0 kd 1.0
+                color [1 1 1 1]}} opts]
       (require 'lib.graphics.filters)
       (set-image-filter paint ((resolve 'lib.graphics.filters/light)
-                               {:source :distant :type :specular
+                               {:source :distant :type :diffuse
                                 :azimuth azimuth :elevation elevation
                                 :surface-scale surface-scale
-                                :color [1 1 1 1] :ks 0.3 :shininess 12.0})))
+                                :kd kd
+                                :color color})))
 
     ;; High contrast (accessibility)
     :high-contrast

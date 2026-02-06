@@ -145,18 +145,36 @@
   (draw-label canvas x y "Emboss Kernel")
   ;; Convolution-based emboss gives a classic raised/chiseled look
   (shapes/rounded-rect canvas (+ x 30) (+ y 80) 120 70 10
-    {:color oc/gray-5
+    {:color oc/blue-4
      :image-filter (filters/matrix-convolution
                      filters/emboss-kernel
                      {:width 3 :height 3 :gain 1.0 :bias 0.5})}))
 
 (defn- card-emboss-light [^Canvas canvas x y]
-  ;; Lighting-based emboss via specular distant light
-  (draw-shape-rrect canvas x y
-    {:color oc/gray-5
-     :emboss {:azimuth 135 :elevation 45}})
-  ;; Label drawn after so lighting doesn't cover it
-  (draw-label canvas x y "Emboss Light"))
+  (draw-label canvas x y "Emboss Diffuse")
+  ;; Diffuse lighting spills — clip to shape bounding rect
+  (let [sx (+ x 30) sy (+ y 80)]
+    (.save canvas)
+    (.clipRect canvas (Rect/makeXYWH (float sx) (float sy) 120 70))
+    (shapes/rounded-rect canvas sx sy 120 70 10
+      {:color oc/blue-4
+       :emboss {:azimuth 315 :elevation 45 :surface-scale 4.0
+                :color oc/blue-4}})
+    (.restore canvas)))
+
+(defn- card-emboss-dstin [^Canvas canvas x y]
+  (draw-label canvas x y "Emboss DstIn")
+  (let [sx (+ x 30) sy (+ y 80)]
+    ;; Layer 1: draw shape with diffuse emboss (spills outside bounds)
+    (layers/with-layer [canvas {}]
+      (shapes/rounded-rect canvas sx sy 120 70 10
+        {:color oc/blue-4
+         :emboss {:azimuth 315 :elevation 45 :surface-scale 4.0
+                  :color oc/blue-4}})
+      ;; Layer 2: mask with DstIn — keep only pixels inside shape alpha
+      (layers/with-layer [canvas {:blend-mode :dst-in}]
+        (shapes/rounded-rect canvas sx sy 120 70 10
+          {:color [1 1 1 1]})))))
 
 (defn- card-dilate [^Canvas canvas x y]
   (draw-label canvas x y "Dilate")
@@ -231,6 +249,7 @@
    card-material-shadow
    card-emboss-kernel
    card-emboss-light
+   card-emboss-dstin
    card-dilate
    card-erode
    card-multi-shadow
