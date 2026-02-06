@@ -3,7 +3,7 @@
 ;; Usage: bb pool.clj <command>
 ;;
 ;; Commands:
-;;   start [--spare N]  Start pool, keep N idle JVMs ready (default: 2, min: 1)
+;;   start [--spare N]  Start pool, keep N idle JVMs ready (default: 1, min: 1)
 ;;   stop              Kill all JVMs, cleanup
 ;;   open [--watch]    Open app (restarts if already running)
 ;;   close             Close app
@@ -483,7 +483,7 @@
   (let [initial-count
         (with-state-lock
           (ensure-dirs!)
-          (let [raw-spare (or spare 2)
+          (let [raw-spare (or spare 1)
                 pool-size (if (< raw-spare 1)
                             (do
                               (println "Warning: --spare must be at least 1. Using 1.")
@@ -667,7 +667,7 @@
   (println "  --watch, -w  Auto-reload on .clj file changes (no external tools needed)")
   (println)
   (println "Options for 'start':")
-  (println "  --spare N  Idle JVMs to keep ready (default: 2, minimum: 1)")
+  (println "  --spare N  Idle JVMs to keep ready (default: 1, minimum: 1)")
   (println "  --cmd CMD  Command to start JVM (default: auto-detected)")
   (println)
   (println "Example:")
