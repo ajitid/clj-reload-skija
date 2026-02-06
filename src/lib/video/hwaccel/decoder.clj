@@ -19,7 +19,7 @@
             [lib.video.sync :as sync])
   (:import [org.bytedeco.javacv FFmpegFrameGrabber Frame]
            [java.nio ByteBuffer]
-           [io.github.humbleui.skija Image ImageInfo ColorType ColorAlphaType Bitmap]))
+           [io.github.humbleui.skija Image ImageInfo ColorType ColorAlphaType Pixmap]))
 
 (defonce ^:private debug-enabled (atom false))
 
@@ -43,20 +43,17 @@
     (some? (device-fn))))
 
 (defn- frame-to-skia-image
-  "Create a Skia Image directly from frame pixel data.
-   Used when Metal backend is active (no OpenGL context available)."
+  "Create a Skia Image from frame pixel data using Pixmap (zero-copy).
+   Wraps the ByteBuffer directly — no intermediate byte[] or Bitmap.
+   The returned Image copies pixel data internally, so the buffer
+   can be safely reused by the next grabImage() call."
   [^ByteBuffer buffer width height stride]
-  (let [;; Copy buffer to byte array
-        byte-count (* height stride)
-        bytes (byte-array byte-count)
-        _ (.get buffer bytes)
-        _ (.rewind buffer)
-        ;; Create ImageInfo - assuming RGBA pixel format
-        info (ImageInfo. width height ColorType/RGBA_8888 ColorAlphaType/UNPREMUL)
-        bitmap (Bitmap.)]
-    (.allocPixels bitmap info)
-    (.installPixels bitmap info bytes stride)
-    (Image/makeFromBitmap (.setImmutable bitmap))))
+  (.rewind buffer)
+  (let [info   (ImageInfo. width height ColorType/RGBA_8888 ColorAlphaType/UNPREMUL)
+        pixmap (Pixmap/make info buffer (int stride))
+        img    (Image/makeRasterFromPixmap pixmap)]
+    (.close pixmap)
+    img))
 
 (defn- get-frame-info
   "Extract frame info including stride for proper texture upload.
