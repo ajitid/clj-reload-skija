@@ -50,6 +50,7 @@ SDL3 requires window operations to run on macOS's main thread (thread 0). This p
 ```
 
 This compiles:
+
 - `native/libmacos_main.dylib` - Native dispatch to main thread
 - `classes/lib/window/macos/MainThread.class` - JNI wrapper
 
@@ -85,7 +86,7 @@ sudo ./linux-install.sh
 First, download dependencies:
 
 ```bash
-clj -P -A:dev
+clj -P -M:dev
 ```
 
 Then start the REPL with your platform alias:
@@ -145,6 +146,7 @@ clj -M:dev:macos-arm64 -e "(quick-open :playground/ball-spring)"
 ### Example Key Resolution
 
 Example keys are resolved to namespaces:
+
 - `:playground/ball-spring` → `app.projects.playground.ball-spring`
 
 ## Hot Reloading
@@ -248,6 +250,7 @@ To recover:
 3. Drawing resumes automatically
 
 **Keyboard shortcuts:**
+
 - `Ctrl+E` or Middle-click — Copy error to clipboard
 - `Ctrl+\`` — Toggle debug panel (FPS graph)
 
@@ -299,14 +302,14 @@ All functions are hot-reloadable - edit them and call `(reload)` to see changes 
 
 ## How It Works
 
-| Namespace | Uses | Behavior on Reload |
-|-----------|------|-------------------|
-| `app.shell.*` | `defonce`, `defsource` | State **persists**, functions **reload** |
-| `app.projects.*.*` | `defonce`, `defsource` | State **persists**, functions **reload** |
-| `app.state.system` | `defonce` | **Persists** - window, errors |
-| `app.ui.*` | `defn` | **Reloads** - functions update |
-| `lib.*` | `defn` | **Restart required** (not hot-reloadable) |
-| `user` | - | **Excluded** - keeps REPL stable |
+| Namespace          | Uses                   | Behavior on Reload                        |
+| ------------------ | ---------------------- | ----------------------------------------- |
+| `app.shell.*`      | `defonce`, `defsource` | State **persists**, functions **reload**  |
+| `app.projects.*.*` | `defonce`, `defsource` | State **persists**, functions **reload**  |
+| `app.state.system` | `defonce`              | **Persists** - window, errors             |
+| `app.ui.*`         | `defn`                 | **Reloads** - functions update            |
+| `lib.*`            | `defn`                 | **Restart required** (not hot-reloadable) |
+| `user`             | -                      | **Excluded** - keeps REPL stable          |
 
 Following [clj-reload](https://github.com/tonsky/clj-reload) best practices:
 
@@ -332,6 +335,7 @@ The event listener uses `requiring-resolve` for ALL callbacks, allowing every na
 ## Custom Skija Build
 
 This project uses a custom Skija build with additional features:
+
 - `Image.adoptMetalTextureFrom()` - Adopt Metal textures as Skia Images
 - `Image.convertYUVToRGBA()` - GPU-based NV12→BGRA conversion via Metal compute shader
 - `Image.releaseMetalTexture()` - Release Metal textures
@@ -352,11 +356,13 @@ bb scripts/build-skija.clj
 ```
 
 The script will:
+
 - Check prerequisites (JAVA_HOME, Python 3, Skia binaries)
 - Build Skija native library and Java classes
 - Package JARs and copy them to `.jars/`
 
 After building, you can run:
+
 ```bash
 clj -A:dev:macos-arm64  # or your platform
 ```
@@ -387,14 +393,17 @@ git clone https://github.com/HumbleUI/Skija.git
 #### macOS
 
 - **Xcode Command Line Tools**
+
   ```bash
   xcode-select --install
   ```
+
   Required components:
   - **clang++** - compiles C++ (`.cc`) and Objective-C++ (`.mm`) files
   - **macOS SDK** - provides Metal.h and Foundation.h headers for the Metal compute shader
 
   Note: Homebrew's LLVM won't work - it lacks the macOS SDK headers.
+
 - **CMake 3.10+**
   ```bash
   brew install cmake ninja
@@ -404,6 +413,7 @@ git clone https://github.com/HumbleUI/Skija.git
   brew install python3
   ```
 - **JDK 11+** with `JAVA_HOME` set
+
   ```bash
   # Find your Java home
   /usr/libexec/java_home
@@ -418,6 +428,7 @@ git clone https://github.com/HumbleUI/Skija.git
   - Includes MSVC compiler (cl.exe), Windows SDK, and CMake
 - **CMake 3.10+** (included with Visual Studio or install separately)
 - **Ninja** (recommended)
+
   ```powershell
   # With Scoop
   scoop install ninja
@@ -425,6 +436,7 @@ git clone https://github.com/HumbleUI/Skija.git
   # Or with Chocolatey
   choco install ninja
   ```
+
 - **Python 3**
   ```powershell
   scoop install python
@@ -454,6 +466,7 @@ python3 script/package_platform.py
 ```
 
 Output files in `target/`:
+
 - `skija-shared-0.0.0-SNAPSHOT.jar` - Java classes
 - `skija-macos-arm64-0.0.0-SNAPSHOT.jar` - Native library for Apple Silicon
 

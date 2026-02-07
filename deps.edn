@@ -12,11 +12,8 @@
   ;; Run: bb scripts/build-skija.clj
   io.github.humbleui/skija-shared {:local/root ".jars/skija-shared.jar"}
 
-  ;; Color - color space conversions (OKLCH, etc.)
-  clojure2d/clojure2d {:mvn/version "1.4.5"}
-
-  ;; Math - noise, random, distributions, vectors, matrices
-  generateme/fastmath {:mvn/version "2.4.0"}
+  ;; Math - vectors, noise, random
+  generateme/fastmath {:mvn/version "3.0.0-alpha4"}
 
   ;; LWJGL 3.4.0 with SDL3 and OpenGL
   org.lwjgl/lwjgl {:mvn/version "3.4.0"}
