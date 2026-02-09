@@ -332,26 +332,30 @@
   "Apply transforms to a canvas. Used by with-transform macro.
    Accepts a map of transforms, a Matrix33, or a Matrix44.
 
-   Map keys (applied in order: translate, rotate, scale, skew):
-     :translate [dx dy]
-     :rotate    degrees
-     :scale     [sx sy] or single number
-     :skew      [sx sy]"
+   Map keys (applied in order: perspective, translate, rotate, skew, scale):
+     :perspective [px py]  - perspective distortion (small values like 0.001)
+     :translate   [dx dy]
+     :rotate      degrees
+     :skew        [sx sy]
+     :scale       [sx sy] or single number"
   [^Canvas canvas opts-or-matrix]
   (cond
     (map? opts-or-matrix)
-    (let [{:keys [translate rotate scale skew]} opts-or-matrix]
+    (let [{:keys [perspective translate rotate skew scale]} opts-or-matrix]
+      (when perspective
+        (let [[px py] perspective]
+          (.concat canvas (perspective-matrix px py))))
       (when translate
         (let [[dx dy] translate]
           (.translate canvas (float dx) (float dy))))
       (when rotate
         (.rotate canvas (float rotate)))
-      (when scale
-        (let [[sx sy] (if (number? scale) [scale scale] scale)]
-          (.scale canvas (float sx) (float sy))))
       (when skew
         (let [[sx sy] skew]
-          (.skew canvas (float sx) (float sy)))))
+          (.skew canvas (float sx) (float sy))))
+      (when scale
+        (let [[sx sy] (if (number? scale) [scale scale] scale)]
+          (.scale canvas (float sx) (float sy)))))
 
     (instance? Matrix33 opts-or-matrix)
     (.concat canvas ^Matrix33 opts-or-matrix)
@@ -376,7 +380,7 @@
      (.translate canvas 100 100)
      (draw-stuff...))
 
-   ;; Declarative transforms (applied in order: translate, rotate, scale, skew)
+   ;; Declarative transforms (applied in order: perspective, translate, rotate, skew, scale)
    (with-transform [canvas {:translate [100 100]
                              :rotate 45
                              :scale [2 1]
